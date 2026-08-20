@@ -37,11 +37,13 @@ body {
   color: var(--text);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  touch-action: manipulation; /* 🔧 修复：优化手势 */
 }
 
-/* 手机端防溢出（PWA 修复：避免页面横向滚动、无需两指缩小） */
+/* 🔧 修复：手机端防溢出 */
 html, body {
-  overflow-x: hidden;
+  width: 100vw;           /* 修复：使用 vw 防止溢出 */
+  touch-action: pan-x pan-y; /* 修复：允许双指缩放和滚动 */
   max-width: 100%;
 }
 img, table, .chart, .table-card, .modal, .form-grid, .kpi-grid, .chart-grid {
@@ -483,7 +485,7 @@ td.amount.negative { color: var(--red); }
   margin-left: 6px; vertical-align: 2px;
   white-space: nowrap;
 }
-.form-grid .field-conf-badge.conf-ok { color: var(--success, #2e7d32); background: rgba(46,125,50,.12); }
+.form-grid .field-conf-badge.conf-ok { color: var(--success, #2e7d32); background: rgba(46,125,32,.12); }
 .form-grid .field-conf-badge.conf-low { color: #b26a00; background: rgba(255,193,7,.18); }
 .form-grid .field-conf-badge.conf-miss { color: var(--danger, #c62828); background: rgba(198,40,40,.12); }
 .form-grid label.wb-low input,
@@ -2160,6 +2162,7 @@ select option {
   background: linear-gradient(160deg, #0b1120 0%, #0d1526 50%, #101b30 100%);
   overflow: hidden;
   padding: 24px;
+  touch-action: none; /* 🔧 修复：登录页禁用手势，防止溢出 */
 }
 .login-bg { position: absolute; inset: 0; pointer-events: none; }
 .login-bg-orb {
