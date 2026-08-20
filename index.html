@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>明细 · 智能记账系统</title>
+  <!-- PWA（功能补充：iPhone 主屏幕 App 化） -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b1120">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="智账">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="css/style.css?v=30">
+  <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
+  <script src="vendor/echarts/echarts.min.js"></script>
+  <script src="vendor/tesseract/tesseract.min.js"></script>
+  <script src="vendor/sqljs/sql-wasm.js"></script>
+</head>
+<body>
+  <!-- ======== 登录页面（开店经营 / 家庭明细 双入口） ======== -->
+  <div class="login-screen" id="loginScreen">
+    <div class="login-bg">
+      <div class="login-bg-orb orb-1"></div>
+      <div class="login-bg-orb orb-2"></div>
+      <div class="login-bg-orb orb-3"></div>
+    </div>
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="login-logo-icon">📋</div>
+        <h1>明细</h1>
+        <p>智能记账系统</p>
+      </div>
+      <p class="login-welcome">欢迎回来，请选择要进入的账本</p>
+
+      <div class="login-entries">
+        <button class="login-entry biz" onclick="pickLoginEntry('business')">
+          <span class="login-entry-icon">🏪</span>
+          <span class="login-entry-body">
+            <b>开店经营</b>
+            <small>进货台账 · 供应商 · 经营收支</small>
+          </span>
+          <span class="login-entry-arrow">→</span>
+        </button>
+        <button class="login-entry fam" onclick="pickLoginEntry('family')">
+          <span class="login-entry-icon">🏠</span>
+          <span class="login-entry-body">
+            <b>家庭明细</b>
+            <small>日常收支 · 预算 · 健康度</small>
+          </span>
+          <span class="login-entry-arrow">→</span>
+        </button>
+      </div>
+
+      <div class="login-form" id="loginForm" hidden>
+        <label class="login-entry-title" id="loginEntryTitle">🏪 开店经营</label>
+        <input type="password" id="loginPassword" placeholder="请输入登录密码" autocomplete="current-password">
+        <button class="login-btn" id="btnLogin" onclick="doLogin()">🔓 进入账本</button>
+        <p class="login-error" id="loginError" hidden></p>
+        <button class="login-back" onclick="resetLogin()">← 返回选择账本</button>
+      </div>
+    </div>
+    <p class="login-footer">🔒 本地数据 · 完全离线 · 密码保护</p>
+  </div>
+
+  <div class="app">
+    <!-- 侧边栏 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="logo">
+        <div class="logo-icon">📋</div>
+        <div class="logo-text">
+          <h1>明细 <button class="mode-switch" id="modeSwitch" onclick="quickSwitchMode()" title="点击切换记账模式">🏪 开店</button></h1>
+          <p>智能记账系统</p>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span>数据总览</button>
+        <button class="nav-item" data-page="income"><span class="nav-icon">💰</span>收入记账</button>
+        <button class="nav-item" data-page="purchase"><span class="nav-icon">📦</span>进货台账</button>
+        <button class="nav-item" data-page="expense"><span class="nav-icon">💸</span>支出记账</button>
+        <button class="nav-item" data-page="monthly"><span class="nav-icon">📅</span>月度统计</button>
+        <button class="nav-item" data-page="query"><span class="nav-icon">🔍</span>明细查询</button>
+        <button class="nav-item" data-page="scan"><span class="nav-icon">📷</span>扫描识别</button>
+        <button class="nav-item voice-nav-item" onclick="openQuickModal('voice')"><span class="nav-icon">🎙️</span>语音记账</button>
+        <button class="nav-item" data-page="reminder"><span class="nav-icon">⏰</span>语音提醒</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn-settings" onclick="openSettingsModal()">⚙️ 设置</button>
+        <button class="btn-logout" onclick="logout()">🚪 退出登录</button>
+        <div class="date-range-box">
+          <label>📆 数据范围</label>
+          <input type="date" id="rangeStart">
+          <span>至</span>
+          <input type="date" id="rangeEnd">
+          <button class="btn-small" id="btnApplyRange">应用</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="main">
+      <!-- ======== 数据看板 ======== -->
+      <section class="page active" id="page-dashboard">
+        <header class="page-header">
+          <h2>📊 数据总览</h2>
+          <p class="subtitle" id="dashRangeText">全部分析基于当前日期范围</p>
+        </header>
+
+        <!-- KPI 大卡 -->
+        <div class="kpi-grid">
+          <div class="kpi-card income-card">
+            <div class="kpi-icon">💰</div>
+            <div class="kpi-info">
+              <span class="kpi-label">总收入</span>
+              <span class="kpi-value" id="kpiIncome">0</span>
+            </div>
+            <div class="kpi-trend" id="kpiIncomeTrend">+0%</div>
+          </div>
+          <div class="kpi-card expense-card">
+            <div class="kpi-icon">💸</div>
+            <div class="kpi-info">
+              <span class="kpi-label">总支出</span>
+              <span class="kpi-value" id="kpiExpense">0</span>
+            </div>
+            <div class="kpi-trend" id="kpiExpenseTrend">+0%</div>
+          </div>
+          <div class="kpi-card balance-card">
+            <div class="kpi-icon">⚖️</div>
+            <div class="kpi-info">
+              <span class="kpi-label">结余</span>
+              <span class="kpi-value" id="kpiBalance">0</span>
+            </div>
+            <div class="kpi-badge" id="kpiBalanceBadge">平衡</div>
+          </div>
+          <div class="kpi-card purchase-card">
+            <div class="kpi-icon">📦</div>
+            <div class="kpi-info">
+              <span class="kpi-label">未付款</span>
+              <span class="kpi-value" id="kpiUnpaid">0</span>
+            </div>
+            <div class="kpi-trend" id="kpiUnpaidTrend"></div>
+          </div>
+          <div class="kpi-card asset-card" title="总资产（账户期初 + 累计收支结余）">
+            <div class="kpi-icon">🏦</div>
+            <div class="kpi-info">
+              <span class="kpi-label">总资产</span>
+              <span class="kpi-value" id="kpiAssets">0</span>
+            </div>
+          </div>
+          <div class="kpi-card liability-card" title="总负债（欠款/信用卡等负债账户）">
+            <div class="kpi-icon">📉</div>
+            <div class="kpi-info">
+              <span class="kpi-label">总负债</span>
+              <span class="kpi-value" id="kpiLiabilities">0</span>
+            </div>
+          </div>
+          <div class="kpi-card networth-card" title="净资产 = 总资产 − 总负债">
+            <div class="kpi-icon">💎</div>
+            <div class="kpi-info">
+              <span class="kpi-label">净资产</span>
+              <span class="kpi-value" id="kpiNetWorth">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 月度预算进度 -->
+        <div class="budget-card" id="budgetCard" hidden>
+          <div class="budget-head">
+            <span class="budget-title">🎯 本月支出预算</span>
+            <span class="budget-nums"><b id="budgetSpent">¥0.00</b> / <span id="budgetTotal">¥0.00</span></span>
+          </div>
+          <div class="budget-track"><div class="budget-fill" id="budgetFill"></div></div>
+          <div class="budget-rem" id="budgetRem"></div>
+          <div class="cat-budget-progress" id="catBudgetProgress"></div>
+        </div>
+
+        <!-- 财务健康度 -->
+        <div class="health-card" id="healthCard">
+          <div class="health-head">
+            <span class="health-title">💚 财务健康度</span>
+            <span class="health-score" id="healthScore">--</span>
+          </div>
+          <div class="health-body">
+            <div class="health-gauge" id="healthGauge"></div>
+            <div class="health-metrics">
+              <div class="health-metric">
+                <span class="health-m-label">储蓄率</span>
+                <b class="health-m-val" id="healthSaveRate">--</b>
+                <span class="health-m-hint" id="healthSaveHint"></span>
+              </div>
+              <div class="health-metric">
+                <span class="health-m-label">收支比</span>
+                <b class="health-m-val" id="healthRatio">--</b>
+                <span class="health-m-hint" id="healthRatioHint"></span>
+              </div>
+              <div class="health-metric">
+                <span class="health-m-label">支出合理度</span>
+                <b class="health-m-val" id="healthReason">--</b>
+                <span class="health-m-hint" id="healthReasonHint"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 图表区 -->
+        <div class="chart-grid">
+          <div class="chart-card wide">
+            <div class="chart-title">📈 收支趋势（立柱图）</div>
+            <div id="chartTrend" class="chart"></div>
+          </div>
+          <div class="chart-card wide">
+            <div class="chart-title">🌊 结余流动趋势（波浪图）</div>
+            <div id="chartWave" class="chart"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">🏦 账户余额分布（立柱图）</div>
+            <div id="chartAccounts" class="chart"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">🏭 收入来源构成（扇形图）</div>
+            <div id="chartIncomeSource" class="chart"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">🗂️ 支出分类占比（环形图）</div>
+            <div id="chartExpenseCategory" class="chart"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">📦 供应商进货排行（立柱图）</div>
+            <div id="chartSupplier" class="chart"></div>
+          </div>
+        </div>
+
+        <!-- 支出分类排行（家庭模式） -->
+        <div class="rank-card" id="rankCard" hidden>
+          <div class="rank-head">
+            <h3>🏆 支出分类排行</h3>
+            <span class="rank-sub">本月</span>
+          </div>
+          <div class="rank-body" id="rankBody"></div>
+        </div>
+
+        <!-- 明细表 -->
+        <div class="table-card">
+          <div class="table-header">
+            <h3>📋 最近收支明细</h3>
+            <button class="btn-small" id="btnExport">⬇ 导出数据</button>
+          </div>
+          <table id="recentTable">
+            <thead>
+              <tr>
+                <th>日期</th><th>收支明细</th><th>当日合计</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ======== 收入记账 ======== -->
+      <section class="page" id="page-income">
+        <header class="page-header">
+          <h2>💰 收入记账</h2>
+          <button class="btn-primary" onclick="openIncomeModal()">＋ 新增收入</button>
+        </header>
+
+        <div class="table-toolbar">
+          <input type="text" class="search-input" id="incomeSearch" placeholder="🔍 搜索账户 / 收入分类 / 备注…">
+          <span class="search-count" id="incomeSearchCount"></span>
+        </div>
+        <div class="table-card">
+          <table id="incomeTable">
+            <thead>
+              <tr>
+                <th>日期</th><th>账户明细</th><th>项目名称</th><th>收款方式</th><th>当日合计</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ======== 进货台账 ======== -->
+      <section class="page" id="page-purchase">
+        <header class="page-header">
+          <h2>📦 进货台账</h2>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn-secondary" onclick="openSupplierModal()">🏭 供应商管理</button>
+            <button class="btn-primary" onclick="openPurchaseModal()">＋ 新增进货</button>
+          </div>
+        </header>
+
+        <div class="table-toolbar">
+          <input type="text" class="search-input" id="purchaseSearch" placeholder="🔍 搜索供货商 / 备注…">
+          <span class="search-count" id="purchaseSearchCount"></span>
+        </div>
+        <div class="table-card">
+          <table id="purchaseTable">
+            <thead>
+              <tr>
+                <th>电子单日期</th><th>供货商</th><th>进货款</th><th>付款方式</th><th>已付</th><th>未付</th><th>备注</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ======== 支出记账 ======== -->
+      <section class="page" id="page-expense">
+        <header class="page-header">
+          <h2>💸 支出记账</h2>
+          <button class="btn-primary" onclick="openExpenseModal()">＋ 新增支出</button>
+        </header>
+
+        <div class="table-toolbar">
+          <input type="text" class="search-input" id="expenseSearch" placeholder="🔍 搜索分类 / 账户 / 备注…">
+          <span class="search-count" id="expenseSearchCount"></span>
+        </div>
+        <div class="table-card">
+          <table id="expenseTable">
+            <thead>
+              <tr>
+                <th>日期</th><th>项目明细</th><th>账户</th><th>当日合计</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ======== 月度统计 ======== -->
+      <section class="page" id="page-monthly">
+        <header class="page-header">
+          <h2>📅 月度统计</h2>
+          <p class="subtitle">逐月收支自动汇总 · 同比环比对比</p>
+        </header>
+        <!-- 同比环比 KPI（功能补充 P5） -->
+        <div class="kpi-grid" id="monthlyCompareKpis" style="margin-bottom:16px">
+          <div class="kpi-card">
+            <div class="kpi-icon">📈</div>
+            <div class="kpi-info">
+              <span class="kpi-label">收入环比（本月 vs 上月）</span>
+              <span class="kpi-value" id="cmpIncomeMoM">—</span>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">📉</div>
+            <div class="kpi-info">
+              <span class="kpi-label">支出环比（本月 vs 上月）</span>
+              <span class="kpi-value" id="cmpExpenseMoM">—</span>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">🔁</div>
+            <div class="kpi-info">
+              <span class="kpi-label">收入同比（本月 vs 去年同月）</span>
+              <span class="kpi-value" id="cmpIncomeYoY">—</span>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">🔁</div>
+            <div class="kpi-info">
+              <span class="kpi-label">支出同比（本月 vs 去年同月）</span>
+              <span class="kpi-value" id="cmpExpenseYoY">—</span>
+            </div>
+          </div>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-card wide">
+            <div class="chart-title">📊 月度收支对比</div>
+            <div id="chartMonthly" class="chart"></div>
+          </div>
+          <div class="chart-card wide">
+            <div class="chart-title">🔁 本月 vs 上月 vs 去年同月（同比环比）</div>
+            <div id="chartCompare" class="chart"></div>
+          </div>
+        </div>
+        <div class="table-card">
+          <table id="monthlyTable">
+            <thead>
+              <tr><th>月份</th><th>收入</th><th>支出</th><th>结余</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ======== 明细查询 ======== -->
+      <section class="page" id="page-query">
+        <header class="page-header">
+          <h2>🔍 明细查询</h2>
+          <p class="subtitle">按供应商（开店）/ 事项备注（家庭）/ 支出分类 / 收入分类 / 账户，配合时间范围，一键查看汇总金额与明细</p>
+        </header>
+
+        <div class="query-panel">
+          <div class="seg-control query-seg">
+            <button class="seg-btn active" data-type="supplier" onclick="setQueryType('supplier', this)">🏪 供应商</button>
+            <button class="seg-btn" data-type="remark" onclick="setQueryType('remark', this)">🏷️ 事项备注</button>
+            <button class="seg-btn" data-type="expense_category" onclick="setQueryType('expense_category', this)">💸 支出分类</button>
+            <button class="seg-btn" data-type="income_category" onclick="setQueryType('income_category', this)">💰 收入分类</button>
+            <button class="seg-btn" data-type="account" onclick="setQueryType('account', this)">🏦 账户</button>
+          </div>
+          <div class="query-row">
+            <select id="queryItem" class="query-select"></select>
+            <input type="text" id="queryItemText" class="query-select" placeholder="输入事项关键词，如：房租 / 学费 / 某某店…" style="display:none">
+            <input type="date" id="queryStart" class="query-date">
+            <span class="query-to">至</span>
+            <input type="date" id="queryEnd" class="query-date">
+            <button class="btn-primary" onclick="runQuery()">🔍 查询</button>
+          </div>
+          <!-- 全局搜索（功能补充 P5）：跨收入/支出/进货 + 金额区间 -->
+          <div class="query-row global-search-row">
+            <input type="text" id="queryKeyword" class="query-select" placeholder="🔍 全局搜索：备注/分类/账户/项目/供应商…">
+            <input type="number" id="queryAmtMin" class="query-date" placeholder="金额≥" min="0" step="0.01">
+            <span class="query-to">至</span>
+            <input type="number" id="queryAmtMax" class="query-date" placeholder="金额≤" min="0" step="0.01">
+            <button class="btn-primary" onclick="runGlobalSearch()">🔎 全局搜索</button>
+            <button class="btn-secondary" onclick="clearGlobalSearch()" title="清空搜索条件">✕ 清空</button>
+          </div>
+        </div>
+
+        <!-- 汇总 KPI -->
+        <div class="kpi-grid" id="queryKpis"></div>
+
+        <!-- 明细表 -->
+        <div class="table-card">
+          <div class="table-header">
+            <h3 id="queryTableTitle">明细</h3>
+            <span class="search-count" id="queryCount"></span>
+          </div>
+          <table id="queryTable">
+            <thead id="queryTableHead"></thead>
+            <tbody id="queryTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ======== 扫描识别 ======== -->
+      <section class="page" id="page-scan">
+        <header class="page-header">
+          <h2>📷 扫描识别</h2>
+          <p class="subtitle">本地 AI 识别：上传截图 / 银行流水 / 发票照片（支持中文及墨西哥银行 SPEI 西语凭证），自动识别并生成待确认账务</p>
+        </header>
+
+        <!-- AI 批量识别面板 -->
+        <div class="ai-panel">
+          <div class="chart-title">🤖 本地 AI 批量识别 <span class="badge-local">🔒 本地处理 · 断网可用</span></div>
+          <div class="ai-upload-row">
+            <label class="ai-dropzone" id="aiDropzone">
+              <input type="file" id="aiFiles" accept="image/*" multiple hidden>
+              <span class="ai-drop-icon">📤</span>
+              <span><strong>点击选择或拖入单据</strong>（可多选，支持银行转账/流水/Factura/小票）</span>
+            </label>
+            <div class="ai-upload-stats">
+              <div class="ai-stat"><span id="aiStatPending">0</span>待处理</div>
+              <div class="ai-stat"><span id="aiStatProcessing">0</span>处理中</div>
+              <div class="ai-stat"><span id="aiStatDone">0</span>完成</div>
+              <div class="ai-stat"><span id="aiStatReview">0</span>待确认</div>
+            </div>
+          </div>
+          <div class="ai-ocr-row">
+            <label class="ai-ocr-label">🌐 识别语言</label>
+            <select id="aiOcrLang" class="ai-ocr-select">
+              <option value="auto">🤖 自动（西语+英语+中文）</option>
+              <option value="spa">🇲🇽 西班牙语 Español</option>
+              <option value="eng">🇺🇸 英语 English</option>
+              <option value="chi_sim">🇨🇳 中文</option>
+              <option value="spa+eng">🇲🇽+🇺🇸 西语+英语</option>
+            </select>
+            <span class="ai-ocr-hint">根据单据语言选择可更快更准</span>
+          </div>
+          <div class="ai-progress" id="aiProgressWrap" hidden>
+            <div class="ai-progress-bar"><div id="aiProgressFill"></div></div>
+            <span id="aiProgressText"></span>
+          </div>
+          <div class="ai-queue" id="aiQueue"></div>
+        </div>
+
+        <!-- 单据预览 / 识别工作台 -->
+        <div class="ai-panel ai-collapsible" id="aiDocPanel">
+          <div class="chart-title ai-panel-head" onclick="aiTogglePanel('aiDocPanel')">
+            🖼️ 单据预览 <span class="badge-local">点击卡片可预览图片 · 提取文字 · 手动填字段学习模板</span>
+            <span class="ai-caret" data-caret="aiDocPanel">▲</span>
+          </div>
+          <div class="ai-panel-body" data-body="aiDocPanel">
+            <div class="ai-docgrid" id="aiDocGrid"></div>
+          </div>
+        </div>
+
+        <!-- 待确认账务 -->
+        <div class="ai-panel ai-collapsible" id="aiReviewPanel">
+          <div class="chart-title ai-panel-head" onclick="aiTogglePanel('aiReviewPanel')">
+            ✅ 待确认账务 <span class="ai-review-count" id="aiReviewCount">0</span>
+            <span class="ai-caret" data-caret="aiReviewPanel">▲</span>
+          </div>
+          <div class="ai-panel-body" data-body="aiReviewPanel">
+            <div class="ai-review-list" id="aiReviewList">
+              <div class="ai-empty">暂无待确认账务。上传单据后，AI 识别的结果会出现在这里，核对后一键入账。</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 模板学习库 -->
+        <div class="ai-panel ai-collapsible" id="aiTplPanel">
+          <div class="chart-title ai-panel-head" onclick="aiTogglePanel('aiTplPanel')">
+            🧠 已学习单据模板 <span class="badge-local">见过的单据会自动记住，下次识别更快更准</span>
+            <span class="ai-caret" data-caret="aiTplPanel">▲</span>
+          </div>
+          <div class="ai-panel-body" data-body="aiTplPanel">
+            <div class="ai-tpl-list" id="aiTplList"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======== 语音提醒 ======== -->
+      <section class="page" id="page-reminder">
+        <header class="page-header">
+          <h2>⏰ 语音提醒</h2>
+          <p class="subtitle">用语音或手动记录重要事项，到点提醒 · 支持提前提醒</p>
+        </header>
+
+        <div class="reminder-toolbar">
+          <button class="btn-primary voice-reminder-btn" onclick="openReminderModal('voice')">🎙️ 语音添加提醒</button>
+          <span class="reminder-stats" id="reminderStats"></span>
+        </div>
+
+        <div class="reminder-list" id="reminderList">
+          <div class="ai-empty">还没有提醒。点击「语音添加提醒」，设置事项、时间、地点，到点自动提醒。</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ======== 收入 Modal ======== -->
+  <div class="modal-overlay" id="incomeModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>新增收入</h3>
+        <button class="modal-close" onclick="closeModal('incomeModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <!-- 快捷模板（功能补充 P5） -->
+          <label class="full" style="flex-direction:row;align-items:center;gap:8px">
+            <span style="font-size:12px;color:var(--text-3)">📋 快捷模板</span>
+            <select id="iTemplate" class="query-select" style="flex:1" onchange="applyQuickTemplate('income', this.value)"><option value="">-- 选择常用模板 --</option></select>
+            <button class="btn-small" onclick="saveQuickTemplate('income')" title="把当前填写的收入保存为模板">💾 存为模板</button>
+          </label>
+          <label>日期 <input type="date" id="iDate" required></label>
+          <label>收入分类 <select id="iProject"></select></label>
+          <label>收款方式 <select id="iPayMethod"></select></label>
+          <label>账户 <select id="iAccount"></select></label>
+          <label>金额
+            <div class="amount-row">
+              <input type="number" id="iAmount" min="0" step="0.01" placeholder="0.00" required>
+              <select id="iCurrency" class="currency-select" title="币种（自动换算为基准币种入账）"></select>
+            </div>
+          </label>
+          <label>优惠 <input type="number" id="iDiscount" min="0" step="0.01" placeholder="0.00"></label>
+          <label>刷卡未入账户 <select id="iCardPending"></select></label>
+          <label>经手人 <input type="text" id="iHandler" placeholder="经手人姓名"></label>
+          <label class="full">备注 <input type="text" id="iRemark" placeholder="备注信息"></label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('incomeModal')">取消</button>
+        <button class="btn-primary" id="btnSaveIncome">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== 进货 Modal ======== -->
+  <div class="modal-overlay" id="purchaseModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>新增进货</h3>
+        <button class="modal-close" onclick="closeModal('purchaseModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <label>电子单日期 <input type="date" id="pDate"></label>
+          <label>供货商 <select id="pSupplier"><option value="">-- 选择或输入 --</option></select></label>
+          <label class="full">新供货商 <input type="text" id="pSupplierNew" placeholder="如不在列表中，直接输入新名称"></label>
+          <label>进货款
+            <div class="amount-row">
+              <input type="number" id="pTotal" min="0" step="0.01" placeholder="0.00">
+              <select id="pCurrency" class="currency-select" title="币种（自动换算为基准币种入账）"></select>
+            </div>
+          </label>
+          <label>付款方式 <select id="pPayMethod"></select></label>
+          <label>已付金额
+            <div class="amount-row">
+              <input type="number" id="pPaid" min="0" step="0.01" placeholder="0.00">
+              <span class="currency-static" id="pCurrencyLabel">MXN</span>
+            </div>
+          </label>
+          <label>货款状态 <select id="pStatus"></select></label>
+          <label class="full">备注 <input type="text" id="pRemark" placeholder="备注信息"></label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('purchaseModal')">取消</button>
+        <button class="btn-primary" id="btnSavePurchase">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== 支出 Modal ======== -->
+  <div class="modal-overlay" id="expenseModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>新增支出</h3>
+        <button class="modal-close" onclick="closeModal('expenseModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <!-- 快捷模板（功能补充 P5） -->
+          <label class="full" style="flex-direction:row;align-items:center;gap:8px">
+            <span style="font-size:12px;color:var(--text-3)">📋 快捷模板</span>
+            <select id="eTemplate" class="query-select" style="flex:1" onchange="applyQuickTemplate('expense', this.value)"><option value="">-- 选择常用模板 --</option></select>
+            <button class="btn-small" onclick="saveQuickTemplate('expense')" title="把当前填写的支出保存为模板">💾 存为模板</button>
+          </label>
+          <label>日期 <input type="date" id="eDate" required></label>
+          <label>支出项目 <select id="eCategory"></select></label>
+          <label>金额
+            <div class="amount-row">
+              <input type="number" id="eAmount" min="0" step="0.01" placeholder="0.00" required>
+              <select id="eCurrency" class="currency-select" title="币种（自动换算为基准币种入账）"></select>
+            </div>
+          </label>
+          <label>账户 <select id="eAccount"></select></label>
+          <label>经手人 <input type="text" id="eHandler" placeholder="经手人姓名"></label>
+          <label class="full">备注 <input type="text" id="eRemark" placeholder="备注信息"></label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('expenseModal')">取消</button>
+        <button class="btn-primary" id="btnSaveExpense">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 供应商管理 -->
+  <div class="modal-overlay" id="supplierModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>🏭 供应商管理</h3>
+        <button class="modal-close" onclick="closeModal('supplierModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid" style="grid-template-columns:1fr auto;">
+          <input type="text" id="supplierNewName" placeholder="输入新供应商名称">
+          <button class="btn-primary" onclick="addSupplier()">＋ 新增</button>
+        </div>
+        <div style="max-height:380px;overflow-y:auto;margin-top:14px;">
+          <table id="supplierTable">
+            <thead>
+              <tr>
+                <th>供应商名称</th><th>进货笔数</th><th>进货总额</th><th>已付货款</th><th>未付 / 折扣</th><th>折扣率</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== 设置 ======== -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal settings-modal">
+      <div class="modal-header">
+        <h3>⚙️ 设置</h3>
+        <button class="modal-close" onclick="closeModal('settingsModal')">×</button>
+      </div>
+      <div class="modal-body">
+
+        <!-- 使用场景 -->
+        <div class="settings-section">
+          <div class="settings-title">🏠 使用场景</div>
+          <div class="preset-row">
+            <button class="preset-btn" data-scene="business" onclick="applyScenePreset('business', this)">🏪 开店经营</button>
+            <button class="preset-btn" data-scene="family" onclick="applyScenePreset('family', this)">🏠 家庭记账</button>
+          </div>
+          <div class="preset-hint" id="sceneHint"></div>
+        </div>
+
+        <!-- 功能模块 -->
+        <div class="settings-section">
+          <div class="settings-title">🧩 显示功能 <span class="settings-sub">关闭后导航栏自动隐藏，记账数据不受影响</span></div>
+          <div class="module-list">
+            <label class="switch-row"><span>📊 数据总览（首页，始终显示）</span><input type="checkbox" checked disabled></label>
+            <label class="switch-row"><span>💰 收入记账</span><input type="checkbox" id="mod-income"></label>
+            <label class="switch-row"><span>💸 支出记账</span><input type="checkbox" id="mod-expense"></label>
+            <label class="switch-row"><span>📅 月度统计</span><input type="checkbox" id="mod-monthly"></label>
+            <label class="switch-row"><span>📷 扫描识别</span><input type="checkbox" id="mod-scan"></label>
+<label class="switch-row"><span>⏰ 语音提醒</span><input type="checkbox" id="mod-reminder"></label>
+            <label class="switch-row"><span>📦 进货台账 <span class="settings-tag">开店专用</span></span><input type="checkbox" id="mod-purchase"></label>
+          </div>
+        </div>
+
+        <!-- 月度预算 -->
+        <div class="settings-section">
+          <div class="settings-title">🎯 月度支出预算 <span class="settings-sub">在数据总览显示预算使用进度</span></div>
+          <div class="budget-input-row">
+            <input type="number" id="setBudget" min="0" step="100" placeholder="0 = 不设置">
+            <span class="unit">元 / 月</span>
+          </div>
+          <div class="settings-title cat-budget-title">🗂️ 分类预算 <span class="settings-sub">为每个支出分类单独设限额</span></div>
+          <div class="cat-budget-list" id="catBudgetList"></div>
+        </div>
+
+        <!-- 周期记账 -->
+        <div class="settings-section">
+          <div class="settings-title">🔄 周期记账 <span class="settings-sub">固定收支（工资/房贷/水电）自动按周期入账</span></div>
+          <div class="recur-list" id="recurList"></div>
+          <div class="recur-add-row">
+            <select id="recType"><option value="expense">💸 支出</option><option value="income">💰 收入</option></select>
+            <select id="recCategory"></select>
+            <input type="number" id="recAmount" placeholder="金额" min="0" step="0.01">
+            <select id="recAccount"></select>
+            <select id="recCycle">
+              <option value="monthly">每月</option>
+              <option value="weekly">每周</option>
+              <option value="daily">每天</option>
+            </select>
+            <input type="number" id="recDay" placeholder="日" min="1" max="31" title="每月几号">
+            <input type="text" id="recRemark" placeholder="备注">
+            <button class="btn-primary" onclick="addRecurring()">＋ 添加</button>
+          </div>
+          <div class="recur-hint">💡 每周/每天规则：月份日留空。打开应用时自动检查是否已入账，不会重复记录。</div>
+        </div>
+
+        <!-- 选项管理 -->
+        <div class="settings-section">
+          <div class="settings-title">📋 常用选项管理 <span class="settings-sub">用于记账下拉选择，随时增删</span></div>
+          <div class="opt-tabs">
+            <button class="opt-tab active" data-key="expense_categories" onclick="switchOptTab(this)">支出分类</button>
+            <button class="opt-tab" data-key="departments" onclick="switchOptTab(this)">收入分类</button>
+            <button class="opt-tab" data-key="accounts" onclick="switchOptTab(this)">账户</button>
+            <button class="opt-tab" data-key="pay_methods" onclick="switchOptTab(this)">收款方式</button>
+          </div>
+          <div class="opt-manage">
+            <div class="opt-add-row">
+              <input type="text" id="optNewValue" placeholder="输入新选项名称">
+              <button class="btn-primary" onclick="addOptionItem()">＋ 添加</button>
+            </div>
+            <div class="opt-tags" id="optTags"></div>
+          </div>
+        </div>
+
+        <!-- 资产账户（功能补充 P4） -->
+        <div class="settings-section">
+          <div class="settings-title">🏦 资产账户 <span class="settings-sub">为账户设置期初余额与类型（资产/负债），数据总览显示总资产/负债/净资产</span></div>
+          <div class="account-meta-list" id="accountMetaList"></div>
+        </div>
+
+        <!-- 多币种与汇率（功能补充 P4） -->
+        <div class="settings-section">
+          <div class="settings-title">💱 多币种与汇率 <span class="settings-sub">记账时选择币种，按汇率自动换算为基准币种（MXN）入账</span></div>
+          <div class="recur-add-row">
+            <select id="rateCurrency" class="currency-select"></select>
+            <input type="number" id="rateValue" min="0.0001" step="0.0001" placeholder="1 MXN = ? 该币种" style="flex:1">
+            <button class="btn-primary" onclick="saveExchangeRate()">💾 保存汇率</button>
+          </div>
+          <div class="recur-hint" id="rateHint">例：USD 汇率填 0.055 → 1 MXN = 0.055 USD，100 USD 入账自动换算为 ≈1818 MXN。</div>
+          <div class="rate-list" id="rateList"></div>
+        </div>
+
+        <!-- 安全设置 -->
+        <div class="settings-section">
+          <div class="settings-title">🔒 登录安全 <span class="settings-sub">开店经营 / 家庭明细 共用一个登录密码</span></div>
+          <div class="pwd-row">
+            <input type="password" id="pwdOld" placeholder="原密码">
+            <input type="password" id="pwdNew" placeholder="新密码（至少 4 位）">
+            <button class="btn-primary" onclick="changeLoginPassword()">✏️ 修改密码</button>
+          </div>
+          <div class="recur-hint">💡 默认密码为 <b>12345</b>。修改后需在下次登录时使用新密码。</div>
+        </div>
+
+        <!-- 数据备份 -->
+        <div class="settings-section">
+          <div class="settings-title">💾 数据备份 <span class="settings-sub">生成账本一致性快照（含单据图片），下载到本地保存</span></div>
+          <div class="budget-input-row">
+            <button class="btn-primary" onclick="downloadBackup()">⬇️ 立即备份并下载</button>
+          </div>
+          <div class="recur-hint" id="backupHint">建议定期备份，防止误删或磁盘故障导致数据丢失。</div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('settingsModal')">取消</button>
+        <button class="btn-primary" id="btnSaveSettings">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== 快速记账 ======== -->
+  <div class="modal-overlay" id="quickModal">
+    <div class="modal quick-modal">
+      <div class="modal-header">
+        <h3>⚡ 快速记账</h3>
+        <button class="modal-close" onclick="closeModal('quickModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="seg-control">
+          <button class="seg-btn active" data-type="expense" onclick="setQuickType('expense', this)">💸 支出</button>
+          <button class="seg-btn" data-type="income" onclick="setQuickType('income', this)">💰 收入</button>
+        </div>
+
+        <div class="form-grid">
+          <label>日期 <input type="date" id="qDate" required></label>
+          <label class="full">金额 <input type="number" id="qAmount" min="0" step="0.01" placeholder="0.00" required></label>
+          <label id="qCatLabel">支出分类</label>
+          <label class="full">
+            <div class="quick-cat-row">
+              <select id="qCategory" class="quick-cat-select" onchange="onQuickCatChange(this)"></select>
+              <button type="button" class="quick-cat-add" onclick="openQuickAddCat()" title="添加新分类">＋</button>
+            </div>
+          </label>
+          <div class="quick-cat-add-box full" id="quickAddCatBox" hidden>
+            <input type="text" id="quickAddCatInput" placeholder="输入新分类名称" maxlength="12">
+            <button type="button" class="btn-primary btn-sm" onclick="confirmQuickAddCat()">添加</button>
+            <button type="button" class="btn-secondary btn-sm" onclick="closeQuickAddCat()">取消</button>
+          </div>
+          <label>账户 <select id="qAccount"></select></label>
+          <label class="full">备注 <input type="text" id="qRemark" placeholder="备注信息"></label>
+        </div>
+      </div>
+
+      <!-- 语音记账：卡片下方居中，点击持续说话自动识别 -->
+      <div class="voice-dock">
+        <!-- 语音识别实时预览（始终可见） -->
+        <div class="voice-preview" id="voicePreview"></div>
+        <button class="voice-lang" id="btnVoiceLang" onclick="switchVoiceLang()" title="切换识别语言">中文</button>
+        <button class="voice-btn" id="btnVoice" onclick="toggleVoice()" title="点击开始/结束说话记账">
+          <span class="voice-btn-icon">🎙️</span>
+          <span class="voice-btn-text" id="btnVoiceText">点击说话</span>
+        </button>
+        <span class="voice-tip" id="voiceTip">🎙️ 点击开始，持续说话自动识别 金额 · 日期 · 账户 · 分类</span>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('quickModal')">取消</button>
+        <button class="btn-primary" id="btnSaveQuick">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 快速记账悬浮按钮已移除（PWA 手机端用底栏「记账＋」即可） -->
+
+  <!-- ======== 语音提醒 Modal ======== -->
+  <div class="modal-overlay" id="reminderModal">
+    <div class="modal reminder-modal">
+      <div class="modal-header">
+        <h3>⏰ 提醒事项</h3>
+        <button class="modal-close" onclick="closeModal('reminderModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <label class="full">📝 什么事情 <input type="text" id="rContent" placeholder="例如：去银行办转账 / 开供应商会议" required></label>
+          <label>📅 提醒时间 <input type="datetime-local" id="rAt" required></label>
+          <label>📍 地点 <input type="text" id="rLocation" placeholder="例如：市中心办公室"></label>
+          <label>🔔 提醒方式
+            <select id="rMethod">
+              <option value="manual">手动</option>
+              <option value="voice">语音自动</option>
+            </select>
+          </label>
+          <label>⏱ 提前提醒节点
+            <select id="rAdvance">
+              <option value="0">准时提醒</option>
+              <option value="5">提前 5 分钟</option>
+              <option value="10">提前 10 分钟</option>
+              <option value="15">提前 15 分钟</option>
+              <option value="30">提前 30 分钟</option>
+              <option value="60">提前 1 小时</option>
+              <option value="120">提前 2 小时</option>
+              <option value="180">提前 3 小时</option>
+              <option value="300">提前 5 小时</option>
+              <option value="480">提前 8 小时</option>
+              <option value="600">提前 10 小时</option>
+              <option value="1440">提前 1 天</option>
+              <option value="2880">提前 2 天</option>
+              <option value="4320">提前 3 天</option>
+              <option value="7200">提前 5 天</option>
+              <option value="10080">提前 7 天</option>
+            </select>
+          </label>
+          <label>🔁 重复提醒
+            <select id="rRepeat" onchange="syncRepeatDayUI()">
+              <option value="none">不重复（单次）</option>
+              <option value="daily">每天</option>
+              <option value="weekly">每周</option>
+              <option value="monthly">每月</option>
+            </select>
+          </label>
+          <label id="rRepeatDayRow" style="display:none">📆 重复日
+            <select id="rRepeatDay"></select>
+          </label>
+          <label>📎 关联账务
+            <select id="rLinkType">
+              <option value="">无关联</option>
+              <option value="purchase">付货款（进货）</option>
+              <option value="income">收货款（收入）</option>
+              <option value="expense">支出</option>
+            </select>
+          </label>
+          <label class="full">备注 <input type="text" id="rNote" placeholder="备注（可选）"></label>
+        </div>
+        <div class="reminder-voice-zone">
+          <button class="voice-lang" id="btnReminderVoiceLang" onclick="switchReminderVoiceLang()" title="切换识别语言">中文</button>
+          <button class="voice-btn" id="btnReminderVoice" onclick="toggleReminderVoice()" title="点击开始/结束说话添加提醒">
+            <span class="voice-btn-icon">🎙️</span>
+            <span class="voice-btn-text" id="btnReminderVoiceText">点击说话</span>
+          </button>
+          <span class="voice-tip" id="reminderVoiceTip">🎙️ 说：明天早上九点 在办公室 开会</span>
+          <div class="voice-preview" id="reminderVoicePreview"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal('reminderModal')">取消</button>
+        <button class="btn-primary" id="btnSaveReminder">保存提醒</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== 到期提醒通知 ======== -->
+  <div class="modal-overlay" id="reminderNotifyModal">
+    <div class="modal remind-notify-modal">
+      <div class="modal-header">
+        <h3>⏰ 提醒时间到</h3>
+        <button class="modal-close" onclick="closeModal('reminderNotifyModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="remind-notify-msg" id="remindNotifyMsg"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="snoozeReminder(10)" title="10 分钟后再次提醒">😴 10分钟后</button>
+        <button class="btn-secondary" onclick="snoozeReminder(60)" title="1 小时后再次提醒">⏳ 1小时后</button>
+        <button class="btn-secondary" onclick="snoozeReminder(1440)" title="明天同一时间再次提醒">🌅 明天</button>
+        <button class="btn-secondary" onclick="closeModal('reminderNotifyModal')">知道了</button>
+        <button class="btn-primary" onclick="markReminderDone()">✔ 已完成</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- 移动端底部导航 -->
+  <nav class="mobile-nav" id="mobileNav">
+    <button class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span><span class="m-label">总览</span></button>
+    <button class="nav-item" data-page="income"><span class="nav-icon">💰</span><span class="m-label">收入</span></button>
+    <button class="nav-item m-add-center" onclick="openQuickModal()"><span class="nav-icon">＋</span><span class="m-label">记账</span></button>
+    <button class="nav-item" data-page="expense"><span class="nav-icon">💸</span><span class="m-label">支出</span></button>
+    <button class="nav-item" data-page="monthly"><span class="nav-icon">📅</span><span class="m-label">月度</span></button>
+    <button class="nav-item m-voice-btn" onclick="openQuickModal('voice')"><span class="nav-icon">🎙️</span><span class="m-label">语音</span></button>
+    <button class="nav-item" data-page="reminder"><span class="nav-icon">⏰</span><span class="m-label">提醒</span></button>
+    <button class="nav-item" data-page="query"><span class="nav-icon">🔍</span><span class="m-label">查询</span></button>
+    <button class="nav-item" data-page="purchase"><span class="nav-icon">📦</span><span class="m-label">进货</span></button>
+    <button class="nav-item m-nav-settings" onclick="openSettingsModal()"><span class="nav-icon">⚙️</span><span class="m-label">设置</span></button>
+  </nav>
+
+  <!-- 凭证图片查看 -->
+  <div class="modal-overlay" id="voucherModal">
+    <div class="modal voucher-modal">
+      <div class="modal-header">
+        <h3>🖼️ 记账凭证</h3>
+        <button class="modal-close" onclick="closeModal('voucherModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <img id="voucherImg" alt="记账凭证" style="max-width:100%; border-radius:8px; display:block;">
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== 单据识别工作台 ======== -->
+  <div class="modal-overlay" id="aiWorkbenchModal">
+    <div class="modal workbench-modal">
+      <div class="modal-header">
+        <h3>🧰 单据识别工作台</h3>
+        <button class="modal-close" onclick="closeModal('aiWorkbenchModal')">×</button>
+      </div>
+      <div class="modal-body workbench-body">
+        <div class="workbench-left">
+          <div class="workbench-img-wrap">
+            <img id="wbImg" alt="单据预览" class="workbench-img" onclick="wbZoomToggle()" title="点击放大查看 / 再次点击还原">
+            <div class="wb-bbox-layer" id="wbBboxLayer"></div>
+            <button type="button" class="wb-zoom-btn" onclick="wbZoomToggle()" title="放大查看">⛶</button>
+          </div>
+          <div class="workbench-tools">
+            <button class="btn-primary" id="wbExtractBtn" onclick="wbExtract()">🔍 提取文字</button>
+            <button class="btn-secondary" onclick="wbRetry()">🔄 重新识别</button>
+            <span class="badge-local" id="wbLangInfo"></span>
+            <select id="wbAutofillMode" class="wb-autofill-mode" title="自动填充策略：自动按置信度 / 凡有候选必问 / 仅高置信自动填">
+              <option value="auto">🔄 自动填充</option>
+              <option value="always_ask">❓ 凡有候选必问</option>
+              <option value="strict">🔒 仅高置信自动填</option>
+            </select>
+          </div>
+        </div>
+        <div class="workbench-right">
+          <div class="wb-section-title">📄 识别文字
+            <button type="button" class="wb-copy-all" id="wbCopyAllBtn" onclick="wbCopyOcr()" title="复制全部识别文字">📋 复制全部</button>
+          </div>
+          <div class="workbench-ocr" id="wbOcr">提取文字后将在此显示单据上的文字内容…</div>
+          <div class="wb-section-title" style="margin-top:12px">📋 记账字段（自动填入，可修改）</div>
+          <div class="form-grid compact">
+            <label data-cand-field="date">日期 <input type="date" id="wbDate"></label>
+            <label data-cand-field="amount">金额 <input type="number" id="wbAmount" step="0.01" placeholder="0.00"></label>
+            <label data-cand-field="merchant_name">对方/商户名称 <input type="text" id="wbMerchant" placeholder="WALMART / OXXO / BBVA..."></label>
+            <label>对方公司/单位 <input type="text" id="wbCompany" placeholder="公司全称"></label>
+            <label data-cand-field="payer_bank">付款方银行 <input type="text" id="wbBankPayer" placeholder="如 BANORTE"></label>
+            <label data-cand-field="receiver_bank">收款方银行 <input type="text" id="wbBankReceiver" placeholder="如 BBVA"></label>
+            <label data-cand-field="account_tail">账户尾号 <input type="text" id="wbTail" placeholder="*6945"></label>
+            <label data-cand-field="rfc">税号/RFC <input type="text" id="wbTax" placeholder="RFC / NIF"></label>
+            <label>参考号/Folio <input type="text" id="wbReference" placeholder="Folio / 参考号"></label>
+            <label>Clave rastreo <input type="text" id="wbTracking" placeholder="追踪号"></label>
+            <label>收支类型
+              <select id="wbType">
+                <option value="expense">💸 支出</option>
+                <option value="income">💰 收入</option>
+              </select>
+            </label>
+            <label data-cand-field="expense_category">支出分类 <select id="wbCategory"></select></label>
+            <label class="full">备注 <input type="text" id="wbRemark" placeholder="备注"></label>
+          </div>
+          <div class="wb-hint">💡 选中识别文字中的片段，右键/复制后粘贴到对应字段；或直接手工填写。点击「保存为模板」系统会记住此版式，下次同类单据自动套用。</div>
+        </div>
+      </div>
+      <div class="modal-footer workbench-footer">
+        <button class="btn-secondary" onclick="closeModal('aiWorkbenchModal')">取消</button>
+        <button class="btn-primary" id="wbSaveTemplateBtn" onclick="wbSaveTemplate()">🧠 保存为模板并生成待确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== OCR 片段右键菜单（§二十六 手动选取填入字段） ======== -->
+  <div class="wb-ctx-menu" id="wbCtxMenu" style="display:none">
+    <div class="wb-ctx-title">填入选中片段 →</div>
+    <button type="button" data-field="wbDate">📅 日期</button>
+    <button type="button" data-field="wbAmount">💰 金额</button>
+    <button type="button" data-field="wbMerchant">🏪 对方/商户名称</button>
+    <button type="button" data-field="wbCompany">🏢 对方公司/单位</button>
+    <button type="button" data-field="wbBankPayer">🏦 付款方银行</button>
+    <button type="button" data-field="wbBankReceiver">🏦 收款方银行</button>
+    <button type="button" data-field="wbTail">🔢 账户尾号</button>
+    <button type="button" data-field="wbTax">📄 税号/RFC</button>
+    <button type="button" data-field="wbReference">🔖 参考号/Folio</button>
+    <button type="button" data-field="wbTracking">🔍 Clave rastreo</button>
+    <button type="button" data-field="wbRemark">📝 备注</button>
+  </div>
+
+  <!-- ======== 单据放大查看（lightbox） ======== -->
+  <div class="wb-lightbox" id="wbLightbox" onclick="wbZoomClose()">
+    <button type="button" class="wb-lightbox-close" onclick="wbZoomClose()" title="关闭">✕</button>
+    <div class="wb-lightbox-toolbar">
+      <button type="button" onclick="wbZoomStep(-0.25)">➖ 缩小</button>
+      <span id="wbZoomPct">100%</span>
+      <button type="button" onclick="wbZoomStep(0.25)">➕ 放大</button>
+      <button type="button" onclick="wbZoomReset()">⟲ 还原</button>
+    </div>
+    <div class="wb-lightbox-stage" id="wbLightboxStage">
+      <img id="wbLightboxImg" alt="单据放大查看">
+    </div>
+  </div>
+
+  <script src="js/offline-db.js"></script>
+  <script src="js/offline-backend.js"></script>
+  <script src="js/boot.js"></script>
+</body>
+</html>
