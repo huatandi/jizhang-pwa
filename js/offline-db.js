@@ -7,8 +7,6 @@
  * 这样 server/ 里的业务 SQL 逻辑可以原样复用。
  *
  * 持久化：IndexedDB 存储数据库二进制（Uint8Array），每次写操作后 export() 保存。
- * 
- * 🔧 修复：增加初始化重试和超时保护
  */
 (function (global) {
   const DB_NAME = 'jizhang_offline';
@@ -27,7 +25,6 @@
       req.onerror = () => reject(req.error);
     });
   }
-
   async function idbSave(key, data) {
     try {
       const idb = await idbOpen();
@@ -39,7 +36,6 @@
       });
     } catch (e) { /* IndexedDB 不可用时静默 */ }
   }
-
   async function idbLoad(key) {
     try {
       const idb = await idbOpen();
@@ -155,31 +151,15 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
 
   /**
    * 打开（或创建）离线数据库
-   * 🔧 修复：增加超时保护和重试
    */
   async function openDB() {
     await initSql();
     if (db) return db;
 
-    // 尝试加载已保存的数据库
-    let saved = null;
-    try {
-      saved = await idbLoad(DB_KEY);
-    } catch (e) {
-      console.warn('[OfflineDB] 加载数据库失败，将创建新数据库:', e);
-    }
-
+    const saved = await idbLoad(DB_KEY);
     if (saved && saved.length) {
-      try {
-        db = new SQL.Database(new Uint8Array(saved));
-        console.log('[OfflineDB] 数据库已加载，大小:', saved.length);
-      } catch (e) {
-        console.warn('[OfflineDB] 解析数据库失败，将创建新数据库:', e);
-        db = null;
-      }
-    }
-
-    if (!db) {
+      db = new SQL.Database(new Uint8Array(saved));
+    } else {
       db = new SQL.Database();
       db.exec(SCHEMA_SQL);
       const stmt = db.prepare('INSERT OR IGNORE INTO options (key, value) VALUES (?, ?)');
@@ -188,9 +168,7 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
       }
       stmt.free();
       save();
-      console.log('[OfflineDB] 新数据库已创建');
     }
-
     return db;
   }
 
@@ -201,7 +179,7 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
     saveTimer = setTimeout(() => {
       try {
         const data = db.export();
-        idbSave(DB_KEY, data).catch(e => console.warn('[OfflineDB] 保存失败:', e));
+        idbSave(DB_KEY, data);
       } catch (e) { /* ignore */ }
     }, 200);
   }
@@ -283,28 +261,6 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
     return { engine: 'sql.js (WASM)', persistent: 'IndexedDB' };
   }
 
-  // 🔧 修复：导出时增加初始化状态检查
-  let isInitialized = false;
-
-  async function ensureInitialized() {
-    if (!isInitialized) {
-      await openDB();
-      isInitialized = true;
-    }
-    return db;
-  }
-
-  global.OfflineDB = { 
-    openDB, 
-    prepare, 
-    exec, 
-    mode, 
-    exportDB, 
-    importDB, 
-    save, 
-    info,
-    ensureInitialized,
-    get isReady() { return !!db; }
-  };
+  global.OfflineDB = { openDB, prepare, exec, mode, exportDB, importDB, save, info };
 
 })(typeof window !== 'undefined' ? window : globalThis);

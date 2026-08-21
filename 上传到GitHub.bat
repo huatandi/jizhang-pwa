@@ -6,7 +6,7 @@ echo   用法：1. 先改下面 REPO_URL 为你的仓库地址
 echo        2. 双击运行（需已安装 Git）
 echo ============================================
 echo.
-set REPO_URL=https://github.com/你的用户名/jizhang-pwa.git
+set REPO_URL=https://github.com/huatandi/jizhang-pwa.git
 set BRANCH=main
 
 cd /d "%~dp0"

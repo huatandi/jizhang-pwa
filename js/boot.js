@@ -3,74 +3,54 @@
  * Boot —— PWA 启动引导
  * 顺序：sql.js(已在 head 加载) → OfflineDB 打开 → OfflineBackend 安装 → 动态加载 app.js
  * 确保前端所有 fetch('/api/*') 都先被离线伪后端接管。
- * 
- * 🔧 修复：黑屏兜底 - 增加重试机制
+ * PWA 修复：加启动画面（防黑屏）+ 超时容错（加载超时则继续，避免卡死）。
  */
 (function () {
-  async function boot() {
-    let retryCount = 0;
-    const maxRetries = 3;
-
-    async function tryBoot() {
-      try {
-        // 1. 打开离线数据库（IndexedDB 持久化）
-        await window.OfflineDB.openDB();
-        // 2. 安装伪后端（劫持 fetch）
-        await window.OfflineBackend.installOfflineBackend();
-        // 3. 注册 Service Worker（离线缓存）
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[pwa] SW 注册失败:', e));
-        }
-        // 4. 加载主应用
-        const s = document.createElement('script');
-        s.src = 'js/app.js?v=55';
-        document.body.appendChild(s);
-        return true;
-      } catch (e) {
-        console.warn('[boot] 离线初始化失败 (尝试 ' + (retryCount + 1) + '/' + maxRetries + '):', e);
-        return false;
+  // 启动画面：防黑屏（用户能看到"正在加载"）
+  function showSplash() {
+    try {
+      let sp = document.getElementById('pwaSplash');
+      if (!sp) {
+        sp = document.createElement('div');
+        sp.id = 'pwaSplash';
+        sp.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0b1120;color:#e2e8f0;font-family:sans-serif;gap:16px';
+        sp.innerHTML = '<div style="font-size:42px">📋</div><div style="font-size:16px;font-weight:600">智账 · 正在加载…</div><div style="width:40px;height:40px;border:3px solid rgba(255,176,32,.2);border-top-color:#ffb020;border-radius:50%;animation:pwaSpin 1s linear infinite"></div><style>@keyframes pwaSpin{to{transform:rotate(360deg)}}</style>';
+        document.body.appendChild(sp);
       }
-    }
-
-    // 首次尝试
-    let success = await tryBoot();
-    
-    // 如果失败，等待 1 秒后重试
-    if (!success) {
-      await new Promise(r => setTimeout(r, 1000));
-      retryCount++;
-      success = await tryBoot();
-    }
-
-    // 如果仍然失败，等待 2 秒后最后一次重试
-    if (!success && retryCount < maxRetries) {
-      await new Promise(r => setTimeout(r, 2000));
-      retryCount++;
-      success = await tryBoot();
-    }
-
-    // 所有尝试都失败 → 回退到联网模式（直接加载 app.js）
-    if (!success) {
-      console.warn('[boot] 所有离线初始化尝试失败，回退到联网模式');
-      const s = document.createElement('script');
-      s.src = 'js/app.js?v=55';
-      document.body.appendChild(s);
-      
-      // 显示提示（非阻塞）
-      try {
-        const toast = document.createElement('div');
-        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#f59e0b;color:#fff;padding:10px 20px;border-radius:10px;z-index:9999;font-size:14px;text-align:center;max-width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
-        toast.textContent = '⚠️ 离线模式初始化失败，已切换到在线模式（数据仍可正常使用）';
-        document.body.appendChild(toast);
-        setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.5s'; setTimeout(() => toast.remove(), 600); }, 4000);
-      } catch (e) { /* ignore */ }
-    }
+    } catch (e) { /* ignore */ }
+  }
+  function hideSplash() {
+    try { const sp = document.getElementById('pwaSplash'); if (sp) sp.remove(); } catch (e) { /* ignore */ }
   }
 
-  // 🔧 黑屏兜底：确保在 DOM 加载完成后执行
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
-  } else {
-    boot();
+  async function boot() {
+    showSplash();
+    let offlineReady = false;
+    try {
+      // 1. 打开离线数据库（IndexedDB 持久化），带超时（10 秒）
+      await Promise.race([
+        window.OfflineDB.openDB(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('数据库加载超时')), 10000)),
+      ]);
+      // 2. 安装伪后端（劫持 fetch）
+      await window.OfflineBackend.installOfflineBackend();
+      offlineReady = true;
+      // 3. 注册 Service Worker（离线缓存）
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[pwa] SW 注册失败:', e));
+      }
+    } catch (e) {
+      console.error('[boot] 离线初始化失败（进入联网模式）:', e);
+      offlineReady = false;
+    }
+    // 4. 加载主应用
+    const s = document.createElement('script');
+    s.src = 'js/app.js?v=56';
+    s.onload = () => hideSplash();
+    s.onerror = () => { hideSplash(); console.error('[boot] app.js 加载失败'); };
+    document.body.appendChild(s);
+    // 兜底：10 秒后隐藏启动画面（防止加载卡住黑屏）
+    setTimeout(hideSplash, 10000);
   }
+  boot();
 })();
