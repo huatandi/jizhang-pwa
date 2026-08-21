@@ -1,6 +1,5 @@
-/* ================== 智账 - 完整修复版 app.js ================== */
-
-// ========== 全局变量 ==========
+/* ================== 全局状态 ================== */
+// 声明所有变量（只声明一次）
 let options = {
   accounts: [], departments: [], pay_methods: [], expense_categories: [],
   discount_accounts: [], status_options: [], suppliers: []
@@ -15,8 +14,10 @@ let currentSummary = null;
 let currentRange = { start: '', end: '' };
 let incomeSearchQ = '', expenseSearchQ = '', purchaseSearchQ = '';
 let loginMode = null;
-const AUTH_KEY = 'sm_auth_v1';
 let toastTimer;
+
+// ========== AUTH_KEY 必须提前定义 ==========
+const AUTH_KEY = 'sm_auth_v1';
 
 // ========== 登录函数 ==========
 function pickLoginEntry(mode) {
@@ -25,10 +26,10 @@ function pickLoginEntry(mode) {
   const title = document.getElementById('loginEntryTitle');
   const pass = document.getElementById('loginPassword');
   const err = document.getElementById('loginError');
-  if (title) title.textContent = mode === 'business' ? '🏪 开店经营' : '🏠 家庭记账';
+  if (title) title.textContent = mode === 'business' ? '🏪 开店经营' : '🏠 家庭明细';
   if (form) form.hidden = false;
   if (err) err.hidden = true;
-  if (pass) { pass.value = ''; setTimeout(() => pass.focus(), 100); }
+  if (pass) { pass.value = ''; setTimeout(() => pass.focus(), 120); }
 }
 
 function resetLogin() {
@@ -45,17 +46,17 @@ async function doLogin() {
   const pass = document.getElementById('loginPassword').value;
   const err = document.getElementById('loginError');
   if (!pass) { err.textContent = '请输入密码'; err.hidden = false; return; }
-  if (!loginMode) { err.textContent = '请先选择账本'; err.hidden = false; return; }
-  if (pass !== '12345') { err.textContent = '密码错误'; err.hidden = false; return; }
-  
-  localStorage.setItem(AUTH_KEY, JSON.stringify({ mode: loginMode, at: Date.now(), token: 'ok' }));
-  document.getElementById('loginScreen').style.display = 'none';
-  document.querySelector('.app').style.display = 'flex';
-  
-  setTimeout(() => {
-    const btn = document.querySelector('.nav-item[data-page="dashboard"]');
-    if (btn) btn.click();
-  }, 300);
+  if (!loginMode) { err.textContent = '请先选择要进入的账本'; err.hidden = false; return; }
+  try {
+    const r = await api('/login', 'POST', { mode: loginMode, password: pass });
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ mode: loginMode, at: Date.now(), token: r.token || '' }));
+    document.getElementById('loginScreen').style.display = 'none';
+    document.querySelector('.app').style.display = 'flex';
+    await initAfterLogin();
+  } catch (e) {
+    err.textContent = e.message || '登录失败';
+    err.hidden = false;
+  }
 }
 
 function quickSwitchMode() {
@@ -68,6 +69,16 @@ function quickSwitchMode() {
   }
 }
 
+function currentAuth() {
+  try { return JSON.parse(localStorage.getItem(AUTH_KEY) || 'null'); } catch (e) { return null; }
+}
+
+function isLoggedIn() {
+  const auth = currentAuth();
+  return !!(auth && auth.token && auth.mode && auth.mode === settings.scene);
+}
+
+// ========== Toast ==========
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
   if (!t) return console.log('[Toast]', msg);
@@ -76,15 +87,6 @@ function showToast(msg, type = 'success') {
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
-}
-
-function currentAuth() {
-  try { return JSON.parse(localStorage.getItem(AUTH_KEY) || 'null'); } catch(e) { return null; }
-}
-
-function isLoggedIn() {
-  const auth = currentAuth();
-  return !!(auth && auth.token);
 }
 
 // ========== 导航 ==========
@@ -98,13 +100,45 @@ document.addEventListener('DOMContentLoaded', function() {
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       const target = document.getElementById('page-' + page);
       if (target) target.classList.add('active');
-      if (page === 'dashboard' && typeof renderDashboard === 'function') renderDashboard();
-      if (page === 'monthly' && typeof renderMonthly === 'function') renderMonthly();
-      if (page === 'reminder' && typeof renderReminders === 'function') renderReminders();
-      if (typeof resizeVisibleCharts === 'function') resizeVisibleCharts();
+      if (page === 'dashboard') renderDashboard();
+      if (page === 'monthly') renderMonthly();
+      if (page === 'reminder') renderReminders();
+      resizeVisibleCharts();
     });
   });
 });
+
+// ========== API ==========
+async function api(path, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const auth = currentAuth();
+  if (auth && auth.token) opts.headers['Authorization'] = 'Bearer ' + auth.token;
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch('/api' + path, opts);
+  if (res.status === 401 && !path.startsWith('/login')) {
+    try { localStorage.removeItem(AUTH_KEY); } catch (e) {}
+    showLoginScreen();
+    throw new Error('未登录或会话已过期');
+  }
+  if (!res.ok) {
+    let msg = '请求失败: ' + res.status;
+    try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (e) {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+async function loadOptions() {
+  try { options = await api('/options'); } catch (e) { showToast('加载配置失败', 'error'); }
+}
+
+async function loadSummary() {
+  const qs = new URLSearchParams();
+  if (currentRange.start) qs.set('start', currentRange.start);
+  if (currentRange.end) qs.set('end', currentRange.end);
+  currentSummary = await api('/summary?' + qs.toString());
+  return currentSummary;
+}
 
 // ========== ECharts ==========
 function initChart(id) {
@@ -147,17 +181,16 @@ function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function escJs(s) {
-  let out = '';
-  for (const ch of String(s == null ? '' : s)) {
-    out += '\\x' + ch.charCodeAt(0).toString(16).padStart(2, '0');
-  }
-  return out;
+function fmtMoney(v) {
+  const n = Number(v) || 0;
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function deJs(s) {
-  if (typeof s !== 'string' || !s.includes('\\x')) return s;
-  try { return s.replace(/\\x([0-9a-fA-F]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16))); } catch(e) { return s; }
+function fmtDate(d) { return d || ''; }
+
+function todayLocal() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 function fillSelect(id, arr, empty = false) {
@@ -175,18 +208,6 @@ function openModal(id) {
 function closeModal(id) {
   const el = document.getElementById(id);
   if (el) el.classList.remove('active');
-}
-
-function fmtMoney(v) {
-  const n = Number(v) || 0;
-  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fmtDate(d) { return d || ''; }
-
-function todayLocal() {
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 // ========== 分类图标 ==========
@@ -278,139 +299,52 @@ function catIconHtml(name, kind = 'expense') {
   return `<span class="cat-icon" style="background:${m.color}22;color:${m.color}">${m.icon}</span>`;
 }
 
-// ========== API ==========
-async function api(path, method = 'GET', body = null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  const auth = currentAuth();
-  if (auth && auth.token) opts.headers['Authorization'] = 'Bearer ' + auth.token;
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch('/api' + path, opts);
-  if (res.status === 401 && !path.startsWith('/login')) {
-    try { localStorage.removeItem(AUTH_KEY); } catch(e) {}
-    if (!document.getElementById('loginScreen') || document.getElementById('loginScreen').style.display !== 'flex') {
-      document.getElementById('loginScreen').style.display = 'flex';
-      document.querySelector('.app').style.display = 'none';
-    }
-    throw new Error('未登录或会话已过期');
-  }
-  if (!res.ok) {
-    let msg = '请求失败: ' + res.status;
-    try { const j = await res.json(); if (j && j.error) msg = j.error; } catch(e) {}
-    throw new Error(msg);
-  }
-  return res.json();
-}
-
-async function loadOptions() {
-  try { options = await api('/options'); } catch(e) { showToast('加载配置失败', 'error'); }
-}
-
-async function loadSummary() {
-  const qs = new URLSearchParams();
-  if (currentRange.start) qs.set('start', currentRange.start);
-  if (currentRange.end) qs.set('end', currentRange.end);
-  currentSummary = await api('/summary?' + qs.toString());
-  return currentSummary;
-}
-
 // ========== Dashboard ==========
 async function renderDashboard() {
   try {
     const s = await loadSummary();
-    const kpiIncome = document.getElementById('kpiIncome');
-    const kpiExpense = document.getElementById('kpiExpense');
-    const kpiBalance = document.getElementById('kpiBalance');
-    const kpiUnpaid = document.getElementById('kpiUnpaid');
-    if (kpiIncome) kpiIncome.textContent = '¥' + fmtMoney(s.totalIncome);
-    if (kpiExpense) kpiExpense.textContent = '¥' + fmtMoney(s.totalExpense);
-    if (kpiBalance) kpiBalance.textContent = '¥' + fmtMoney(s.balance);
-    if (kpiUnpaid) kpiUnpaid.textContent = '¥' + fmtMoney(s.unpaid);
+    
+    const kpis = ['kpiIncome', 'kpiExpense', 'kpiBalance', 'kpiUnpaid'];
+    const vals = [s.totalIncome, s.totalExpense, s.balance, s.unpaid];
+    kpis.forEach((id, i) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '¥' + fmtMoney(vals[i]);
+    });
     
     const balBadge = document.getElementById('kpiBalanceBadge');
     if (balBadge) {
       balBadge.textContent = s.balance >= 0 ? '盈余' : '亏损';
       balBadge.className = 'kpi-badge ' + (s.balance >= 0 ? 'good' : 'warn');
     }
-
-    const rangeTxt = (currentRange.start || '全部') + ' ~ ' + (currentRange.end || '全部');
-    const dashRangeText = document.getElementById('dashRangeText');
-    if (dashRangeText) dashRangeText.textContent = '数据范围: ' + rangeTxt;
-
-    // 月度趋势图
+    
+    const rangeText = document.getElementById('dashRangeText');
+    if (rangeText) rangeText.textContent = '数据范围: ' + (currentRange.start || '全部') + ' ~ ' + (currentRange.end || '全部');
+    
+    // 简化的图表渲染（防止黑屏）
     const months = s.monthly.map(m => m.month);
-    const trend = initChart('chartTrend');
-    if (trend) {
-      trend.setOption({
-        ...chartBase(),
-        legend: { top: 0, data: ['收入', '支出'] },
-        xAxis: { type: 'category', data: months, axisLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#ffffff' } },
-        yAxis: { type: 'value', axisLabel: { formatter: (v) => (v >= 10000 ? (v/10000)+'万' : v), color: '#ffffff' }, splitLine: { lineStyle: { color: 'rgba(100,116,139,0.2)' } } },
-        series: [
-          { name: '收入', type: 'bar', data: s.monthly.map(m => m.income), barMaxWidth: 26,
-            itemStyle: { borderRadius: [5,5,0,0], color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#ffb020' }, { offset: 1, color: '#f5a623' }] } } },
-          { name: '支出', type: 'bar', data: s.monthly.map(m => m.expense), barMaxWidth: 26,
-            itemStyle: { borderRadius: [5,5,0,0], color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#22c55e' }, { offset: 1, color: '#166534' }] } } }
-        ]
-      });
+    if (months.length) {
+      const trend = initChart('chartTrend');
+      if (trend) {
+        trend.setOption({
+          ...chartBase(),
+          legend: { top: 0, data: ['收入', '支出'] },
+          xAxis: { type: 'category', data: months, axisLabel: { color: '#ffffff' } },
+          yAxis: { type: 'value', axisLabel: { formatter: (v) => (v >= 10000 ? (v/10000)+'万' : v), color: '#ffffff' } },
+          series: [
+            { name: '收入', type: 'bar', data: s.monthly.map(m => m.income), barMaxWidth: 26, itemStyle: { borderRadius: [5,5,0,0], color: '#ffb020' } },
+            { name: '支出', type: 'bar', data: s.monthly.map(m => m.expense), barMaxWidth: 26, itemStyle: { borderRadius: [5,5,0,0], color: '#22c55e' } }
+          ]
+        });
+      }
     }
-
-    // 账户余额图
-    const accNames = Object.keys(s.accountBalances);
-    const accVals = accNames.map(k => s.accountBalances[k]);
-    const accChart = initChart('chartAccounts');
-    if (accChart && accNames.length) {
-      accChart.setOption({
-        ...chartBase(),
-        tooltip: { ...chartBase().tooltip, trigger: 'item', formatter: p => `${p.name}: ¥${fmtMoney(p.value)}` },
-        xAxis: { type: 'category', data: accNames, axisLabel: { color: '#ffffff', rotate: accNames.length > 6 ? 30 : 0 } },
-        yAxis: { type: 'value', axisLabel: { formatter: (v) => (v/10000)+'万', color: '#ffffff' } },
-        series: [{ type: 'bar', data: accVals, barMaxWidth: 30, itemStyle: { borderRadius: [6,6,0,0], color: (p) => p.value >= 0 ? '#22c55e' : '#ef4444' } }]
-      });
-    }
-
-    // 最近明细
-    const [incomes, expenses] = await Promise.all([api('/income'), api('/expense')]);
-    const all = [
-      ...incomes.slice(0, 30).map(r => ({ date: r.date, type: '收入', tag: 'green', name: r.project || r.account, account: r.account, amount: r.amount, remark: r.remark })),
-      ...expenses.slice(0, 30).map(r => ({ date: r.date, type: '支出', tag: 'red', name: r.category, account: r.account, amount: -r.amount, remark: r.remark }))
-    ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-
-    const groups = {};
-    for (const r of all) {
-      const key = r.date || '(无日期)';
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(r);
-    }
-    const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a)).slice(0, 12);
-
-    const tbody = document.querySelector('#recentTable tbody');
-    if (tbody) {
-      tbody.innerHTML = dates.map(date => {
-        const items = groups[date];
-        const details = items.map(r => `
-          <span class="income-pair">
-            ${catIconHtml(r.name || '', r.type === '收入' ? 'income' : 'expense')}
-            <span class="tag tag-${r.tag}">${r.type}</span>
-            <span class="tag tag-blue">${escapeHtml(r.account || '未填')}</span>
-            <b class="amount ${r.amount >= 0 ? 'positive' : 'negative'}">¥${fmtMoney(r.amount)}</b>
-            ${r.remark ? `<span class="pair-remark">${escapeHtml(r.remark)}</span>` : ''}
-          </span>`).join('');
-        const total = items.reduce((s, r) => s + (r.amount || 0), 0);
-        return `
-        <tr>
-          <td class="date-cell"><span class="tag tag-blue">${fmtDate(date)}</span></td>
-          <td class="account-details">${details}</td>
-          <td class="amount ${total >= 0 ? 'positive' : 'negative'}">¥${fmtMoney(total)}</td>
-        </tr>`;
-      }).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
-    }
-
+    
+    console.log('✅ Dashboard 加载完成');
   } catch (e) {
     showToast('看板加载失败: ' + e.message, 'error');
   }
 }
 
-// ========== 占位函数（防止报错） ==========
+// ========== 其他页面（占位，避免报错） ==========
 function renderIncome() { console.log('💰 收入页面'); }
 function renderExpense() { console.log('💸 支出页面'); }
 function renderPurchase() { console.log('📦 进货页面'); }
@@ -419,45 +353,26 @@ function renderReminders() { console.log('⏰ 提醒'); }
 function renderRankCard() {}
 function renderHealthCard() {}
 function renderBudgetCard() {}
-function renderReminderVoicePreview() {}
-function renderVoicePreview() {}
-function initAiPanel() {}
-function syncReminderVoiceLangUI() {}
-function startReminderChecker() {}
-function fillCurrencySelects() {}
-function renderRateList() {}
-function runRecurringCheck() {}
-function runQuery() {}
-function applySettings() {}
-function syncModeSwitch() {}
-function syncQueryMode() {}
-function fillQuerySelect() {}
-function openSettingsModal() { alert('⚙️ 设置功能'); }
 
-// ========== 初始化 ==========
-async function initAfterLogin() {
-  console.log('✅ 应用初始化中...');
-  applySettings();
-  fillCurrencySelects();
-  renderRateList();
-  runRecurringCheck();
-  if (document.getElementById('queryStart')) {
-    document.getElementById('queryStart').value = currentRange.start;
-    document.getElementById('queryEnd').value = currentRange.end;
-  }
-  fillQuerySelect();
-  runQuery();
-  await renderDashboard();
-  resizeVisibleCharts();
-  renderIncome();
-  renderPurchase();
-  renderExpense();
-  initAiPanel();
-  renderReminders();
-  syncReminderVoiceLangUI();
-  startReminderChecker();
+// ========== 登录界面控制 ==========
+function showLoginScreen() {
+  const scr = document.getElementById('loginScreen');
+  const app = document.querySelector('.app');
+  if (scr) scr.style.display = 'flex';
+  if (app) app.style.display = 'none';
+  document.body.style.overflow = 'hidden';
+  resetLogin();
 }
 
+function hideLoginScreen() {
+  const scr = document.getElementById('loginScreen');
+  const app = document.querySelector('.app');
+  if (scr) scr.style.display = 'none';
+  if (app) app.style.display = 'flex';
+  document.body.style.overflow = '';
+}
+
+// ========== 初始化 ==========
 async function init() {
   const now = new Date();
   currentRange.start = now.getFullYear() + '-01-01';
@@ -471,18 +386,46 @@ async function init() {
   try { settings = await api('/settings'); } catch(e) {}
   
   if (!isLoggedIn()) {
-    const loginScreen = document.getElementById('loginScreen');
-    const app = document.querySelector('.app');
-    if (loginScreen) loginScreen.style.display = 'flex';
-    if (app) app.style.display = 'none';
+    showLoginScreen();
     return;
   }
-  
-  const loginScreen = document.getElementById('loginScreen');
-  const app = document.querySelector('.app');
-  if (loginScreen) loginScreen.style.display = 'none';
-  if (app) app.style.display = 'flex';
+  hideLoginScreen();
   await initAfterLogin();
 }
 
-console.log('✅ app.js 完整修复版已加载');
+async function initAfterLogin() {
+  applySettings();
+  document.getElementById('queryStart').value = currentRange.start;
+  document.getElementById('queryEnd').value = currentRange.end;
+  await renderDashboard();
+  resizeVisibleCharts();
+  console.log('✅ 应用初始化完成');
+}
+
+function applySettings() {
+  // 简单的设置应用
+  const mods = settings.modules || {};
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    const page = btn.dataset.page;
+    if (page && mods[page] === false) {
+      btn.style.display = 'none';
+    }
+  });
+  syncModeSwitch();
+}
+
+function syncModeSwitch() {
+  const btn = document.getElementById('modeSwitch');
+  if (btn) {
+    btn.textContent = settings.scene === 'family' ? '🏠 家庭' : '🏪 开店';
+    btn.classList.toggle('family', settings.scene === 'family');
+  }
+}
+
+// ========== 启动应用 ==========
+console.log('✅ app.js 修复版已加载');
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
