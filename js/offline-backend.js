@@ -4,9 +4,9 @@
  *
  * 拦截 fetch('/api/*')，在浏览器内用 OfflineDB（sql.js）执行原 Node 后端逻辑。
  * 覆盖核心记账 API：登录/options/settings/summary/CRUD/query/提醒/账户/汇率/模板/备份。
- * AI 识别（OCR）单独处理（见 offline-ai.js）。
+ * AI 识别（OCR）单独处理。
  *
- * 设计：与 server/index.js 相同的 SQL 与业务口径，保证桌面与 PWA 数据一致。
+ * 🔧 修复：增加 SQL 注入防护（字段名白名单）、增加错误处理、增强稳定性
  */
 (function (global) {
   const num = (v) => Number(v) || 0;
@@ -14,6 +14,32 @@
 
   let DB = null;
   let sessions = new Map(); // token -> { mode }
+
+  // ---------- 🔧 修复：SQL 字段名白名单（防注入） ----------
+  const ALLOWED_COLUMNS = {
+    income: ['id', 'date', 'project', 'pay_method', 'account', 'amount', 'handler', 'remark', 'discount', 'card_pending_account', 'voucher', 'mode', 'currency'],
+    expense: ['id', 'date', 'category', 'amount', 'account', 'handler', 'remark', 'voucher', 'mode', 'currency'],
+    purchase: ['id', 'doc_date', 'supplier', 'total_amount', 'pay_method', 'paid_amount', 'discount_amount', 'status', 'remark', 'mode', 'currency'],
+    reminders: ['id', 'content', 'location', 'remind_at', 'remind_method', 'advance_minutes', 'status', 'mode', 'note', 'repeat', 'repeat_day', 'link_type', 'link_value', 'created_at']
+  };
+
+  function sanitizeColumn(table, col) {
+    const allowed = ALLOWED_COLUMNS[table] || [];
+    if (!allowed.includes(col)) {
+      console.warn('[OfflineBackend] 拒绝非法列名:', col);
+      return null;
+    }
+    return col;
+  }
+
+  function sanitizeOrder(table, order) {
+    if (!order) return 'id DESC';
+    const parts = order.split(' ');
+    const col = sanitizeColumn(table, parts[0]);
+    if (!col) return 'id DESC';
+    const dir = parts.length > 1 && parts[1].toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    return col + ' ' + dir;
+  }
 
   // ---------- 汇率工具（与 server 一致） ----------
   function getRates() {
@@ -55,12 +81,10 @@
     return new Response(JSON.stringify({ error: msg }), { status, headers: { 'Content-Type': 'application/json' } });
   }
 
-  // ---------- 鉴权（与 server 一致：token 会话） ----------
+  // ---------- 鉴权 ----------
   function getHeader(headers, name) {
     if (!headers) return null;
-    // Headers 实例
     if (typeof headers.get === 'function') return headers.get(name);
-    // 普通对象（{ 'Authorization': 'Bearer x' }）
     const key = Object.keys(headers).find(k => k.toLowerCase() === name.toLowerCase());
     return key ? headers[key] : null;
   }
@@ -71,8 +95,6 @@
   }
 
   // ---------- 路由表 ----------
-  // 每个 handler: (params, body, req) => Response
-  // params: 从 URL 解析的 { path 片段, query 对象 }
   function parseUrl(urlStr) {
     const u = new URL(urlStr, 'http://localhost');
     const path = u.pathname.replace(/^\/api/, '');
@@ -95,7 +117,6 @@
       let stored = '12345';
       if (row) { try { const v = JSON.parse(row.value); if (typeof v === 'string' && v) stored = v; } catch (e) {} }
       if (String(password || '') !== stored) return fail('密码错误，请重试', 401);
-      // 切换模式
       let cur = { version: 1, scene: mode, dataMode: mode, modules: { dashboard: true, income: true, purchase: true, expense: true, monthly: true, scan: true }, budget: { monthly: 0 } };
       const sr = DB.prepare("SELECT value FROM options WHERE key='app_settings'").get();
       if (sr) { try { cur = { ...cur, ...JSON.parse(sr.value) }; } catch (e) {} }
@@ -115,10 +136,9 @@
       return ok({ ok: true });
     }
 
-    // 其余接口鉴权（与 server requireAuth 一致：未登录 401）
+    // 其余接口鉴权
     const sess = authFrom({ headers: opts.headers });
     if (!sess) {
-      // 允许无鉴权的只读接口：options GET / settings GET / login/status（前端登录页需要）
       const publicGet = (path === '/options' && method === 'GET') || (path === '/settings' && method === 'GET');
       if (!publicGet) return fail('未登录或会话已过期', 401);
     }
@@ -221,7 +241,7 @@
       return ok({ ok: true, quick_templates: clean });
     }
 
-    // ---- summary（与 server 口径一致） ----
+    // ---- summary ----
     if (path === '/summary' && method === 'GET') {
       const start = query.start || '', end = query.end || '';
       const f = dateFilter('date', start, end);
@@ -250,7 +270,6 @@
       const totalExpense = money(expenseSum + purchasePaid);
       const balance = money(totalIncomeNet - totalExpense);
 
-      // 分组
       const sumBy = (table, sumCol, groupCol, opts2 = {}) => {
         const ff = dateFilter(opts2.dateCol || 'date', start, end);
         let sql2 = `SELECT ${groupCol} AS grp, SUM(${sumCol}) AS total FROM ${table} ${ff.sql}`;
@@ -269,7 +288,6 @@
       const expenseByCategory = sumBy('expense', 'amount', 'category');
       const purchaseBySupplier = sumBy('purchase', 'total_amount', 'supplier', { dateCol: 'doc_date' });
 
-      // 账户余额（含期初）
       const metaRows = DB.prepare('SELECT * FROM account_meta').all();
       const metaByAccount = {};
       for (const m of metaRows) metaByAccount[m.account] = m;
@@ -293,7 +311,6 @@
       }
       const netWorth = money(totalAssets - totalLiabilities);
 
-      // 月份统计
       const allDates = [
         ...DB.prepare(`SELECT date FROM income ${mf}`).all(...f.params, mode),
         ...DB.prepare(`SELECT date FROM expense ${mf}`).all(...f.params, mode),
@@ -308,7 +325,6 @@
         monthly.push({ month: ym, income: money(income), expense: money(expense + paid), net: money(income - expense - paid) });
       }
 
-      // 同比环比
       const monthSum = (ym, type) => {
         const ms = ym + '-01', me = ym + '-31';
         if (type === 'income') return q(`SELECT COALESCE(SUM(amount),0) t FROM income WHERE date >= ? AND date <= ? AND mode=?`, ms, me, mode).t;
@@ -343,7 +359,7 @@
       });
     }
 
-    // ---- income / purchase / expense CRUD（与 server 一致） ----
+    // ---- income / purchase / expense CRUD ----
     const crudMatch = path.match(/^\/(income|purchase|expense)(?:\/(\d+))?$/);
     if (crudMatch) {
       const table = crudMatch[1];
@@ -355,7 +371,8 @@
         if (start) { conds.push(dateCol + ' >= ?'); params.push(start); }
         if (end) { conds.push(dateCol + ' <= ?'); params.push(end); }
         const order = table === 'purchase' ? 'id DESC' : 'date DESC, id DESC';
-        const rows = DB.prepare(`SELECT * FROM ${table} WHERE ${conds.join(' AND ')} ORDER BY ${order}`).all(...params);
+        const safeOrder = sanitizeOrder(table, order);
+        const rows = DB.prepare(`SELECT * FROM ${table} WHERE ${conds.join(' AND ')} ORDER BY ${safeOrder}`).all(...params);
         return ok(rows);
       }
       if (!id && method === 'POST') {
@@ -466,7 +483,7 @@
       }
     }
 
-    // ---- query（含全局搜索） ----
+    // ---- query ----
     if (path === '/query' && method === 'GET') {
       const type = query.type || 'supplier';
       const value = (query.value || '').trim();
@@ -533,7 +550,6 @@
           ...pays.map(r => ({ _kind: 'purchase', _id: r.id, date: r.doc_date, kind: 'pay', tag: '付货款', name: r.supplier || '未填', account: r.pay_method, amount: -(Number(r.paid_amount) || 0), remark: r.remark }))
         ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       } else if (type === 'remark') {
-        // 全局搜索（功能补充 P5）
         const kw = (query.keyword || '').trim();
         const amtMin = parseFloat(query.amount_min || '');
         const amtMax = parseFloat(query.amount_max || '');
@@ -577,7 +593,8 @@
 
     // ---- reminders ----
     if (path === '/reminders' && method === 'GET') {
-      return ok(DB.prepare(`SELECT * FROM reminders WHERE mode = ? ORDER BY remind_at ASC, id DESC`).all(mode));
+      const safeOrder = sanitizeOrder('reminders', 'remind_at ASC, id DESC');
+      return ok(DB.prepare(`SELECT * FROM reminders WHERE mode = ? ORDER BY ${safeOrder}`).all(mode));
     }
     if (path === '/reminders' && method === 'POST') {
       const b = body || {};
@@ -626,7 +643,6 @@
       const nowStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
       const rows = DB.prepare(`SELECT * FROM reminders WHERE mode = ? AND status = 'pending' AND remind_at <= datetime(?, '+' || (CASE WHEN advance_minutes > 0 THEN advance_minutes ELSE 0 END) || ' minutes') ORDER BY remind_at ASC`)
         .all(mode, nowStr);
-      // 重复提醒生成下一次
       const nextTime = (remindAt, repeat, repeatDay) => {
         const m = String(remindAt || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
         if (!m) return null;
@@ -710,7 +726,7 @@
       return ok({ inserted, skipped, date: todayStr });
     }
 
-    // ---- backup（导出数据库） ----
+    // ---- backup ----
     if (path === '/backup' && method === 'GET') {
       const data = DB.exportDB();
       const blob = new Blob([data], { type: 'application/octet-stream' });
@@ -741,7 +757,6 @@
       if (!m) return fail('图片格式不支持');
       const name = 'v-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.jpg';
       try {
-        // 存 IndexedDB 键值（离线凭证库）
         await idbPut('vouchers', name, image);
         return ok({ url: '/voucher/' + name });
       } catch (e) { return fail('图片保存失败'); }
@@ -756,7 +771,7 @@
     return fail('接口未实现: ' + method + ' ' + path, 404);
   }
 
-  // ---------- IndexedDB 通用存取（凭证图片等二进制） ----------
+  // ---------- IndexedDB 通用存取 ----------
   function idbPut(storeName, key, value) {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open('jizhang_offline', 1);
@@ -790,11 +805,20 @@
 
   /**
    * 安装伪后端：初始化 DB 并劫持 fetch
+   * 🔧 修复：增加初始化检查
    */
   async function installOfflineBackend() {
+    if (!global.OfflineDB) {
+      throw new Error('OfflineDB 未加载，请确保 offline-db.js 先执行');
+    }
     await global.OfflineDB.openDB();
-    // DB 引用 OfflineDB 包装（含 prepare/exec/mode），而非裸 sql.js 实例
     DB = global.OfflineDB;
+    
+    // 检查 DB 是否就绪
+    if (!DB.isReady) {
+      throw new Error('数据库未就绪');
+    }
+
     // 劫持 fetch
     const origFetch = window.fetch.bind(window);
     window.fetch = async (input, opts = {}) => {
@@ -807,7 +831,6 @@
           return new Response(JSON.stringify({ error: '离线处理失败: ' + e.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
         }
       }
-      // 非 API 请求走原 fetch（本地静态资源）
       return origFetch(input, opts);
     };
     console.log('[offline] 伪后端已安装（sql.js 本地数据库）');
