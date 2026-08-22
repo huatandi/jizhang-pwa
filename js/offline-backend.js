@@ -180,7 +180,7 @@
 
     // ---- settings ----
     if (path === '/settings' && method === 'GET') {
-      const defaults = { version: 1, scene: 'business', modules: { dashboard: true, income: true, purchase: true, expense: true, monthly: true, scan: true }, budget: { monthly: 0 } };
+      const defaults = { version: 1, scene: 'business', modules: { dashboard: true, income: true, purchase: true, expense: true, monthly: true, scan: true }, budget: { monthly: 0 }, alarm: { tone: 'classic', volume: 0.9 } };
       const row = DB.prepare("SELECT value FROM options WHERE key='app_settings'").get();
       let settings = defaults;
       if (row) { try { settings = { ...defaults, ...JSON.parse(row.value) }; } catch (e) {} }
@@ -193,6 +193,11 @@
         for (const [k, v] of Object.entries(s.budget.categories)) { const n = Number(v); if (n > 0) catBudgets[k] = n; }
       }
       const recurring = Array.isArray(s.recurring && s.recurring.rules) ? s.recurring.rules.slice(0, 50) : [];
+      const tone = String((s.alarm && s.alarm.tone) || 'classic');
+      const alarm = {
+        tone: ['classic', 'urgent', 'gentle', 'silent'].includes(tone) ? tone : 'classic',
+        volume: Math.min(1, Math.max(0, Number((s.alarm && s.alarm.volume) || 0.9)))
+      };
       const clean = {
         version: 1, scene: String(s.scene || 'custom'),
         dataMode: (s.dataMode === 'family') ? 'family' : 'business',
@@ -202,7 +207,8 @@
           purchase: !!(s.modules && s.modules.purchase), reminder: true
         },
         budget: { monthly: Math.max(0, Number((s.budget && s.budget.monthly) || 0)), categories: catBudgets },
-        recurring: { rules: recurring }
+        recurring: { rules: recurring },
+        alarm
       };
       DB.prepare("INSERT OR REPLACE INTO options (key, value) VALUES ('app_settings', ?)").run(JSON.stringify(clean));
       return ok(clean);

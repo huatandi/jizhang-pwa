@@ -16,12 +16,24 @@
   // 语言包路径（tesseract.js 从该路径加载 traineddata.gz）
   const LANG_PATH = 'vendor/tesseract/';
 
+  // 默认 OCR 语言：跟随 global-config（本币地区 → 浏览器语言），兜底 spa+eng（墨西哥旧默认）
+  function resolveOcrLang() {
+    const gc = global.AIKit && global.AIKit.globalConfig;
+    if (gc && gc.resolveOcrLang) {
+      try {
+        const l = gc.resolveOcrLang();
+        if (l) return l;
+      } catch (e) { /* ignore */ }
+    }
+    return 'spa+eng';
+  }
+
   async function getWorker(lang) {
     if (worker) return worker;
     if (typeof Tesseract === 'undefined') {
       throw new Error('Tesseract 未加载（vendor/tesseract/tesseract.min.js）');
     }
-    worker = await Tesseract.createWorker(lang || 'spa+eng', 1, {
+    worker = await Tesseract.createWorker(lang || resolveOcrLang(), 1, {
       workerPath: 'vendor/tesseract/worker.min.js',
       langPath: LANG_PATH,
       corePath: 'vendor/tesseract/',
@@ -38,7 +50,7 @@
     if (working) throw new Error('正在识别中，请稍候');
     working = true;
     try {
-      const lang = opts.language || 'spa+eng';
+      const lang = opts.language || resolveOcrLang();
       const w = await getWorker(lang);
       await w.setParameters({ tessedit_pageseg_mode: '3' });
       const res = await w.recognize(imageDataUrl);

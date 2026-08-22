@@ -247,6 +247,62 @@
           </div>
         </div>
 
+        <!-- 参考汇率工具（独立于记账汇率，仅信息参考） -->
+        <div class="chart-card wide fx-card" id="fxCard" hidden>
+          <div class="fx-head">
+            <div class="fx-title">
+              <span class="fx-title-icon">💱</span>
+              <div>
+                <div class="fx-title-main">参考汇率</div>
+                <div class="fx-title-sub" id="fxSub">记账 · 估算参考（非交易汇率）</div>
+              </div>
+            </div>
+            <div class="fx-head-right">
+              <span class="fx-status" id="fxStatus"></span>
+              <button class="btn-small" onclick="FxTool.refresh()" title="刷新参考汇率">🔄 刷新</button>
+            </div>
+          </div>
+
+          <!-- 换算器 -->
+          <div class="fx-converter">
+            <div class="fx-pair" id="fxPair">
+              <div class="fx-side" onclick="FxTool.openPicker('from')">
+                <div class="fx-flag" id="fxFromFlag">🌐</div>
+                <div class="fx-side-code" id="fxFromCode">--</div>
+                <div class="fx-side-name" id="fxFromName">本币</div>
+              </div>
+              <button class="fx-swap" onclick="FxTool.swap()" title="交换货币">⇅</button>
+              <div class="fx-side" onclick="FxTool.openPicker('to')">
+                <div class="fx-flag" id="fxToFlag">🇺🇸</div>
+                <div class="fx-side-code" id="fxToCode">USD</div>
+                <div class="fx-side-name" id="fxToName">美元</div>
+              </div>
+            </div>
+            <div class="fx-amount-row">
+              <input type="number" id="fxAmount" class="fx-amount" inputmode="decimal" placeholder="输入金额" value="100">
+              <div class="fx-result" id="fxResult">≈ --</div>
+            </div>
+            <div class="fx-rate-line" id="fxRateLine">--</div>
+            <div class="fx-meta" id="fxMeta">
+              <span>📅 参考日期：--</span>
+              <span>🕐 获取时间：--</span>
+              <span>🏦 数据来源：--</span>
+            </div>
+          </div>
+
+          <!-- 常用货币 -->
+          <div class="fx-fav">
+            <div class="fx-fav-title">⭐ 常用货币 <span class="fx-fav-hint" id="fxFavHint">点击查看参考汇率</span></div>
+            <div class="fx-fav-grid" id="fxFavGrid"></div>
+          </div>
+
+          <!-- 免责声明 -->
+          <div class="fx-disclaimer">
+            <span class="fx-info-btn" onclick="FxTool.showInfo()" title="关于此汇率">ⓘ 关于此汇率</span>
+            <div class="fx-disclaimer-text">汇率仅供记账、估算及信息参考，不构成任何交易、兑换、支付或投资建议。实际银行、信用卡、兑换机构或支付服务商可能使用不同汇率，并可能包含手续费、点差或其他费用。</div>
+          </div>
+        </div>
+
         <!-- 支出分类排行（家庭模式） -->
         <div class="rank-card" id="rankCard" hidden>
           <div class="rank-head">
@@ -461,7 +517,7 @@
 
         <!-- AI 批量识别面板 -->
         <div class="ai-panel">
-          <div class="chart-title">🤖 本地 AI 批量识别 <span class="badge-local">🔒 本地处理 · 断网可用</span></div>
+          <div class="chart-title">🤖 本地 AI 批量识别 <span class="badge-local">🔒 本地处理 · 断网可用</span> <span id="aiEngineBadge" class="ai-engine-badge" style="font-size:11px;opacity:.8;margin-left:6px"></span></div>
           <div class="ai-upload-row">
             <label class="ai-dropzone" id="aiDropzone">
               <input type="file" id="aiFiles" accept="image/*" multiple hidden>
@@ -573,9 +629,29 @@
               <label class="switch-row"><span>💸 支出记账</span><input type="checkbox" id="mod-expense"></label>
               <label class="switch-row"><span>📅 月度统计</span><input type="checkbox" id="mod-monthly"></label>
               <label class="switch-row"><span>📷 扫描识别</span><input type="checkbox" id="mod-scan"></label>
-<label class="switch-row"><span>⏰ 语音提醒</span><input type="checkbox" id="mod-reminder"></label>
+              <label class="switch-row"><span>⏰ 语音提醒</span><input type="checkbox" id="mod-reminder"></label>
               <label class="switch-row"><span>📦 进货台账 <span class="settings-tag">开店专用</span><small class="settings-note">关闭后底栏/侧边栏隐藏「进货」入口</small></span><input type="checkbox" id="mod-purchase"></label>
             </div>
+          </div>
+
+          <!-- 提醒闹铃（跟随系统媒体音量；默认高音量保证可闻） -->
+          <div class="settings-section">
+            <div class="settings-title">⏰ 提醒闹铃 <span class="settings-sub">铃声选择 + 音量；默认高音量，手机请调高媒体音量或关闭静音</span></div>
+            <div class="alarm-settings-row">
+              <label class="alarm-settings-label">铃声</label>
+              <select id="alarmTone" class="query-select" style="flex:1">
+                <option value="classic">🔔 经典（系统风格）</option>
+                <option value="urgent">🚨 急促（双音交替）</option>
+                <option value="gentle">🎵 柔和（低打扰）</option>
+                <option value="silent">🤫 静音（仅震动+语音播报）</option>
+              </select>
+              <button class="btn-small" onclick="previewAlarm()" title="试听当前铃声">🎧 试听</button>
+            </div>
+            <div class="alarm-settings-row">
+              <label class="alarm-settings-label">音量 <span id="alarmVolumeLabel" class="settings-sub">90%</span></label>
+              <input type="range" id="alarmVolume" min="0" max="100" value="90" step="5" class="alarm-volume-slider" style="flex:1" oninput="syncAlarmVolumeLabel(this.value)">
+            </div>
+            <div class="settings-note" style="margin-top:6px">💡 Web 无法调用系统「闹钟」音量通道，铃声输出跟随手机媒体音量。闹铃响时同时叠加语音播报与震动，尽可能保证听到。</div>
           </div>
 
           <!-- 月度预算 -->
@@ -965,9 +1041,7 @@
   <!-- 移动端底部导航 -->
   <nav class="mobile-nav" id="mobileNav">
     <button class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span><span class="m-label">总览</span></button>
-    <button class="nav-item" data-page="income"><span class="nav-icon">💰</span><span class="m-label">收入</span></button>
     <button class="nav-item m-add-center" onclick="openQuickModal()"><span class="nav-icon">＋</span><span class="m-label">记账</span></button>
-    <button class="nav-item" data-page="expense"><span class="nav-icon">💸</span><span class="m-label">支出</span></button>
     <button class="nav-item" data-page="monthly"><span class="nav-icon">📅</span><span class="m-label">月度</span></button>
     <button class="nav-item" data-page="scan"><span class="nav-icon">📷</span><span class="m-label">识别</span></button>
     <button class="nav-item" data-page="reminder"><span class="nav-icon">⏰</span><span class="m-label">提醒</span></button>
@@ -1007,6 +1081,7 @@
             <button class="btn-primary" id="wbExtractBtn" onclick="wbExtract()">🔍 提取文字</button>
             <button class="btn-secondary" onclick="wbRetry()">🔄 重新识别</button>
             <button class="btn-secondary" id="wbLocalOcrBtn" onclick="wbLocalOcr()" title="本地 OCR 识别（离线可用，识别后自动对号入座填入字段）">📷 本地识别</button>
+            <button class="btn-primary" id="wbSmartBtn" onclick="wbSmartRecognize()" title="一键完成：本地 OCR 识别票据 + 语音补充分类/账户/备注（多模态）">🧠 智能识别（OCR+语音）</button>
             <span class="badge-local" id="wbLangInfo"></span>
             <select id="wbAutofillMode" class="wb-autofill-mode" title="自动填充策略：自动按置信度 / 凡有候选必问 / 仅高置信自动填">
               <option value="auto">🔄 自动填充</option>
@@ -1083,8 +1158,56 @@
 
   <script src="js/offline-db.js"></script>
   <script src="js/offline-backend.js"></script>
-  <script src="js/offline-ocr.js"></script>
   <script src="js/voice-engine.js"></script>
+  <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
+  <script src="js/ai/global-config.js"></script>
+  <script src="js/offline-ocr.js"></script>
+  <!-- AI 引擎层（OcrKit / MexicoParser / ValidateKit / AsrKit / VoiceKit） -->
+  <script src="js/validation/validators.js"></script>
+  <script src="js/validation/confidence.js"></script>
+  <script src="js/validation/transaction.js"></script>
+  <script src="js/ocr/ocr-types.js"></script>
+  <script src="js/ocr/preprocess.js"></script>
+  <script src="js/ocr/tesseract-engine.js"></script>
+  <script src="js/ocr/paddle-engine.js"></script>
+  <script src="js/ocr/ocr-manager.js"></script>
+  <script src="js/mexico/field-normalizer.js"></script>
+  <script src="js/mexico/document-detector.js"></script>
+  <script src="js/mexico/cfdi-parser.js"></script>
+  <script src="js/mexico/spei-parser.js"></script>
+  <script src="js/mexico/oxxo-parser.js"></script>
+  <script src="js/mexico/parser.js"></script>
+  <script src="js/asr/asr-types.js"></script>
+  <!-- audio-processor.js 由 audioWorklet.addModule('js/asr/audio-processor.js') 动态加载，不在主线程执行 -->
+  <script src="js/asr/audio-capture.js"></script>
+  <script src="js/asr/vad.js"></script>
+  <script src="js/asr/whisper-engine.js"></script>
+  <script src="js/asr/webspeech-engine.js"></script>
+  <script src="js/asr/model-manager.js"></script>
+  <script src="js/asr/asr-manager.js"></script>
+  <script src="js/voice/voice-parser.js"></script>
+  <script src="js/voice/voice-sr.js"></script>
+  <script src="js/ai/engine-manager.js"></script>
+  <script src="js/ai/multimodal.js"></script>
+  <!-- ===== app.js 拆分模块（app.js v69 拆分）=====
+       顺序说明：静态脚本先于 boot.js 动态加载的 app.js 执行。
+       reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
+       quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
+  <script src="js/voice/reminders.js"></script>
+  <script src="js/voice/quick-voice.js"></script>
+  <script src="js/ledger-crud.js"></script>
+  <script src="js/ai/ai-workbench.js"></script>
+  <!-- ===== 参考汇率工具（Exchange Rate Engine V1.0）=====
+       分层：UI(fx-tool) → Engine → Provider(Frankfurter) → API
+       独立于记账汇率（options.exchange_rates），仅信息参考 -->
+  <script src="js/exchange-rate/exchange-rate-types.js"></script>
+  <script src="js/exchange-rate/currency-registry.js"></script>
+  <script src="js/exchange-rate/http-client.js"></script>
+  <script src="js/exchange-rate/rate-cache.js"></script>
+  <script src="js/exchange-rate/frankfurter-provider.js"></script>
+  <script src="js/exchange-rate/rate-calculator.js"></script>
+  <script src="js/exchange-rate/exchange-rate-engine.js"></script>
+  <script src="js/exchange-rate/fx-tool.js"></script>
   <script src="js/boot.js"></script>
 </body>
 </html>
