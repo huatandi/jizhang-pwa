@@ -453,7 +453,7 @@ td.amount.negative { color: var(--red); }
   transition: var(--transition);
 }
 .modal-close:hover { background: var(--red-soft); color: var(--red); }
-.modal-body { padding: 24px; }
+.modal-body { padding: 24px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 /* 快速记账弹窗：限制高度 + 内部滚动，避免内容被遮挡 */
 .quick-modal {
   max-height: 88vh;
@@ -479,6 +479,19 @@ td.amount.negative { color: var(--red); }
   -webkit-overflow-scrolling: touch;
 }
 .reminder-modal .modal-footer { flex: 0 0 auto; }
+/* 进货/供应商/支出/收入 弹窗：限高+内部滚动，底部按钮始终可见（内容多时防溢出屏幕） */
+#purchaseModal .modal, #supplierModal .modal, #expenseModal .modal, #incomeModal .modal {
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+#purchaseModal .modal-body, #supplierModal .modal-body, #expenseModal .modal-body, #incomeModal .modal-body {
+  overflow-y: auto;
+  min-height: 0;
+}
+#purchaseModal .modal-footer, #supplierModal .modal-footer, #expenseModal .modal-footer, #incomeModal .modal-footer {
+  flex: 0 0 auto;
+}
 .form-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
 }
@@ -1600,7 +1613,7 @@ select option {
 
 /* ============ 设置弹窗 ============ */
 .settings-modal { width: 92%; max-width: 720px; }
-.settings-modal .modal-body { max-height: 70vh; overflow-y: auto; }
+.settings-modal .modal-body { max-height: 70vh; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .settings-section {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
