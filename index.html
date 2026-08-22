@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="智账">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=43">
+  <link rel="stylesheet" href="css/style.css?v=44">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -545,6 +545,133 @@
           <div class="ai-empty">还没有提醒。点击「语音添加提醒」，设置事项、时间、地点，到点自动提醒。</div>
         </div>
       </section>
+
+      <!-- ======== 设置（独立页面，与收入/支出/进货一致） ======== -->
+      <section class="page" id="page-settings">
+        <header class="page-header">
+          <h2>⚙️ 设置</h2>
+          <p class="subtitle">场景 / 功能模块 / 预算 / 选项 / 账户 / 汇率 / 安全 / 备份</p>
+        </header>
+
+        <div class="settings-body">
+          <!-- 使用场景 -->
+          <div class="settings-section">
+            <div class="settings-title">🏠 使用场景</div>
+            <div class="preset-row">
+              <button class="preset-btn" data-scene="business" onclick="applyScenePreset('business', this)">🏪 开店经营</button>
+              <button class="preset-btn" data-scene="family" onclick="applyScenePreset('family', this)">🏠 家庭记账</button>
+            </div>
+            <div class="preset-hint" id="sceneHint"></div>
+          </div>
+
+          <!-- 功能模块 -->
+          <div class="settings-section">
+            <div class="settings-title">🧩 显示功能 <span class="settings-sub">关闭后导航栏自动隐藏，记账数据不受影响</span></div>
+            <div class="module-list">
+              <label class="switch-row"><span>📊 数据总览（首页，始终显示）</span><input type="checkbox" checked disabled></label>
+              <label class="switch-row"><span>💰 收入记账</span><input type="checkbox" id="mod-income"></label>
+              <label class="switch-row"><span>💸 支出记账</span><input type="checkbox" id="mod-expense"></label>
+              <label class="switch-row"><span>📅 月度统计</span><input type="checkbox" id="mod-monthly"></label>
+              <label class="switch-row"><span>📷 扫描识别</span><input type="checkbox" id="mod-scan"></label>
+<label class="switch-row"><span>⏰ 语音提醒</span><input type="checkbox" id="mod-reminder"></label>
+              <label class="switch-row"><span>📦 进货台账 <span class="settings-tag">开店专用</span><small class="settings-note">关闭后底栏/侧边栏隐藏「进货」入口</small></span><input type="checkbox" id="mod-purchase"></label>
+            </div>
+          </div>
+
+          <!-- 月度预算 -->
+          <div class="settings-section">
+            <div class="settings-title">🎯 月度支出预算 <span class="settings-sub">在数据总览显示预算使用进度</span></div>
+            <div class="budget-input-row">
+              <input type="number" id="setBudget" min="0" step="100" placeholder="0 = 不设置">
+              <span class="unit">元 / 月</span>
+            </div>
+            <div class="settings-title cat-budget-title">🗂️ 分类预算 <span class="settings-sub">为每个支出分类单独设限额</span></div>
+            <div class="cat-budget-list" id="catBudgetList"></div>
+          </div>
+
+          <!-- 周期记账 -->
+          <div class="settings-section">
+            <div class="settings-title">🔄 周期记账 <span class="settings-sub">固定收支（工资/房贷/水电）自动按周期入账</span></div>
+            <div class="recur-list" id="recurList"></div>
+            <div class="recur-add-row">
+              <select id="recType"><option value="expense">💸 支出</option><option value="income">💰 收入</option></select>
+              <select id="recCategory"></select>
+              <input type="number" id="recAmount" placeholder="金额" min="0" step="0.01">
+              <select id="recAccount"></select>
+              <select id="recCycle">
+                <option value="monthly">每月</option>
+                <option value="weekly">每周</option>
+                <option value="daily">每天</option>
+              </select>
+              <input type="number" id="recDay" placeholder="日" min="1" max="31" title="每月几号">
+              <input type="text" id="recRemark" placeholder="备注">
+              <button class="btn-primary" onclick="addRecurring()">＋ 添加</button>
+            </div>
+            <div class="recur-hint">💡 每周/每天规则：月份日留空。打开应用时自动检查是否已入账，不会重复记录。</div>
+          </div>
+
+          <!-- 选项管理 -->
+          <div class="settings-section">
+            <div class="settings-title">📋 常用选项管理 <span class="settings-sub">用于记账下拉选择，随时增删</span></div>
+            <div class="opt-tabs">
+              <button class="opt-tab active" data-key="expense_categories" onclick="switchOptTab(this)">支出分类</button>
+              <button class="opt-tab" data-key="departments" onclick="switchOptTab(this)">收入分类</button>
+              <button class="opt-tab" data-key="accounts" onclick="switchOptTab(this)">账户</button>
+              <button class="opt-tab" data-key="pay_methods" onclick="switchOptTab(this)">收款方式</button>
+            </div>
+            <div class="opt-manage">
+              <div class="opt-add-row">
+                <input type="text" id="optNewValue" placeholder="输入新选项名称">
+                <button class="btn-primary" onclick="addOptionItem()">＋ 添加</button>
+              </div>
+              <div class="opt-tags" id="optTags"></div>
+            </div>
+          </div>
+
+          <!-- 资产账户（功能补充 P4） -->
+          <div class="settings-section">
+            <div class="settings-title">🏦 资产账户 <span class="settings-sub">为账户设置期初余额与类型（资产/负债），数据总览显示总资产/负债/净资产</span></div>
+            <div class="account-meta-list" id="accountMetaList"></div>
+          </div>
+
+          <!-- 多币种与汇率（功能补充 P4） -->
+          <div class="settings-section">
+            <div class="settings-title">💱 多币种与汇率 <span class="settings-sub">记账时选择币种，按汇率自动换算为基准币种（MXN）入账</span></div>
+            <div class="recur-add-row">
+              <select id="rateCurrency" class="currency-select"></select>
+              <input type="number" id="rateValue" min="0.0001" step="0.0001" placeholder="1 MXN = ? 该币种" style="flex:1">
+              <button class="btn-primary" onclick="saveExchangeRate()">💾 保存汇率</button>
+            </div>
+            <div class="recur-hint" id="rateHint">例：USD 汇率填 0.055 → 1 MXN = 0.055 USD，100 USD 入账自动换算为 ≈1818 MXN。</div>
+            <div class="rate-list" id="rateList"></div>
+          </div>
+
+          <!-- 安全设置 -->
+          <div class="settings-section">
+            <div class="settings-title">🔒 登录安全 <span class="settings-sub">开店经营 / 家庭明细 共用一个登录密码</span></div>
+            <div class="pwd-row">
+              <input type="password" id="pwdOld" placeholder="原密码">
+              <input type="password" id="pwdNew" placeholder="新密码（至少 4 位）">
+              <button class="btn-primary" onclick="changeLoginPassword()">✏️ 修改密码</button>
+            </div>
+            <div class="recur-hint">💡 默认密码为 <b>12345</b>。修改后需在下次登录时使用新密码。</div>
+          </div>
+
+          <!-- 数据备份 -->
+          <div class="settings-section">
+            <div class="settings-title">💾 数据备份 <span class="settings-sub">生成账本一致性快照（含单据图片），下载到本地保存</span></div>
+            <div class="budget-input-row">
+              <button class="btn-primary" onclick="downloadBackup()">⬇️ 立即备份并下载</button>
+            </div>
+            <div class="recur-hint" id="backupHint">建议定期备份，防止误删或磁盘故障导致数据丢失。</div>
+          </div>
+
+          <!-- 保存按钮 -->
+          <div class="settings-save-bar">
+            <button class="btn-primary" id="btnSaveSettings">💾 保存全部设置</button>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -682,133 +809,6 @@
       </div>
     </div>
   </div>
-
-  <!-- ======== 设置（独立页面，与收入/支出/进货一致） ======== -->
-  <section class="page" id="page-settings">
-    <header class="page-header">
-      <h2>⚙️ 设置</h2>
-      <p class="subtitle">场景 / 功能模块 / 预算 / 选项 / 账户 / 汇率 / 安全 / 备份</p>
-    </header>
-
-    <div class="settings-body">
-      <!-- 使用场景 -->
-      <div class="settings-section">
-        <div class="settings-title">🏠 使用场景</div>
-        <div class="preset-row">
-          <button class="preset-btn" data-scene="business" onclick="applyScenePreset('business', this)">🏪 开店经营</button>
-          <button class="preset-btn" data-scene="family" onclick="applyScenePreset('family', this)">🏠 家庭记账</button>
-        </div>
-        <div class="preset-hint" id="sceneHint"></div>
-      </div>
-
-      <!-- 功能模块 -->
-      <div class="settings-section">
-        <div class="settings-title">🧩 显示功能 <span class="settings-sub">关闭后导航栏自动隐藏，记账数据不受影响</span></div>
-        <div class="module-list">
-          <label class="switch-row"><span>📊 数据总览（首页，始终显示）</span><input type="checkbox" checked disabled></label>
-          <label class="switch-row"><span>💰 收入记账</span><input type="checkbox" id="mod-income"></label>
-          <label class="switch-row"><span>💸 支出记账</span><input type="checkbox" id="mod-expense"></label>
-          <label class="switch-row"><span>📅 月度统计</span><input type="checkbox" id="mod-monthly"></label>
-          <label class="switch-row"><span>📷 扫描识别</span><input type="checkbox" id="mod-scan"></label>
-<label class="switch-row"><span>⏰ 语音提醒</span><input type="checkbox" id="mod-reminder"></label>
-          <label class="switch-row"><span>📦 进货台账 <span class="settings-tag">开店专用</span><small class="settings-note">关闭后底栏/侧边栏隐藏「进货」入口</small></span><input type="checkbox" id="mod-purchase"></label>
-        </div>
-      </div>
-
-      <!-- 月度预算 -->
-      <div class="settings-section">
-        <div class="settings-title">🎯 月度支出预算 <span class="settings-sub">在数据总览显示预算使用进度</span></div>
-        <div class="budget-input-row">
-          <input type="number" id="setBudget" min="0" step="100" placeholder="0 = 不设置">
-          <span class="unit">元 / 月</span>
-        </div>
-        <div class="settings-title cat-budget-title">🗂️ 分类预算 <span class="settings-sub">为每个支出分类单独设限额</span></div>
-        <div class="cat-budget-list" id="catBudgetList"></div>
-      </div>
-
-      <!-- 周期记账 -->
-      <div class="settings-section">
-        <div class="settings-title">🔄 周期记账 <span class="settings-sub">固定收支（工资/房贷/水电）自动按周期入账</span></div>
-        <div class="recur-list" id="recurList"></div>
-        <div class="recur-add-row">
-          <select id="recType"><option value="expense">💸 支出</option><option value="income">💰 收入</option></select>
-          <select id="recCategory"></select>
-          <input type="number" id="recAmount" placeholder="金额" min="0" step="0.01">
-          <select id="recAccount"></select>
-          <select id="recCycle">
-            <option value="monthly">每月</option>
-            <option value="weekly">每周</option>
-            <option value="daily">每天</option>
-          </select>
-          <input type="number" id="recDay" placeholder="日" min="1" max="31" title="每月几号">
-          <input type="text" id="recRemark" placeholder="备注">
-          <button class="btn-primary" onclick="addRecurring()">＋ 添加</button>
-        </div>
-        <div class="recur-hint">💡 每周/每天规则：月份日留空。打开应用时自动检查是否已入账，不会重复记录。</div>
-      </div>
-
-      <!-- 选项管理 -->
-      <div class="settings-section">
-        <div class="settings-title">📋 常用选项管理 <span class="settings-sub">用于记账下拉选择，随时增删</span></div>
-        <div class="opt-tabs">
-          <button class="opt-tab active" data-key="expense_categories" onclick="switchOptTab(this)">支出分类</button>
-          <button class="opt-tab" data-key="departments" onclick="switchOptTab(this)">收入分类</button>
-          <button class="opt-tab" data-key="accounts" onclick="switchOptTab(this)">账户</button>
-          <button class="opt-tab" data-key="pay_methods" onclick="switchOptTab(this)">收款方式</button>
-        </div>
-        <div class="opt-manage">
-          <div class="opt-add-row">
-            <input type="text" id="optNewValue" placeholder="输入新选项名称">
-            <button class="btn-primary" onclick="addOptionItem()">＋ 添加</button>
-          </div>
-          <div class="opt-tags" id="optTags"></div>
-        </div>
-      </div>
-
-      <!-- 资产账户（功能补充 P4） -->
-      <div class="settings-section">
-        <div class="settings-title">🏦 资产账户 <span class="settings-sub">为账户设置期初余额与类型（资产/负债），数据总览显示总资产/负债/净资产</span></div>
-        <div class="account-meta-list" id="accountMetaList"></div>
-      </div>
-
-      <!-- 多币种与汇率（功能补充 P4） -->
-      <div class="settings-section">
-        <div class="settings-title">💱 多币种与汇率 <span class="settings-sub">记账时选择币种，按汇率自动换算为基准币种（MXN）入账</span></div>
-        <div class="recur-add-row">
-          <select id="rateCurrency" class="currency-select"></select>
-          <input type="number" id="rateValue" min="0.0001" step="0.0001" placeholder="1 MXN = ? 该币种" style="flex:1">
-          <button class="btn-primary" onclick="saveExchangeRate()">💾 保存汇率</button>
-        </div>
-        <div class="recur-hint" id="rateHint">例：USD 汇率填 0.055 → 1 MXN = 0.055 USD，100 USD 入账自动换算为 ≈1818 MXN。</div>
-        <div class="rate-list" id="rateList"></div>
-      </div>
-
-      <!-- 安全设置 -->
-      <div class="settings-section">
-        <div class="settings-title">🔒 登录安全 <span class="settings-sub">开店经营 / 家庭明细 共用一个登录密码</span></div>
-        <div class="pwd-row">
-          <input type="password" id="pwdOld" placeholder="原密码">
-          <input type="password" id="pwdNew" placeholder="新密码（至少 4 位）">
-          <button class="btn-primary" onclick="changeLoginPassword()">✏️ 修改密码</button>
-        </div>
-        <div class="recur-hint">💡 默认密码为 <b>12345</b>。修改后需在下次登录时使用新密码。</div>
-      </div>
-
-      <!-- 数据备份 -->
-      <div class="settings-section">
-        <div class="settings-title">💾 数据备份 <span class="settings-sub">生成账本一致性快照（含单据图片），下载到本地保存</span></div>
-        <div class="budget-input-row">
-          <button class="btn-primary" onclick="downloadBackup()">⬇️ 立即备份并下载</button>
-        </div>
-        <div class="recur-hint" id="backupHint">建议定期备份，防止误删或磁盘故障导致数据丢失。</div>
-      </div>
-
-      <!-- 保存按钮 -->
-      <div class="settings-save-bar">
-        <button class="btn-primary" id="btnSaveSettings">💾 保存全部设置</button>
-      </div>
-    </div>
-  </section>
 
   <!-- ======== 快速记账 ======== -->
   <div class="modal-overlay" id="quickModal">
