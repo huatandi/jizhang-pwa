@@ -97,7 +97,10 @@
           if (env && env.backends && env.backends.onnx) {
             env.backends.onnx.wasm.wasmPaths = this.config.wasmPaths || 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
             env.backends.onnx.wasm.numThreads = 1;   // 关键：Pages 无 COEP，强制单线程
-            env.backends.onnx.wasm.proxy = false;
+            // proxy=true：ONNX 推理在后台 Worker 执行。若在主线程跑，whisper 单次推理
+            // 阻塞 UI 数秒 → 浏览器判定"页面无响应"→ 手机端直接提示"页面出现问题"。
+            // proxy 模式不需要 SharedArrayBuffer，Pages 无 COEP 也安全。
+            env.backends.onnx.wasm.proxy = true;
           }
 
           const device = await this.detectBackend();

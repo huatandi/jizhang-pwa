@@ -36,8 +36,17 @@
   };
 
   function detectProfile() {
+    // 移动端优先低档：iOS Safari 不报 deviceMemory → 默认 balanced 会加载 76MB 的
+    // whisper-base，推理时内存峰值高，手机易 OOM 崩溃（"页面出现问题"）。
+    // 触摸设备（手机/平板）一律 low（whisper-tiny 30MB），仅在明确 8GB+ 桌面才用 high。
+    const isTouch = !!(global.navigator && ('maxTouchPoints' in global.navigator) && global.navigator.maxTouchPoints > 0);
     const mem = global.navigator && global.navigator.deviceMemory; // GB
-    if (mem == null) return 'balanced';
+    if (isTouch) {
+      if (mem == null) return 'low';
+      if (mem >= 6) return 'balanced';   // 大内存旗舰手机可用 whisper-base
+      return 'low';
+    }
+    if (mem == null) return 'low';
     if (mem >= 8) return 'high';
     if (mem >= 4) return 'balanced';
     return 'low';

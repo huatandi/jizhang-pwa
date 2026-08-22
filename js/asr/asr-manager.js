@@ -185,6 +185,9 @@
           else this._emit('onError', ERR.NO_SPEECH);
         } catch (e) {
           console.error('[asr] transcribe error:', e);
+          // 自动降级：推理失败（多为 OOM/设备丢失）→ 换 tiny 模型重试一次，避免直接结束会话
+          const triedDowngrade = await this._tryDowngrade(item.audio);
+          if (triedDowngrade) continue;
           if (this.active) {
             this._emit('onError', (e && e.message) || ERR.ASR_FAILED);
             this._emit('onEnd');
@@ -196,6 +199,38 @@
       this._speaking = false;
       this._hasPendingUtterance = false;
       this._emit('onState', 'idle');
+    }
+
+    // 推理失败 → 降级到 whisper-tiny 重试一次；成功返回 true
+    async _tryDowngrade(audio) {
+      try {
+        if (this.mode !== 'local' || !this.engine) return false;
+        const cur = this.engine.modelName || '';
+        if (String(cur).includes('whisper-tiny')) return false; // 已是最小模型
+        console.warn('[asr] 推理失败，降级 whisper-tiny 重试');
+        const tiny = global.AsrKit.modelManager.resolvePlan('low');
+        const tinyEngine = new global.AsrKit.WhisperEngine({
+          device: this.opts.device || 'auto',
+          dtype: tiny.dtype,
+          modelRepo: tiny.baseRepo,
+          language: this.lang.split('-')[0],
+          checkModelFile: true,
+        });
+        await tinyEngine.initialize();
+        const r = await tinyEngine.transcribe(audio, { language: this.lang.split('-')[0] });
+        if (r && r.text) {
+          // 降级成功：替换当前引擎，后续句子用 tiny
+          try { await this.engine.dispose(); } catch (e) {}
+          this.engine = tinyEngine;
+          this._emit('onError', ERR.OUT_OF_MEMORY); // 提示已降级（UI 显示"已切换到兼容模式"）
+          this._emit('onFinal', r.text);
+          return true;
+        }
+        return false;
+      } catch (e2) {
+        console.warn('[asr] 降级 tiny 也失败:', e2);
+        return false;
+      }
     }
 
     /** 用户主动停止 */
