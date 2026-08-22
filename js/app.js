@@ -275,6 +275,9 @@ async function renderDashboard() {
     balBadge.textContent = s.balance >= 0 ? '盈余' : '亏损';
     balBadge.className = 'kpi-badge ' + (s.balance >= 0 ? 'good' : 'warn');
     document.getElementById('kpiUnpaid').textContent = '¥' + fmtMoney(s.unpaid);
+    // 已付款 KPI（进货已付货款）
+    const kpiPaid = document.getElementById('kpiPaid');
+    if (kpiPaid) kpiPaid.textContent = '¥' + fmtMoney(s.totalPaid || 0);
     // 功能补充 P4：资产/负债/净资产
     const kpiAssets = document.getElementById('kpiAssets');
     const kpiLiab = document.getElementById('kpiLiabilities');
@@ -2765,8 +2768,7 @@ function applySettings() {
   });
   // 进货相关看板部件（进货台账关闭时隐藏）
   const purchaseOn = mods.purchase !== false;
-  const unpaidKpi = document.querySelector('.kpi-card.purchase-card');
-  if (unpaidKpi) unpaidKpi.style.display = purchaseOn ? '' : 'none';
+  document.querySelectorAll('.kpi-card.purchase-card').forEach(el => { el.style.display = purchaseOn ? '' : 'none'; });
   const supplierChart = document.getElementById('chartSupplier');
   if (supplierChart) supplierChart.closest('.chart-card').style.display = purchaseOn ? '' : 'none';
   // 当前激活页被隐藏时跳回首页

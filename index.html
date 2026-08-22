@@ -142,6 +142,14 @@
             <div class="kpi-badge" id="kpiBalanceBadge">平衡</div>
           </div>
           <div class="kpi-card purchase-card">
+            <div class="kpi-icon">💵</div>
+            <div class="kpi-info">
+              <span class="kpi-label">已付款</span>
+              <span class="kpi-value" id="kpiPaid">0</span>
+            </div>
+            <div class="kpi-trend" id="kpiPaidTrend"></div>
+          </div>
+          <div class="kpi-card purchase-card">
             <div class="kpi-icon">📦</div>
             <div class="kpi-info">
               <span class="kpi-label">未付款</span>
@@ -963,6 +971,7 @@
     <button class="nav-item m-add-center" onclick="openQuickModal()"><span class="nav-icon">＋</span><span class="m-label">记账</span></button>
     <button class="nav-item" data-page="expense"><span class="nav-icon">💸</span><span class="m-label">支出</span></button>
     <button class="nav-item" data-page="monthly"><span class="nav-icon">📅</span><span class="m-label">月度</span></button>
+    <button class="nav-item" data-page="scan"><span class="nav-icon">📷</span><span class="m-label">识别</span></button>
     <button class="nav-item" data-page="reminder"><span class="nav-icon">⏰</span><span class="m-label">提醒</span></button>
     <button class="nav-item" data-page="query"><span class="nav-icon">🔍</span><span class="m-label">查询</span></button>
     <button class="nav-item" data-page="purchase"><span class="nav-icon">📦</span><span class="m-label">进货</span></button>
