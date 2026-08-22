@@ -143,6 +143,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     if (page === 'dashboard') { renderDashboard(); }
     if (page === 'monthly') { renderMonthly(); }
     if (page === 'reminder') { renderReminders(); }
+    if (page === 'settings') { refreshSettingUI(); }
     // 页面切换后重排可见图表（修复图表堆积左侧：容器从隐藏→显示后宽度才就绪）
     resizeVisibleCharts();
   });
@@ -150,12 +151,40 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 
 // 功能补充 P3：程序化跳转页面（提醒关联账务等场景使用）
 function gotoPage(page) {
-  const btn = document.querySelector(`.nav-item[data-page="${page}"]`);
+  // 找到目标页面对应的导航按钮（桌面侧边栏或移动端底栏）
+  let btn = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if (!btn && page === 'settings') {
+    // 设置页：侧边栏是 btn-settings 按钮
+    const sb = document.querySelector('.sidebar .btn-settings');
+    if (sb) { openSettingsPage(); return; }
+  }
   if (btn) btn.click();
+}
+// 直接跳转设置页（不依赖 nav-item click）
+function openSettingsPage() {
+  refreshSettingUI();
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const sp = document.getElementById('page-settings');
+  if (sp) sp.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === 'settings'));
+  resizeVisibleCharts();
 }
 
 /* ================== Modal 管理 ================== */
-function openModal(id) { document.getElementById(id).classList.add('active'); }
+// 弹窗打开时锁定 body 滚动（iOS：防止背景页面随弹窗上下晃荡），关闭时恢复
+let __modalCount = 0;
+function __lockBodyScroll() {
+  __modalCount++;
+  document.body.style.overflow = 'hidden';
+}
+function __unlockBodyScroll() {
+  __modalCount = Math.max(0, __modalCount - 1);
+  if (__modalCount === 0) document.body.style.overflow = '';
+}
+function openModal(id) {
+  document.getElementById(id).classList.add('active');
+  __lockBodyScroll();
+}
 function closeModal(id) {
   document.getElementById(id).classList.remove('active');
   // 关闭快速记账弹窗时停止语音识别，避免后台继续收音
@@ -164,9 +193,12 @@ function closeModal(id) {
   if (id === 'reminderModal' && reminderVoiceSessionActive) stopReminderVoice();
   // 关闭到期提醒弹窗时停止闹铃（用户点"知道了"等）
   if (id === 'reminderNotifyModal') stopAlarm();
+  __unlockBodyScroll();
 }
 document.querySelectorAll('.modal-overlay').forEach(ov => {
-  ov.addEventListener('click', (e) => { if (e.target === ov) ov.classList.remove('active'); });
+  ov.addEventListener('click', (e) => {
+    if (e.target === ov) { ov.classList.remove('active'); __unlockBodyScroll(); }
+  });
 });
 
 // 查看记账凭证图片
@@ -1560,7 +1592,7 @@ async function exportData() {
 
 /* ================== 数据备份（审计 M1 补充） ================== */
 async function downloadBackup() {
-  const btn = document.querySelector('#settingsModal button[onclick="downloadBackup()"]');
+  const btn = document.querySelector('#page-settings button[onclick="downloadBackup()"]') || document.querySelector('button[onclick="downloadBackup()"]');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 备份中…'; }
   try {
     const auth = currentAuth();
@@ -2937,9 +2969,9 @@ function renderHealthCard() {
   reasonHint.textContent = reasonScore >= 100 ? '✅ 各分类未超预算' : '⚠️ 有分类超出预算';
 }
 
+// 打开设置（独立页面模式）：刷新 UI 后跳转到设置页
 function openSettingsModal() {
-  refreshSettingUI();
-  openModal('settingsModal');
+  openSettingsPage();
 }
 
 function refreshSettingUI() {
@@ -3008,7 +3040,8 @@ async function saveSettings(close = true) {
     settings = await api('/settings', 'POST', settings);
   } catch (e) { return showToast('保存失败: ' + e.message, 'error'); }
   applySettings();
-  if (close) { closeModal('settingsModal'); showToast('设置已保存'); }
+  // 设置已改为独立页面：保存后停留页面并提示（不再关闭弹窗）
+  showToast('设置已保存 ✅');
   return settings;
 }
 

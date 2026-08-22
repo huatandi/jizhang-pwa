@@ -1611,9 +1611,15 @@ select option {
 .budget-fill.over { background: linear-gradient(90deg, #ef4444, #f87171); }
 .budget-rem { margin-top: 10px; font-size: 13px; color: var(--text-3); }
 
-/* ============ 设置弹窗 ============ */
-.settings-modal { width: 92%; max-width: 720px; }
-.settings-modal .modal-body { max-height: 70vh; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* ============ 设置页面（独立页面，与收入/支出/进货一致） ============ */
+.settings-body { max-width: 760px; }
+.settings-save-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 4px 0 12px;
+}
+.settings-save-bar .btn-primary { width: auto; }
 .settings-section {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
