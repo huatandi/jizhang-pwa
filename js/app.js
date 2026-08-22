@@ -208,6 +208,10 @@ async function loadOptions() {
   } catch (e) {
     showToast('加载配置失败', 'error');
   }
+  // 同步语音引擎的选项（分类/账户列表随用户配置更新）
+  if (window.VoiceEngine) {
+    window.VoiceEngine.setOptions({ expense_categories: options && options.expense_categories, departments: options && options.departments, accounts: options && options.accounts });
+  }
 }
 
 async function loadSummary() {
@@ -4565,6 +4569,52 @@ const ReminderParser = {
     return { content, location, datetime, date, time, advance_minutes, method, note };
   }
 };
+
+// ===== VoiceEngine V2 兼容层：用统一智能引擎覆盖旧解析器核心方法 =====
+// 旧 VoiceParser/ReminderParser 保留（含分类词库等被引用的结构），但解析逻辑委托给新引擎，
+// 使所有调用点（applyVoiceText / applyReminderVoiceText / 多笔 / 终结词）自动获得：
+//   字段消耗式对号入座 + 标签词 + 相对时间 + 中英西统一 + 更强消歧
+if (window.VoiceEngine) {
+  const VE = window.VoiceEngine;
+  // 注入当前选项（分类/账户列表）
+  VE.setOptions({ expense_categories: options && options.expense_categories, departments: options && options.departments, accounts: options && options.accounts });
+  // 覆盖 VoiceParser 的解析方法（保留 parseDate/parseAmount 等旧名）
+  Object.assign(VoiceParser, {
+    parseAmount: VE.parseAmount,
+    extractAmount: VE.extractAmount,
+    parseDate: VE.parseDate,
+    parseTime: VE.parseTime,
+    parseAccount: VE.parseAccount,
+    matchCategory: VE.matchCategory,
+    parseCommand: VE.parseCommand,
+    parseEnNumber: VE.parseEnNumber,
+    parseCnNumber: VE.parseCnNumber,
+    // 主解析委托新引擎（保留旧返回结构 { text, cmd, kind, date, account, amount, category, remark }）
+    parse: function (text, kind) {
+      const ex = VE.extract(text, { mode: 'quick', kind: kind || 'expense' });
+      return {
+        text, cmd: ex.cmd, kind: ex.kind || kind || 'expense',
+        date: ex.date, account: ex.account, amount: ex.amount,
+        category: ex.category, remark: ex.remark || '',
+      };
+    },
+    splitEntries: VE.splitEntries,
+  });
+  // 覆盖 ReminderParser 的解析（保留旧返回结构）
+  Object.assign(ReminderParser, {
+    parseTime: VE.parseTime,
+    parseAdvance: VE.parseAdvance,
+    parse: function (text) {
+      const r = VE.parseReminder(text);
+      return {
+        content: r.content || '', location: r.location || '',
+        datetime: r.datetime, date: r.date, time: r.time,
+        advance_minutes: r.advance_minutes, method: r.method,
+        note: r.note || '',
+      };
+    },
+  });
+}
 
 // 渲染提醒列表
 async function renderReminders() {
