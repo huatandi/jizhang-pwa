@@ -168,9 +168,13 @@
       return null;
     }
     // from X → to base：1 X = 1/(1 base=X)
-    const rX = state.rates[from];
-    if (rX && Number(rX.rate) > 0) {
-      return { rate: String(1 / Number(rX.rate)), meta: { provider: rX.provider, date: rX.date, isCached: rX.isCached, source: rX.source } };
+    // ⚠️ 必须限定 to === base；否则 EUR→CNY（双方都不是本币）会被误当成本币换算截断
+    if (to === state.base) {
+      const rX = state.rates[from];
+      if (rX && Number(rX.rate) > 0) {
+        return { rate: String(1 / Number(rX.rate)), meta: { provider: rX.provider, date: rX.date, isCached: rX.isCached, source: rX.source } };
+      }
+      return null;
     }
     // from X → to Y（跨币种）：X→base × base→Y
     const rFrom = state.rates[from];
