@@ -4967,6 +4967,35 @@ async function enterApp(mode) {
 }
 
 /* ================== 初始化 ================== */
+// iOS 横向拖动兜底拦截（PWA 修复：即使 CSS 层失效，也禁止页面左右晃动）
+// 原理：捕获 touchmove，横向位移显著时阻止默认滚动；
+// 但表格/弹窗等需要横向滚动的容器内放行。
+(function () {
+  if (typeof document === 'undefined' || !('ontouchstart' in window)) return;
+  let sx = null, sy = null, started = false;
+  // 允许横向滚动的容器（在这些内部触摸不拦截）
+  const ALLOW_H = '.table-card, .modal-body, .query-panel, .workbench-body, .settings-modal, .quick-modal, .scan-layout, .chart, .ai-panel';
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches && e.touches.length === 1) {
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; started = true;
+    }
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (!started || !e.touches || e.touches.length !== 1) return;
+    // 触摸起点在可横向滚动容器内 → 放行
+    const t = e.target;
+    if (t && t.closest && t.closest(ALLOW_H)) return;
+    const dx = e.touches[0].clientX - sx;
+    const dy = e.touches[0].clientY - sy;
+    // 横向位移明显大于纵向 → 阻止（页面不再左右晃动）
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      if (e.cancelable) e.preventDefault();
+    }
+  }, { passive: false });
+  document.addEventListener('touchend', () => { started = false; }, { passive: true });
+  document.addEventListener('touchcancel', () => { started = false; }, { passive: true });
+})();
+
 async function init() {
   // 默认日期范围：本年度
   const now = new Date();
