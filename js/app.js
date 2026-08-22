@@ -4816,6 +4816,7 @@ async function checkRemindersDue() {
   try {
     const data = await api('/reminders/due');
     if (data.reminders && data.reminders.length) {
+      // 多条到期时：弹第一条，其余用 toast 提示（修复：原实现只弹第一条，其余被静默标完成丢失）
       const r = data.reminders[0];
       // 已经通知过的提醒不再重复弹窗/播报（直到被标记完成或修改）
       if (notifiedReminderIds.has(r.id)) return;
@@ -4833,6 +4834,11 @@ async function checkRemindersDue() {
         `;
       }
       openModal('reminderNotifyModal');
+      // 其余到期提醒：toast 提示，避免静默丢失
+      if (data.reminders.length > 1) {
+        const others = data.reminders.slice(1).map(x => x.content).filter(Boolean).join('、');
+        if (others) setTimeout(() => showToast('还有 ' + (data.reminders.length - 1) + ' 条到期提醒：' + others), 600);
+      }
       // 功能补充 P3：系统级桌面通知（页面在后台也能看到）
       try {
         if ('Notification' in window && Notification.permission === 'granted') {
@@ -4857,9 +4863,15 @@ function startReminderChecker() {
       Notification.requestPermission();
     }
   } catch (e) { /* ignore */ }
-  // 首次立即检查 + 每 30 秒检查一次
+  // 首次立即检查 + 每 15 秒检查一次（更准时；30s 曾导致最多 30 秒延迟）
   checkRemindersDue();
-  reminderCheckTimer = setInterval(checkRemindersDue, 30000);
+  reminderCheckTimer = setInterval(checkRemindersDue, 15000);
+  // iOS 后台会挂起定时器：页面切回前台立即补查一次，避免"该提醒却没弹"
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkRemindersDue();
+  });
+  // 页面刚加载完成（含从后台唤醒）也检查
+  window.addEventListener('focus', () => checkRemindersDue());
 }
 
 /* ================== 事件绑定 ================== */

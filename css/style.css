@@ -1387,27 +1387,15 @@ select option {
     position: relative;
   }
   .mobile-nav .m-add-center .nav-icon {
-    width: 42px; height: 42px;
+    width: 34px; height: 34px;
     border-radius: 50%;
     background: linear-gradient(135deg, #ffb020, #f59e0b);
     color: #fff;
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 700;
     display: flex; align-items: center; justify-content: center;
-    margin-top: -22px;
+    margin-top: -12px;
     box-shadow: 0 4px 14px rgba(255, 176, 32, 0.45);
-  }
-  /* 移动端语音按钮 */
-  .mobile-nav .m-voice-btn { position: relative; }
-  .mobile-nav .m-voice-btn .nav-icon {
-    width: 38px; height: 38px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #f59e0b, #ef4444);
-    color: #fff;
-    font-size: 18px;
-    display: flex; align-items: center; justify-content: center;
-    margin-top: -16px;
-    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
   }
 
   /* 表格卡片窄屏横向滚动 */
