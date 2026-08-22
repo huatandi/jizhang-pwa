@@ -5103,6 +5103,25 @@ async function enterApp(mode) {
           }
         });
       }
+      // 5) 诊断提示：修复后仍超宽 → 页面角落显示可见提示（帮助定位残余溢出源）
+      if (doc.scrollWidth > max + 1) {
+        const remaining = Math.round(doc.scrollWidth - max);
+        console.warn('[overflow] 修复后仍超宽 ' + remaining + 'px (scrollWidth=' + doc.scrollWidth + ', viewport=' + max + ')');
+        try {
+          let dbg = document.getElementById('pwaOverflowDbg');
+          if (!dbg) {
+            dbg = document.createElement('div');
+            dbg.id = 'pwaOverflowDbg';
+            dbg.style.cssText = 'position:fixed;bottom:70px;left:4px;z-index:99998;background:#dc2626;color:#fff;font-size:11px;padding:4px 8px;border-radius:6px;max-width:92%;pointer-events:none;';
+            document.body.appendChild(dbg);
+          }
+          dbg.textContent = '⚠️ 横向溢出 ' + remaining + 'px · 滚动宽 ' + doc.scrollWidth + ' · 视口 ' + max;
+          if (offenders.length) dbg.textContent += ' · 溢出元素 ' + offenders.length + ' 个';
+          // 5 秒后自动消失
+          clearTimeout(dbg._t);
+          dbg._t = setTimeout(() => { try { dbg.remove(); } catch (e) {} }, 5000);
+        } catch (e) { /* ignore */ }
+      }
     }, 80);
   }
   // 事件监听：加载/缩放/旋转/滚动/内容变化

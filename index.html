@@ -2,8 +2,15 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>明细 · 智能记账系统</title>
+  <!-- iOS 防横向溢出：内联强制（head 最先加载，不依赖外部 CSS，任何情况下页面都不超宽） -->
+  <style>
+    html, body { width: 100%; max-width: 100%; overflow-x: hidden; overflow-x: clip; margin: 0; padding: 0; }
+    .app { width: 100%; max-width: 100%; }
+    body { overscroll-behavior-x: none; -webkit-overflow-scrolling: touch; }
+    .mobile-nav { width: 100%; max-width: 100%; }
+  </style>
   <!-- PWA（功能补充：iPhone 主屏幕 App 化） -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0b1120">
@@ -13,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="智账">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=36">
+  <link rel="stylesheet" href="css/style.css?v=37">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
