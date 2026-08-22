@@ -266,13 +266,13 @@
           <!-- 换算器 -->
           <div class="fx-converter">
             <div class="fx-pair" id="fxPair">
-              <div class="fx-side" onclick="FxTool.openPicker('from')">
+              <div class="fx-side" id="fxFromSide" data-code="" onclick="FxTool.openPicker('from')">
                 <div class="fx-flag" id="fxFromFlag">🌐</div>
                 <div class="fx-side-code" id="fxFromCode">--</div>
                 <div class="fx-side-name" id="fxFromName">本币</div>
               </div>
               <button class="fx-swap" onclick="FxTool.swap()" title="交换货币">⇅</button>
-              <div class="fx-side" onclick="FxTool.openPicker('to')">
+              <div class="fx-side" id="fxToSide" data-code="USD" onclick="FxTool.openPicker('to')">
                 <div class="fx-flag" id="fxToFlag">🇺🇸</div>
                 <div class="fx-side-code" id="fxToCode">USD</div>
                 <div class="fx-side-name" id="fxToName">美元</div>

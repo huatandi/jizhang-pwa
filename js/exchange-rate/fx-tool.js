@@ -139,7 +139,12 @@
 
   function setStatus(txt) {
     const s = el('fxStatus');
-    if (s) s.textContent = txt;
+    if (!s) return;
+    s.textContent = txt;
+    // 按状态着色：离线/更新中 → 橙，错误 → 红，正常 → 绿
+    if (/离线|失败|错误|无法|⚠/.test(txt)) s.dataset.offline = '1';
+    else if (/更新中|获取/.test(txt)) s.dataset.offline = 'updating';
+    else s.dataset.offline = '0';
   }
 
   // ---- 渲染 ----
@@ -151,6 +156,8 @@
     el('fxToName').textContent = nameOf(state.to);
     el('fxToFlag').textContent = flagOf(state.to);
     el('fxAmount').value = state.amount;
+    if (el('fxFromSide')) el('fxFromSide').dataset.code = state.from || '';
+    if (el('fxToSide')) el('fxToSide').dataset.code = state.to || '';
     renderResult();
     renderRateLine();
     savePrefs();
@@ -239,7 +246,7 @@
       const rate = r ? Number(r.rate).toFixed(4) : '--';
       const provider = r ? (r.provider === 'BANXICO' ? 'BANXICO' : 'Frankfurter') : '';
       return `
-      <div class="fx-fav-item ${code === state.to ? 'active' : ''}" onclick="FxTool.setTo('${code}')">
+      <div class="fx-fav-item ${code === state.to ? 'active' : ''}" data-code="${code}" onclick="FxTool.setTo('${code}')">
         <div class="fx-fav-head">
           <span class="fx-fav-flag">${flagOf(code)}</span>
           <span class="fx-fav-code">${code}</span>

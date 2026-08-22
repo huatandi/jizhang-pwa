@@ -1729,6 +1729,82 @@ select option {
 .fx-fav-rate { font-size: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .fx-fav-src { font-size: 10px; color: #94a3b8; margin-top: 2px; }
 
+/* ===== 货币主题色体系（深色和谐） =====
+   每种货币一个专属色，用于：常用货币卡片色条/微渐变、货币侧边代码、选择弹窗代码。
+   色板与系统深蓝底(#0b1120) + 金黄主色(#ffb020) 调和。 */
+.fx-fav-item { position: relative; overflow: hidden; }
+.fx-fav-item::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--fx-color, var(--border)); opacity: .85; transition: var(--transition);
+}
+.fx-fav-item:hover::before { width: 4px; opacity: 1; box-shadow: 0 0 10px var(--fx-color, transparent); }
+.fx-fav-item .fx-fav-rate { color: var(--fx-color, var(--text-2)); font-weight: 700; }
+.fx-fav-item.active {
+  border-color: var(--fx-color, var(--primary));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--fx-color, #ffb020) 14%, transparent), var(--surface2) 65%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--fx-color, #ffb020) 35%, transparent);
+}
+
+/* 货币侧边（from/to）主题色 */
+.fx-side { position: relative; }
+.fx-side[data-code] .fx-side-code { color: var(--fx-color, var(--text-1)); }
+.fx-side[data-code] { border-color: color-mix(in srgb, var(--fx-color, var(--border)) 45%, var(--border)); }
+.fx-side[data-code]:hover {
+  border-color: var(--fx-color, var(--primary));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--fx-color, #ffb020) 22%, transparent);
+}
+
+/* 选择弹窗货币代码着色 */
+.fx-pick-item .fx-pick-code { color: var(--fx-color, var(--text-1)); }
+.fx-pick-item[data-code]:hover { border-color: var(--fx-color, var(--primary)); background: color-mix(in srgb, var(--fx-color, #ffb020) 8%, var(--surface2)); }
+
+/* 换算结果数字渐变（金黄→琥珀，与主色一致） */
+.fx-result {
+  background: linear-gradient(135deg, #ffd76a, var(--primary) 55%, #f59e0b);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  filter: drop-shadow(0 1px 8px rgba(255,176,32,.18));
+}
+
+/* ===== 货币 → 颜色映射 ===== */
+.fx-fav-item[data-code="USD"], .fx-side[data-code="USD"], .fx-pick-item[data-code="USD"] { --fx-color: #34d399; }   /* 美元·翠绿 */
+.fx-fav-item[data-code="EUR"], .fx-side[data-code="EUR"], .fx-pick-item[data-code="EUR"] { --fx-color: #60a5fa; }   /* 欧元·蓝 */
+.fx-fav-item[data-code="GBP"], .fx-side[data-code="GBP"], .fx-pick-item[data-code="GBP"] { --fx-color: #a78bfa; }   /* 英镑·紫 */
+.fx-fav-item[data-code="JPY"], .fx-side[data-code="JPY"], .fx-pick-item[data-code="JPY"] { --fx-color: #f87171; }   /* 日元·红 */
+.fx-fav-item[data-code="CNY"], .fx-side[data-code="CNY"], .fx-pick-item[data-code="CNY"] { --fx-color: #fbbf24; }   /* 人民币·金 */
+.fx-fav-item[data-code="MXN"], .fx-side[data-code="MXN"], .fx-pick-item[data-code="MXN"] { --fx-color: #4ade80; }   /* 比索·绿 */
+.fx-fav-item[data-code="CAD"], .fx-side[data-code="CAD"], .fx-pick-item[data-code="CAD"] { --fx-color: #fb7185; }   /* 加元·玫红 */
+.fx-fav-item[data-code="AUD"], .fx-side[data-code="AUD"], .fx-pick-item[data-code="AUD"] { --fx-color: #fb923c; }   /* 澳元·橙 */
+.fx-fav-item[data-code="CHF"], .fx-side[data-code="CHF"], .fx-pick-item[data-code="CHF"] { --fx-color: #22d3ee; }   /* 瑞郎·青 */
+.fx-fav-item[data-code="HKD"], .fx-side[data-code="HKD"], .fx-pick-item[data-code="HKD"] { --fx-color: #f472b6; }   /* 港币·粉 */
+.fx-fav-item[data-code="KRW"], .fx-side[data-code="KRW"], .fx-pick-item[data-code="KRW"] { --fx-color: #818cf8; }   /* 韩元·靛 */
+.fx-fav-item[data-code="SGD"], .fx-side[data-code="SGD"], .fx-pick-item[data-code="SGD"] { --fx-color: #facc15; }   /* 新元·黄 */
+.fx-fav-item[data-code="INR"], .fx-side[data-code="INR"], .fx-pick-item[data-code="INR"] { --fx-color: #f97316; }   /* 卢比·橙 */
+.fx-fav-item[data-code="BRL"], .fx-side[data-code="BRL"], .fx-pick-item[data-code="BRL"] { --fx-color: #4ade80; }   /* 雷亚尔·绿 */
+.fx-fav-item[data-code="ARS"], .fx-side[data-code="ARS"], .fx-pick-item[data-code="ARS"] { --fx-color: #7dd3fc; }   /* 比索(阿)·天蓝 */
+.fx-fav-item[data-code="COP"], .fx-side[data-code="COP"], .fx-pick-item[data-code="COP"] { --fx-color: #fcd34d; }   /* 比索(哥)·暖黄 */
+.fx-fav-item[data-code="CLP"], .fx-side[data-code="CLP"], .fx-pick-item[data-code="CLP"] { --fx-color: #c4b5fd; }   /* 比索(智)·淡紫 */
+.fx-fav-item[data-code="PEN"], .fx-side[data-code="PEN"], .fx-pick-item[data-code="PEN"] { --fx-color: #fda4af; }   /* 索尔·粉 */
+.fx-fav-item[data-code="THB"], .fx-side[data-code="THB"], .fx-pick-item[data-code="THB"] { --fx-color: #67e8f9; }   /* 泰铢·青 */
+.fx-fav-item[data-code="TWD"], .fx-side[data-code="TWD"], .fx-pick-item[data-code="TWD"] { --fx-color: #5eead4; }   /* 新台币·青绿 */
+.fx-fav-item[data-code="VND"], .fx-side[data-code="VND"], .fx-pick-item[data-code="VND"] { --fx-color: #fda4af; }   /* 越南盾·粉 */
+.fx-fav-item[data-code="NZD"], .fx-side[data-code="NZD"], .fx-pick-item[data-code="NZD"] { --fx-color: #38bdf8; }   /* 纽元·天蓝 */
+.fx-fav-item[data-code="RUB"], .fx-side[data-code="RUB"], .fx-pick-item[data-code="RUB"] { --fx-color: #f87171; }   /* 卢布·红 */
+.fx-fav-item[data-code="TRY"], .fx-side[data-code="TRY"], .fx-pick-item[data-code="TRY"] { --fx-color: #e879f9; }   /* 里拉·紫粉 */
+
+/* 免责声明柔和渐变条 */
+.fx-disclaimer {
+  border-top: 1px dashed var(--border);
+  background: linear-gradient(135deg, rgba(34,197,94,.06), rgba(59,130,246,.06) 45%, rgba(255,176,32,.06));
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 10px 12px;
+}
+.fx-disclaimer .fx-info-btn { color: var(--green); }
+.fx-status[data-offline="1"] { color: var(--orange); }
+.fx-status[data-offline="updating"] { color: var(--blue); }
+.fx-status[data-offline="0"] { color: var(--green); }
+.fx-status:not([data-offline]) { color: #94a3b8; }
+
 .fx-disclaimer {
   display: flex; gap: 8px; align-items: flex-start;
   border-top: 1px dashed var(--border); padding-top: 10px;
