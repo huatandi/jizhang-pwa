@@ -1686,6 +1686,7 @@ select option {
   user-select: none;
 }
 .switch-row:hover { border-color: var(--primary); }
+.settings-note { display: block; font-size: 11px; color: var(--text-3); font-weight: 400; margin-top: 2px; }
 .switch-row input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
