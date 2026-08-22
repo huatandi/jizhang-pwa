@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="智账">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=33">
+  <link rel="stylesheet" href="css/style.css?v=34">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -912,16 +912,16 @@
         </div>
         <div class="reminder-voice-zone">
           <button class="voice-lang" id="btnReminderVoiceLang" onclick="switchReminderVoiceLang()" title="切换识别语言">中文</button>
-          <button class="voice-btn" id="btnReminderVoice" onclick="toggleReminderVoice()" title="点击开始/结束说话添加提醒">
-            <span class="voice-btn-icon">🎙️</span>
-            <span class="voice-btn-text" id="btnReminderVoiceText">点击说话</span>
-          </button>
           <span class="voice-tip" id="reminderVoiceTip">🎙️ 说：明天早上九点 在办公室 开会</span>
           <div class="voice-preview" id="reminderVoicePreview"></div>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer reminder-footer">
         <button class="btn-secondary" onclick="closeModal('reminderModal')">取消</button>
+        <button class="voice-btn reminder-voice-btn" id="btnReminderVoice" onclick="toggleReminderVoice()" title="点击开始/结束说话添加提醒">
+          <span class="voice-btn-icon">🎙️</span>
+          <span class="voice-btn-text" id="btnReminderVoiceText">点击说话</span>
+        </button>
         <button class="btn-primary" id="btnSaveReminder">保存提醒</button>
       </div>
     </div>

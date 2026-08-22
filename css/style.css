@@ -1412,6 +1412,8 @@ select option {
   .table-card th { top: 0; }
 
   .btn-primary, .btn-secondary { width: 100%; }
+  /* 提醒弹窗底部：取消 · 话筒 · 保存 保持三并排（不被上面 width:100% 撑破） */
+  .reminder-footer .btn-primary, .reminder-footer .btn-secondary { width: auto; flex: 1 1 0; }
   .scan-type-btn { font-size: 13px; padding: 10px 4px; }
   .modal { width: calc(100% - 24px); max-height: 84vh; }
   .kpi-value { font-size: 20px; }
@@ -2500,39 +2502,55 @@ select option {
   gap: 10px;
   position: relative;
 }
-.reminder-voice-zone .voice-btn {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  background: linear-gradient(135deg, #f59e0b, #f97316);
-  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  transition: all 0.2s ease;
-}
-.reminder-voice-zone .voice-btn:hover { transform: scale(1.05); }
-.reminder-voice-zone .voice-btn.listening {
-  background: linear-gradient(135deg, #ef4444, #f59e0b);
-  animation: voicePulse 1.2s infinite;
-}
-.reminder-voice-zone .voice-btn.done {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
-}
-.reminder-voice-zone .voice-btn.error {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-}
 .reminder-voice-zone .voice-lang {
   position: static;
 }
 .reminder-voice-zone .voice-preview {
   width: 100%;
   margin: 0;
+}
+/* 提醒弹窗底部：取消 · 话筒(说话) · 保存 三并排 */
+.reminder-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.reminder-footer .btn-secondary, .reminder-footer .btn-primary {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+}
+.reminder-voice-btn {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+.reminder-voice-btn:hover { transform: scale(1.05); }
+.reminder-voice-btn .voice-btn-icon { font-size: 18px; line-height: 1; }
+.reminder-voice-btn .voice-btn-text { font-size: 9px; font-weight: 700; color: #fff; line-height: 1; }
+.reminder-voice-btn.listening {
+  background: linear-gradient(135deg, #ef4444, #f59e0b);
+  animation: voicePulse 1.2s infinite;
+}
+.reminder-voice-btn.done {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.4);
+}
+.reminder-voice-btn.error {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
 }
 .voice-chip.muted { color: var(--text-2); opacity: 0.6; }
 
