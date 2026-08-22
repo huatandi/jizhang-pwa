@@ -4406,12 +4406,57 @@ const ReminderParser = {
     if (nm) note = nm[1].trim();
 
     // 地点：在/去/前往/地点/位置（中文）、at the/at、in（英文）、en/lugar/ubicación（西语）
+    // 修复：真实口语常无空格（"在办公室开会"），需在动词处截断；英文需排除时间（at 9am）
     let location = '';
-    const lmCn = t.match(/(?:在|去|前往|地点|位置|位于)\s*[:：]?\s*([^，。,.!！?？\s]{1,24})/);
-    const lmEn = t.match(/\b(?:at the|at|in the|in)\s+([^，。,.!！?？\s]{1,24})/i);
-    const lmEs = t.match(/\b(?:lugar|ubicación|ubicacion|en)\s+(?:la|el|una|un)?\s*([^，。,.!！?？\s]{1,24})/i);
-    const lm = lmCn || lmEn || lmEs;
-    if (lm) location = lm[1];
+    // 已知地点词（含多字词）：出现时优先保留完整地点（避免"办公室"被动词"办"截断）
+    const LOC_PLACES = ['会议室', '办公室', '批发市场', '菜市场', '税务局', '银行', '工厂', '仓库', '公司', '店铺', '商店', '市场', '超市', '商场', '车站', '机场', '医院', '学校', '餐厅', '饭店', '车间', '工地', 'OXXO', 'WALMART', 'BANORTE', 'BBVA'];
+    // 动词（动作）标记：地点在动词处截断
+    const LOC_ACTIONS = ['开会提醒', '见客户', '开会', '见面', '盘点', '培训', '学习', '上课', '吃饭', '聚会', '办', '买', '去', '见', '拿', '取', '交', '付', '签', '验', '谈'];
+    const cutAtAction = (s) => {
+      // 1) 地点词最长匹配：保留到地点词末尾（"市中心办公室见客户" → "市中心办公室"）
+      let bestEnd = -1;
+      for (const p of LOC_PLACES) {
+        const i = s.indexOf(p);
+        if (i >= 0 && i + p.length > bestEnd) bestEnd = i + p.length;
+      }
+      if (bestEnd > 0) return s.slice(0, bestEnd).trim();
+      // 2) 无地点词：在动词处截断
+      for (const a of LOC_ACTIONS) {
+        const i = s.indexOf(a);
+        if (i > 0) return s.slice(0, i).trim();
+      }
+      // 3) 连接词截断
+      return s.split(/和|与|及/)[0].trim();
+    };
+    // 中文：在/去/前往 + 地点（允许空格，动词处截断）
+    let lm = t.match(/(?:在|去|前往)\s*[:：]?\s*([^，。,.!！?？]{1,24})/);
+    if (lm) location = cutAtAction(lm[1]);
+    // 中文显式标签：地点：X / 位置：X / 位于 X
+    if (!location) {
+      lm = t.match(/(?:地点|位置|位于)\s*[:：]?\s*([^，。,.!！?？]{1,24})/);
+      if (lm) location = cutAtAction(lm[1]);
+    }
+    // 英文：优先 at the / in the（确定是地点），再 at/in + 非数字（排除 at 9am 时间）
+    if (!location) {
+      lm = t.match(/\b(?:at the|in the)\s+([A-Za-zÁÉÍÓÚÑüÜ][A-Za-zÁÉÍÓÚÑüÜ0-9&.'-]{1,23})/i) ||
+           t.match(/\b(?:at|in)\s+([A-Za-zÁÉÍÓÚÑüÜ][A-Za-zÁÉÍÓÚÑüÜ0-9&.'-]{1,23})/i);
+      if (lm) location = lm[1].trim();
+    }
+    // 西语：lugar/ubicación/en + 地点（排除 a las 9 / a la 1 时间表达）
+    if (!location) {
+      lm = t.match(/\b(?:lugar|ubicación|ubicacion)\s*(?:de|del|es|ser)?\s*[:：]?\s*([A-Za-zÁÉÍÓÚÑüÜ0-9&. ]{2,24})/i) ||
+           t.match(/\b(?:en|a)\s+(?!\d|las?\s*\d|el\s*\d|un[ao]?\s*\d)(?:la|el|una|un)?\s*([A-Za-zÁÉÍÓÚÑüÜ]{2,24})/i);
+      if (lm) location = lm[1].trim();
+    }
+    // 兜底：常见地点词表（无介词场景："办公室开会" / "去银行"）
+    if (!location) {
+      const locWords = ['办公室', '银行', '工厂', '仓库', '公司', '店铺', '商店', '市场', '超市', '商场', '车站', '机场', '医院', '学校', '餐厅', '饭店', '家里', '会议室', '车间', '工地', '税务局', '批发市场', '菜市场', 'OXXO', 'WALMART', 'BANORTE', 'BBVA'];
+      for (const kw of locWords) {
+        const i = t.indexOf(kw);
+        if (i >= 0) { location = kw; break; }
+      }
+    }
+    if (location) location = cutAtAction(location);
 
     // 事项 = 去掉引导词、日期、时间（含"前/后/左右"）、提前提醒、提醒方式、备注、地点表达后的剩余内容
     let content = t
@@ -4434,10 +4479,12 @@ const ReminderParser = {
       .replace(/(?:闹钟|闹铃)\s*(?:提醒|方式)?/gi, ' ')
       // 备注表达
       .replace(/(?:备注|附注|备注信息|remark|note|nota)\s*[:：]?\s*[^，。,.!！?？]{1,50}/gi, ' ')
-      // 地点表达（中文：无空格；英文/西语：有空格）
-      .replace(/(?:在|去|前往|地点|位置|位于)\s*[:：]?\s*[^，。,.!！?？\s]{1,24}/gi, ' ')
-      .replace(/(?:at the|at|in the|in)\s+[^，。,.!！?？\s]{1,24}/gi, ' ')
-      .replace(/(?:lugar|ubicación|ubicacion|en)\s+(?:la|el|una|un)?\s*[^，。,.!！?？\s]{1,24}/gi, ' ')
+      // 地点表达：精确删除已识别的地点（含中/英/西语引导词），避免吞掉动词
+      .replace(location ? new RegExp('(?:在|去|前往|at the|in the|at|in|en la|en el|en|a las|a la|a)\\s*' + location.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi') : /$^/, ' ')
+      .replace(location ? new RegExp(location.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi') : /$^/, ' ')
+      .replace(/(?:在|去|前往|地点|位置|位于)\s*[:：]?\s*[^，。,.!！?？]{1,24}/gi, ' ')
+      .replace(/(?:at the|at|in the|in)\s+[A-Za-zÁÉÍÓÚÑüÜ0-9&. -]{1,24}/gi, ' ')
+      .replace(/(?:lugar|ubicación|ubicacion|en)\s+(?:la|el|una|un)?\s*[A-Za-zÁÉÍÓÚÑüÜ0-9&. ]{1,24}|a\s+(?:la|el|una|un)\s+[A-Za-zÁÉÍÓÚÑüÜ0-9&. ]{1,24}/gi, ' ')
       .replace(/提醒\s*$/i, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -4994,6 +5041,66 @@ async function enterApp(mode) {
   }, { passive: false });
   document.addEventListener('touchend', () => { started = false; }, { passive: true });
   document.addEventListener('touchcancel', () => { started = false; }, { passive: true });
+})();
+
+// 运行时横向溢出守卫：页面加载/旋转/滚动后，若文档宽度超过视口，
+// 自动找出溢出元素并压缩，保证 iOS 上永不出现横向拖动（兜底所有未预料的溢出源）
+(function () {
+  let lastFix = 0;
+  function fixOverflow() {
+    const now = Date.now();
+    if (now - lastFix < 300) return; // 防抖
+    lastFix = now;
+    const doc = document.documentElement;
+    const max = Math.max(window.innerWidth, doc.clientWidth);
+    if (doc.scrollWidth <= max + 1) return; // 正常
+    // 1) 找出超出视口的元素（宽度 > 视口 且非 fixed 定位）
+    const offenders = [];
+    document.querySelectorAll('body *').forEach((el) => {
+      if (!el.offsetWidth) return;
+      const r = el.getBoundingClientRect();
+      const cs = window.getComputedStyle(el);
+      if (cs.position === 'fixed') return; // fixed 不撑破滚动
+      if (r.right > max + 1) {
+        offenders.push({ el, w: el.offsetWidth, right: Math.round(r.right) });
+      }
+    });
+    // 2) 压缩最宽的溢出元素
+    offenders.sort((a, b) => b.right - a.right);
+    const top = offenders.slice(0, 3);
+    for (const o of top) {
+      const el = o.el;
+      try {
+        if (el.tagName === 'TABLE' || el.closest('.table-card')) {
+          // 表格：确保在可滚动容器内
+          let card = el.closest('.table-card');
+          if (!card) { card = el.parentElement; if (card) card.style.overflowX = 'auto'; }
+          if (card) { card.style.maxWidth = '100%'; }
+        } else if (el.tagName === 'IMG' || el.tagName === 'CANVAS' || el.tagName === 'SVG') {
+          el.style.maxWidth = '100%';
+        } else {
+          el.style.maxWidth = '100%';
+        }
+      } catch (e) { /* ignore */ }
+    }
+    // 3) 最终兜底：body 强制 clip
+    if (doc.scrollWidth > max + 1) {
+      document.body.style.overflowX = 'clip';
+    }
+  }
+  window.addEventListener('load', () => setTimeout(fixOverflow, 400));
+  window.addEventListener('resize', () => setTimeout(fixOverflow, 200));
+  window.addEventListener('orientationchange', () => setTimeout(fixOverflow, 400));
+  // 每次切换页面/弹窗后也检查
+  const origOpenModal = window.openModal;
+  if (typeof origOpenModal === 'function') {
+    window.openModal = function (...args) { const r = origOpenModal.apply(this, args); setTimeout(fixOverflow, 150); return r; };
+  }
+  const origCloseModal = window.closeModal;
+  if (typeof origCloseModal === 'function') {
+    window.closeModal = function (...args) { const r = origCloseModal.apply(this, args); setTimeout(fixOverflow, 150); return r; };
+  }
+  document.addEventListener('DOMContentLoaded', () => setTimeout(fixOverflow, 300));
 })();
 
 async function init() {

@@ -43,10 +43,12 @@ body {
    iOS 注意：100vw 含滚动条宽度会撑破视口，一律用 100%；
    overflow-x:hidden 在 iOS 弹性滚动下不够，需 overscroll-behavior + touch-action */
 html, body {
+  width: 100%;
   overflow-x: hidden;
   max-width: 100%;
   overscroll-behavior-x: none;
 }
+html { overflow-x: clip; } /* iOS16+：彻底禁止横向滚动容器（比 hidden 更严格，无弹性边缘） */
 body { touch-action: pan-y; } /* 只允许纵向手势，禁止横向拖动 */
 /* 内部需要横向滚动的容器恢复横向手势（表格、弹窗滚动区） */
 .table-card, .modal-body, .settings-modal, .workbench-body, .quick-modal, .scan-layout, .query-panel { touch-action: pan-x pan-y; }
@@ -56,7 +58,7 @@ img, table, .chart, .table-card, .modal, .form-grid, .kpi-grid, .chart-grid {
 * { -webkit-tap-highlight-color: transparent; }
 input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动放大 */
 
-.app { display: flex; min-height: 100vh; min-width: 0; max-width: 100%; overflow-x: clip; }
+.app { display: flex; min-height: 100vh; min-width: 0; width: 100%; max-width: 100%; overflow-x: clip; }
 
 /* ============ 侧边栏 ============ */
 .sidebar {
