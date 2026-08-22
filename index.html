@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="智账">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=44">
+  <link rel="stylesheet" href="css/style.css?v=45">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -637,9 +637,9 @@
           <!-- 多币种与汇率（功能补充 P4） -->
           <div class="settings-section">
             <div class="settings-title">💱 多币种与汇率 <span class="settings-sub">记账时选择币种，按汇率自动换算为基准币种（MXN）入账</span></div>
-            <div class="recur-add-row">
+            <div class="rate-add-row">
               <select id="rateCurrency" class="currency-select"></select>
-              <input type="number" id="rateValue" min="0.0001" step="0.0001" placeholder="1 MXN = ? 该币种" style="flex:1">
+              <input type="number" id="rateValue" min="0.0001" step="0.0001" placeholder="1 MXN = ? 该币种">
               <button class="btn-primary" onclick="saveExchangeRate()">💾 保存汇率</button>
             </div>
             <div class="recur-hint" id="rateHint">例：USD 汇率填 0.055 → 1 MXN = 0.055 USD，100 USD 入账自动换算为 ≈1818 MXN。</div>

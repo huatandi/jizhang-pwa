@@ -1348,6 +1348,9 @@ select option {
   .chart-grid { grid-template-columns: 1fr; }
   .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
   .scan-layout { grid-template-columns: 1fr; }
+  /* 周期记账 8 列在中等屏换行，防溢出 */
+  .recur-add-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recur-add-row .recur-hint, .recur-add-row .btn-primary { grid-column: 1 / -1; }
 }
 
 /* ============ 移动端底部导航 ============ */
@@ -1502,6 +1505,11 @@ select option {
   /* 固定多列网格：窄屏换行，避免撑破弹窗 */
   .recur-add-row { grid-template-columns: 1fr 1fr; }
   .recur-add-row .recur-hint, .recur-add-row .btn-primary { grid-column: 1 / -1; }
+  /* 选项添加/汇率行：窄屏换行 */
+  .opt-add-row, .rate-add-row { flex-wrap: wrap; }
+  .opt-add-row input, .rate-add-row input { flex: 1 1 100%; }
+  .rate-add-row select { flex: 1 1 100%; width: 100%; }
+  .rate-add-row .btn-primary, .opt-add-row .btn-primary { flex: 0 0 auto; }
   /* 扫描布局与工作台弹窗不溢出 */
   .scan-layout, .workbench-body { grid-template-columns: 1fr; }
   .workbench-modal { max-width: 100%; width: calc(100% - 24px); }
@@ -1751,9 +1759,11 @@ select option {
   color: #ffcf5e;
   font-weight: 600;
 }
-.opt-add-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.opt-add-row { display: flex; gap: 8px; margin-bottom: 12px; max-width: 100%; }
 .opt-add-row input {
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text);
@@ -2113,20 +2123,45 @@ select option {
 .recur-actions { flex: 0 0 auto; }
 .recur-add-row {
   display: grid;
-  grid-template-columns: 90px 1fr 100px 1fr 80px 60px 1fr auto;
+  grid-template-columns: 90px minmax(0,1fr) 100px minmax(0,1fr) 80px 60px minmax(0,1fr) auto;
   gap: 6px;
   margin-top: 10px;
   align-items: center;
+  max-width: 100%;
 }
 .recur-add-row select, .recur-add-row input {
   padding: 7px 8px;
   background: var(--surface);
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
   font-size: 12px;
 }
 .recur-add-row select:focus, .recur-add-row input:focus { border-color: var(--primary); outline: none; }
+/* 汇率行：flex 自适应，任何宽度不溢出 */
+.rate-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+  max-width: 100%;
+}
+.rate-add-row select, .rate-add-row input {
+  padding: 7px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  min-width: 0;
+  max-width: 100%;
+}
+.rate-add-row select { flex: 0 0 auto; width: 120px; }
+.rate-add-row input { flex: 1 1 auto; width: 100%; }
+.rate-add-row .btn-primary { flex: 0 0 auto; }
 .recur-hint { font-size: 12px; color: var(--text-2); margin-top: 8px; }
 
 /* 财务健康度 */
