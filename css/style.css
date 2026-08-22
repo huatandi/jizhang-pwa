@@ -1581,8 +1581,12 @@ select option {
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 5px 12px;
-  white-space: nowrap;
   margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  text-align: right;
 }
 
 /* ============ 月度预算卡片 ============ */
@@ -2216,7 +2220,8 @@ select option {
   .settings-modal { width: calc(100% - 24px); }
   .preset-btn { min-width: 120px; }
   .m-nav-settings { flex: 0 0 auto; min-width: 56px; }
-  .table-toolbar { padding: 12px 14px; }
+  .table-toolbar { padding: 12px 14px; flex-wrap: wrap; }
+  .search-count { flex: 1 1 100%; text-align: left; margin-left: 0; }
   .search-input { max-width: none; }
 }
 
