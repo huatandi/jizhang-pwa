@@ -877,9 +877,14 @@ async function wbLocalOcr() {
 function imgToDataUrl(img) {
   return new Promise((resolve, reject) => {
     try {
+      // 支持 HTMLImageElement / File / HTMLCanvasElement
+      if (img instanceof HTMLCanvasElement) {
+        resolve(img.toDataURL('image/jpeg', 0.9));
+        return;
+      }
       const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth || img.clientWidth;
-      canvas.height = img.naturalHeight || img.clientHeight;
+      canvas.width = img.naturalWidth || img.clientWidth || (img.width || 0);
+      canvas.height = img.naturalHeight || img.clientHeight || (img.height || 0);
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
       resolve(canvas.toDataURL('image/jpeg', 0.9));
@@ -920,34 +925,26 @@ async function getOcrManager() {
   return _ocrManager;
 }
 
-// 新引擎本地识别：返回 { text, fields, documentType, confidence, words }
+// 新引擎本地识别：返回 { text, fields, documentType, confidence, words, lines }
 async function wbLocalOcrV2(img) {
   const mgr = await getOcrManager();
   if (!mgr) return null;
   const dataUrl = await imgToDataUrl(img);
-  // 1. 预处理 + 识别
+  // 1. 预处理 + 识别（V2：OcrManager 已写回 documentType + lines）
   const result = await mgr.recognize(dataUrl, { enhanceMode: 'auto', rotateDeg: 0 });
   const words = result.words || [];
   const fullText = (result.fullText || result.text || '').replace(/\s+/g, ' ').trim();
   // 2. 地区插件：墨西哥票据结构化解析（CFDI / SPEI / OXXO），仅墨西哥用户激活
   const gcfg = window.AIKit && window.AIKit.globalConfig;
   const isMx = gcfg ? gcfg.isMexicoRegion() : false;
-  let docType = null;
+  let docType = result.documentType || null;
   let structured = null;
   if (isMx && window.MexicoParser && window.MexicoParser.parse && words.length) {
     try {
       const parsed = window.MexicoParser.parse(result);
-      docType = parsed.type;
+      docType = parsed.type || docType;
       structured = parsed.document || {};
     } catch (e) { console.warn('[ocr] MexicoParser 解析失败:', e); }
-  }
-  // 通用票据类型推断（非墨西哥地区）
-  if (!docType) {
-    const hasInvoice = /\b(invoice|factura|receipt|bill|faktura|rechnung|recibo|nota)\b/i.test(fullText);
-    const hasBank = /\b(bank|banco|transfer|transferencia|deposit|pago|payment|remittance)\b/i.test(fullText);
-    const hasItemTable = words.filter(w => /quantity|qty|amount|precio|price|importe|total|cantidad/i.test(w.text)).length >= 3;
-    if (hasInvoice || hasItemTable) docType = 'RECEIPT';
-    else if (hasBank) docType = 'BANK_TRANSFER';
   }
   // 3. 映射到旧字段结构（对号入座）
   const V = window.ValidateKit || {};
@@ -982,6 +979,9 @@ async function wbLocalOcrV2(img) {
       ? Math.round(window.OcrKit.ocrUtil.avgConfidence(result))
       : null,
     words,
+    lines: result.lines || [],
+    processingMs: result.processingTimeMs || 0,
+    engine: result.engine || null,
   };
 }
 

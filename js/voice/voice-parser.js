@@ -161,7 +161,48 @@
     if (m && esMonth[m[2]]) {
       return iso(new Date(base.getFullYear(), esMonth[m[2]] - 1, Number(m[1])));
     }
+    // 西语字母数字日期：el quince de agosto / el veinticinco de diciembre
+    const esCardinal = { uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16, dieciséis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20, veintiuno: 21, veintidos: 22, veintidós: 22, veintitres: 23, veintitrés: 23, veinticuatro: 24, veinticinco: 25, veintiseis: 26, veintiséis: 26, veintisiete: 27, veintiocho: 28, veintinueve: 29, treinta: 30, 'treinta y uno': 31, 'treinta y una': 31 };
+    m = t.match(/(el\s+)?(uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|dieciséis|diecisiete|dieciocho|diecinueve|veinte|veintiuno|veintidos|veintidós|veintitres|veintitrés|veinticuatro|veinticinco|veintiseis|veintiséis|veintisiete|veintiocho|veintinueve|treinta(?:\s+y\s+uno|una)?)\s+de\s*([a-z]+)/);
+    if (m && esMonth[m[3]]) {
+      const day = esCardinal[m[2].trim()];
+      if (day) return iso(new Date(base.getFullYear(), esMonth[m[3]] - 1, day));
+    }
     return null;
+  };
+
+  /* ================== 日期剥离（解析金额前必须先剥离日期短语，防日期数字污染金额） ================== */
+  // 中/英/西 日期短语 → 空格。返回 { text, date }：剥离后的文本 + 解析出的 ISO 日期
+  const CN_REL = /大前天|前天|昨天|昨日|今天|今日|明天|明日|后天|大后天/g;
+  const CN_MONTH_DAY_RE = /(?:\d{1,2}|[零一二两三四五六七八九十]{1,2})\s*月\s*(?:\d{1,2}|[零一二两三四五六七八九十]{1,2})?\s*[日号]?/g;
+  const CN_DAY_RE = /(?:\d{1,2}|[零一二两三四五六七八九十]{1,2})\s*[号日](?![元角分块])/g;
+  const CN_WEEK_RE = /(?:下个?|这|本|上个?)?\s*(?:周|星期|礼拜)[一二三四五六日天]/g;
+  // 时间短语（防"十点/三点半"被误当金额）
+  const CN_TIME_RE = /(?:[零一二两三四五六七八九十\d]{1,2})\s*(?:点|時|时)\s*(?:半|[零一二三四五六七八九十\d]{1,2}\s*(?:分|分钟)?)?/g;
+  const EN_TIME_RE = /\d{1,2}\s*(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?|am|pm|o'?clock|hours?|h)\b/gi;
+  const ES_TIME_RE = /(?:a las|a la|las|la)\s+\d{1,2}\s*(?::\d{2})?\s*(?:de la (?:mañana|noche|tarde))?/gi;
+  const ES_MONTH_RE = /enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre/;
+  const EN_MONTH_RE = /january|february|march|april|may|june|july|august|september|october|november|december/;
+
+  VK.stripDatePhrases = function (t) {
+    let s = String(t || '');
+    s = s.replace(CN_REL, ' ');
+    s = s.replace(CN_MONTH_DAY_RE, ' ');
+    s = s.replace(CN_DAY_RE, ' ');
+    s = s.replace(CN_WEEK_RE, ' ');
+    s = s.replace(CN_TIME_RE, ' ');
+    s = s.replace(EN_TIME_RE, ' ');
+    s = s.replace(ES_TIME_RE, ' ');
+    // 西语：el quince de agosto / el 15 de agosto / 15 de agosto / el 25 de diciembre
+    s = s.replace(new RegExp(`(?:el\\s+)?(?:\\d{1,2}|[a-záéíóúñ]+(?:\\s+y\\s+uno)?)\\s+de\\s+(?:${ES_MONTH_RE.source})`, 'gi'), ' ');
+    // 西语：los días / el lunes / martes ...（星期）
+    s = s.replace(/(?:el|los|los días|este|esta)?\s*(?:lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo)\b/gi, ' ');
+    // 英文：on the 15th / next monday / january 5th（限定：有序数后缀，或有英文限定词，避免误剥金额数字）
+    s = s.replace(/(?:on\s+)?(?:the\s+)?\d{1,2}(?:st|nd|rd|th)\b/gi, ' ');
+    s = s.replace(/(?:on|the|next|last|this|by|before|after)\s+\d{1,2}\b/gi, ' ');
+    s = s.replace(new RegExp(`(?:${EN_MONTH_RE.source})\\s*\\d{1,2}(?:st|nd|rd|th)?`, 'gi'), ' ');
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
   };
 
   /* ================== 语音指令解析（与旧版保持兼容） ================== */
@@ -240,7 +281,7 @@
 
   /* ================== 分类关键词匹配（与旧版兼容） ================== */
   const CATEGORY_RULES = {
-    '餐饮': ['餐', '饭', '吃', '奶茶', '咖啡', '外卖', '买菜', '饭店', '早点', '夜宵', '食堂', '火锅', 'pizza', 'comida', 'restaurante', 'restaurant', 'lunch', 'dinner', 'breakfast', 'food', 'eat', 'taco', 'burger', 'cafe', 'break', 'almuerzo', 'cena', 'desayuno', 'tacos', 'mercado', 'despensa', 'carne', 'frutas', 'verduras', 'pan', 'leche', 'tortilla', 'super', 'comprar comida', 'fruta', 'verdura', 'sopa', 'bebida'],
+    '餐饮': ['餐', '饭', '吃', '奶茶', '咖啡', '外卖', '买菜', '饭店', '早点', '夜宵', '食堂', '火锅', '牛奶', '面包', '早餐', '午餐', '晚餐', '菜', '肉', '蛋', '水果', '蔬菜', '零食', 'pizza', 'comida', 'restaurante', 'restaurant', 'lunch', 'dinner', 'breakfast', 'food', 'eat', 'grocery', 'groceries', 'taco', 'burger', 'cafe', 'break', 'almuerzo', 'cena', 'desayuno', 'tacos', 'mercado', 'despensa', 'carne', 'frutas', 'verduras', 'pan', 'leche', 'tortilla', 'super', 'comprar comida', 'fruta', 'verdura', 'sopa', 'bebida', 'alimento', 'alimentos'],
     '购物': ['买', '购', '淘宝', '京东', '拼多多', '超市', '商场', '衣服', '鞋', '包', 'shopping', 'compra', 'shop', 'clothes', 'supermarket', 'walmart', 'buy', 'store', 'tienda', 'ropa', 'zapatos', 'compras', 'compré', 'compra de', 'mercadotecnia', 'costo', 'supermercado'],
     '交通': ['车', '油', '加油', '地铁', '公交', '出租', '滴滴', '打车', '停车', '高铁', '机票', 'taxi', 'uber', 'gasolina', 'transporte', 'gas', 'gasoline', 'metro', 'bus', 'train', 'car', 'parking', 'uber', 'didi', 'transport', 'fuel'],
     '住房': ['房租', '房贷', '物业', '水电', '水费', '电费', '气费', '燃气', 'renta', 'rent', 'house', 'home', 'mortgage', 'property', 'alquiler', 'apartment'],
@@ -402,9 +443,12 @@
     const body = cmdR.cmd && cmdR.cmd !== 'save' && cmdR.cmd !== 'clear' ? cmdR.text : t;
     const effectiveKind = cmdR.cmd === 'income' ? 'income' : cmdR.cmd === 'expense' ? 'expense' : kind;
     const out = { text: t, remark: body, cmd: cmdR.cmd, kind: effectiveKind };
+    // 先剥离日期短语，再解析日期/金额（防日期数字污染金额：如"八月十五号"的 15）
+    const stripped = VK.stripDatePhrases(body);
     out.date = VK.parseDate(body);
     out.account = VK.parseAccount(body, _getOptions().accounts);
-    let remainder = body.replace(AMOUNT_RE, ' ').trim();
+    out.amount = VK.parseAmount(stripped);
+    let remainder = stripped.replace(AMOUNT_RE, ' ').trim();
     remainder = remainder.replace(/\s+/g, ' ');
     if (out.date) {
       remainder = remainder
@@ -415,8 +459,7 @@
         .trim();
     }
     if (out.account) remainder = remainder.split(out.account).join(' ').replace(/\s+/g, ' ').trim();
-    out.amount = VK.parseAmount(body);
-    out.category = VK.matchCategory(remainder || body, effectiveKind);
+    out.category = VK.matchCategory(remainder || stripped, effectiveKind);
     if (out.amount != null || out.category) out.remark = remainder || body;
     else out.remark = '';
     return out;

@@ -21,7 +21,7 @@
     device: 'auto',        // 'webgpu' | 'wasm' | 'auto'
     dtype: 'q8',           // 'q8' | 'q5' | 'fp32'（由档位决定）
     language: null,        // hint：null → 由 global-config 解析（'zh' | 'en' | 'es' ...）
-    task: 'transcribe',
+    task: 'automatic-speech-recognition',
     chunkLengthSec: 10,
   };
 

@@ -66,7 +66,7 @@ function openQuickModal(autoVoice) {
   document.getElementById('qDate').value = todayLocal();
   document.getElementById('qAmount').value = '';
   document.getElementById('qRemark').value = '';
-  const segs = document.querySelectorAll('#quickModal .seg-btn');
+  const segs = document.querySelectorAll('#page-quick .seg-btn');
   segs.forEach(b => b.classList.toggle('active', b.dataset.type === 'expense'));
   fillSelect('qAccount', options.accounts, true);
   renderQuickCatSelect();
@@ -89,15 +89,16 @@ function openQuickModal(autoVoice) {
   setVoiceBtnState('idle');
   syncVoiceLangUI();
   renderVoicePreview();
-  openModal('quickModal');
+  // 完整页面：跳转到 page-quick（而非弹窗）
+  gotoPage('quick');
   setTimeout(() => document.getElementById('qAmount').focus(), 100);
-  // 语音记账入口：仅打开弹窗，不自动开始聆听，需点击 🎙️ 话筒按钮才开始
+  // 语音记账入口：仅打开页面，不自动开始聆听，需点击 🎙️ 话筒按钮才开始
 }
 
 function setQuickType(t, btn) {
   quickType = t;
   quickCategory = '';
-  document.querySelectorAll('#quickModal .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('#page-quick .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
   document.getElementById('qCatLabel').textContent = t === 'expense' ? '支出分类' : '收入分类';
   renderQuickCatSelect();
   closeQuickAddCat();
@@ -182,6 +183,7 @@ let voiceBuffer = '';
 let voiceRestartTimer = null;
 let voiceMultiEntries = []; // 语音多笔记账识别结果
 const QUICK_MEM_KEY = 'sm_quick_mem_v1'; // 记忆上次账户/分类
+if (!window.__voiceRetryOnce) window.__voiceRetryOnce = true;
 
 function getQuickMem() {
   try { return JSON.parse(localStorage.getItem(QUICK_MEM_KEY) || 'null') || {}; } catch (e) { return {}; }
@@ -194,14 +196,69 @@ function setQuickMem(patch) {
 }
 
 function toggleVoice() {
-  if (!VoiceSR.supported) return showToast('当前浏览器不支持语音识别', 'error');
+  const cap = checkVoiceCapability();
+  if (!cap.ok) {
+    setVoiceBtnState('error');
+    return showToast(cap.message, 'error');
+  }
   if (voiceSessionActive) { stopVoiceSession(); return; }
   startVoiceSession();
 }
 
+/**
+ * 语音能力预检（iOS Safari / 受限浏览器进入语音模块前明确提示）
+ * 返回 { ok, message, capability }
+ *  - 不支持语音识别（无 AsrKit / 无 WebGPU+WASM / 无 WebSpeech）→ 明确多语言提示
+ *  - 支持但需要联网下载模型 → 提示首次需联网
+ *  - 完全支持 → ok
+ */
+function checkVoiceCapability() {
+  const L = voiceLang;
+  const msg = (zh, en, es) => L === 'es-MX' ? es : L === 'en-US' ? en : zh;
+  // 1) 语音识别基础设施
+  if (!window.VoiceSR || !VoiceSR.supported) {
+    return { ok: false, message: msg('当前浏览器不支持语音识别，可手动输入记账', 'Speech recognition not supported in this browser, use manual entry', 'El navegador no soporta reconocimiento de voz, usa entrada manual'), capability: null };
+  }
+  // 2) ASR 后端能力
+  let cap = null;
+  try {
+    if (window.AsrKit && window.AsrKit.AsrManager && window.AsrKit.AsrManager.capability) {
+      cap = window.AsrKit.AsrManager.capability();
+    }
+  } catch (e) { /* ignore */ }
+  if (cap) {
+    const hasWebGPU = cap.webgpu;
+    const hasWasm = typeof WebAssembly === 'object' && typeof WebAssembly.instantiate === 'function';
+    const hasWebSpeech = cap.webspeech;
+    const canLocal = cap.whisperPossible && (hasWebGPU || hasWasm);
+    if (!canLocal && !hasWebSpeech) {
+      return { ok: false, message: msg(
+        '当前设备无法运行本地语音模型，且浏览器不支持在线语音，请使用 Chrome/Edge 或升级浏览器',
+        'Local speech model unavailable and online speech unsupported. Use Chrome/Edge or update your browser',
+        'Modelo de voz local no disponible y voz en línea no soportada. Usa Chrome/Edge o actualiza el navegador'),
+        capability: cap };
+    }
+    if (!canLocal && hasWebSpeech) {
+      // 仅在线可用 → 提示需联网+授权
+      return { ok: true, hint: 'online-only', message: msg(
+        '本地语音模型不可用，将使用浏览器在线语音（需联网）',
+        'Local model unavailable, using browser online speech (needs network)',
+        'Modelo local no disponible, usando voz en línea del navegador (requiere red)'),
+        capability: cap };
+    }
+  }
+  // 3) 麦克风硬件
+  if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
+    // 真机浏览器 getUserMedia 存在即视为可尝试（异步权限会在 start 时报 not-allowed）
+    return { ok: true, capability: cap };
+  }
+  return { ok: false, message: msg('当前环境无法访问麦克风', 'Microphone not accessible', 'No se puede acceder al micrófono'), capability: cap };
+}
+
 function startVoiceSession() {
   // 先停掉语音提醒会话，避免两个识别器冲突
-  if (reminderVoiceSessionActive) stopReminderVoice();
+  if (window.isReminderVoiceActive && window.isReminderVoiceActive()) stopReminderVoice();
+  window.__voiceRetryOnce = true;
   voiceBuffer = '';
   voiceMultiEntries = [];
   voiceSessionActive = true;
@@ -218,6 +275,32 @@ function stopVoiceSession() {
 }
 
 function voiceHandleResult(r) {
+  if (r.modelProgress) {
+    // Whisper 模型下载进度（transformers.js progress 为 0~100 百分比，部分文件序号为 0~1，统一归一化）
+    const tip = document.getElementById('voiceTip');
+    const raw = r.modelProgress.progress || 0;
+    const pct = Math.min(100, Math.round(raw > 1 ? raw : raw * 100));
+    if (tip) tip.textContent = `⬇️ 正在加载语音模型 ${pct}%…（首次使用需下载，约 30-250MB）`;
+    const textEl = document.getElementById('btnVoiceText');
+    if (textEl && pct < 100) textEl.textContent = `加载 ${pct}%`;
+    return;
+  }
+  if (r.state === 'initializing') {
+    const tip = document.getElementById('voiceTip');
+    if (tip) tip.textContent = '⬇️ 正在加载语音模型…（首次使用需下载，约 30-250MB）';
+    const textEl = document.getElementById('btnVoiceText');
+    if (textEl) textEl.textContent = '加载中…';
+    return;
+  }
+  if (r.state === 'listening') {
+    setVoiceBtnState('listening');
+    return;
+  }
+  if (r.state === 'processing') {
+    const tip = document.getElementById('voiceTip');
+    if (tip) tip.textContent = '🧠 正在理解…';
+    return;
+  }
   if (r.interim) {
     const tip = document.getElementById('voiceTip');
     if (tip) tip.textContent = (voiceLang === 'es-MX' ? '🔴 Escuchando… ' : voiceLang === 'en-US' ? '🔴 Listening… ' : '🔴 正在聆听… ') + r.interim;
@@ -226,13 +309,40 @@ function voiceHandleResult(r) {
     voiceBuffer += (voiceBuffer ? ' ' : '') + r.final;
     applyVoiceText(voiceBuffer);
   } else if (r.error) {
-    if (voiceSessionActive && (r.error === 'no-speech' || r.error === 'aborted' || r.error === 'network')) {
+    // 区分可自动恢复错误（no-speech）与需人工介入错误（权限/模型/网络）
+    const fatal = r.error === 'not-allowed' || r.error === 'unsupported' || r.error === 'aborted';
+    if (voiceSessionActive && r.error === 'no-speech') {
       // 停顿/超时类错误：自动重启继续聆听
       voiceRestartTimer = setTimeout(() => {
         if (voiceSessionActive && !VoiceSR.isListening()) {
           VoiceSR.listen({ lang: voiceLang, continuous: true }, voiceHandleResult);
         }
       }, 400);
+    } else if (fatal) {
+      // 致命错误：停止会话 + 提示用户，避免无限重启（权限拒绝/模型加载失败/浏览器不支持）
+      const wasActive = voiceSessionActive;
+      stopVoiceSession();
+      setVoiceBtnState('error');
+      const msgMap = {
+        'not-allowed': voiceLang === 'es-MX' ? 'Permite el acceso al micrófono' : voiceLang === 'en-US' ? 'Microphone access denied' : '未获得麦克风权限，请点击「点击说话」并允许麦克风',
+        'unsupported': voiceLang === 'es-MX' ? 'El navegador no soporta voz' : voiceLang === 'en-US' ? 'Speech not supported in this browser' : '当前浏览器不支持语音识别',
+        'aborted': voiceLang === 'es-MX' ? 'No se pudo iniciar el motor de voz' : voiceLang === 'en-US' ? 'Speech engine failed to start' : '语音引擎启动失败，请重试',
+      };
+      showToast(msgMap[r.error] || r.error, 'error');
+      if (wasActive && r.error === 'aborted') {
+        // 一次性重试机会（模型可能正在下载/临时失败）
+        voiceRestartTimer = setTimeout(() => {
+          if (!voiceSessionActive && window.__voiceRetryOnce) {
+            window.__voiceRetryOnce = false;
+            startVoiceSession();
+          }
+        }, 1500);
+      }
+    } else if (voiceSessionActive && r.error === 'network') {
+      // 网络错误：降级提示，不无限重启（保留会话状态，等用户手动再试）
+      setVoiceBtnState('error');
+      showToast(voiceLang === 'es-MX' ? 'Voz sin red, revisa conexión' : voiceLang === 'en-US' ? 'Speech needs network, check connection' : '语音服务需要网络，请检查连接', 'error');
+      stopVoiceSession();
     } else {
       setVoiceBtnState('error');
       showToast(voiceLang === 'es-MX' ? ('Error de voz: ' + r.error) : voiceLang === 'en-US' ? ('Speech error: ' + r.error) : ('语音识别失败: ' + r.error), 'error');
@@ -269,6 +379,7 @@ let alarmBeepTimer = null;     // 蜂鸣循环定时器
 let alarmStopTimer = null;     // 1分钟自动停止
 let alarmVibrateTimer = null;  // 震动循环（Android；iOS 不支持 vibrate 无害）
 let alarmRetryTimers = [];     // 10/20/30 分钟重试定时器
+let alarmCustomBuffer = null;  // 自定义音乐片段（AudioBuffer，IndexedDB 读取后解码缓存）
 
 // 闹铃设置默认值：铃声 classic / 音量 0.9（默认拉高，避免听不到）；用户可在设置页调整
 // 说明：Web 无法读写系统「闹钟音量」通道（iOS/Android 均不开放），
@@ -280,6 +391,20 @@ function getAlarmSettings() {
     volume: typeof a.volume === 'number' ? a.volume : 0.9,
   };
 }
+
+// ---- 内置铃声定义（Web Audio 合成） ----
+// custom = 用户上传的音乐片段（IndexedDB 存储），静音 tone 走 silent
+const ALARM_TONES = {
+  classic: { label: '🔔 经典（系统风格）', desc: '880Hz 方波单音，类似系统闹铃' },
+  urgent:  { label: '🚨 急促（双音交替）', desc: '880/1320Hz 交替，类似多部电话' },
+  gentle:  { label: '🎵 柔和（低打扰）', desc: '440Hz 正弦，缓起缓落' },
+  piano:   { label: '🎹 钢琴（上行琶音）', desc: 'C-E-G-C 琶音，清脆明亮' },
+  doorbell:{ label: '🔔 门铃（叮咚）', desc: '两音叮咚，亲切明确' },
+  digital: { label: '📟 电子（哔哔声）', desc: '高频哔哔，清晰醒神' },
+  bird:    { label: '🐦 鸟鸣（自然风）', desc: '颤音鸟叫，温和自然' },
+  custom:  { label: '🎶 我的音乐', desc: '使用上传的音乐片段（设置页可更换）' },
+  silent:  { label: '🤫 静音（仅震动+语音播报）', desc: '不出声，仅震动+语音播报' },
+};
 
 // 试听闹铃（设置页用）：短鸣一次；直接读取 UI 当前选择（无需先保存）
 function previewAlarm() {
@@ -302,6 +427,60 @@ function previewAlarm() {
   }
 }
 
+// ---- 自定义音乐片段存储（IndexedDB） ----
+const CUSTOM_TONE_DB = 'jizhang_alarm_tone';
+function customToneOpen() {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!('indexedDB' in window)) return reject(new Error('indexedDB 不可用'));
+      const req = indexedDB.open(CUSTOM_TONE_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('tones')) db.createObjectStore('tones');
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('打开铃声库失败'));
+    } catch (e) { reject(e); }
+  });
+}
+// 保存自定义音乐：File → ArrayBuffer → IndexedDB
+async function saveCustomTone(file) {
+  if (!file) return { ok: false, msg: '未选择文件' };
+  if (file.size > 10 * 1024 * 1024) return { ok: false, msg: '音乐片段请小于 10MB' };
+  const buf = await file.arrayBuffer();
+  const db = await customToneOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('tones', 'readwrite');
+    tx.objectStore('tones').put(buf, 'tone');
+    tx.oncomplete = () => {
+      alarmCustomBuffer = null; // 清缓存，下次播放重新解码
+      resolve({ ok: true, name: file.name, size: file.size });
+    };
+    tx.onerror = () => reject(tx.error || new Error('保存失败'));
+  });
+}
+// 读取自定义音乐（ArrayBuffer）；无则返回 null
+async function loadCustomTone() {
+  const db = await customToneOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('tones', 'readonly');
+    const req = tx.objectStore('tones').get('tone');
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error || new Error('读取失败'));
+  });
+}
+// 删除自定义音乐
+async function removeCustomTone() {
+  const db = await customToneOpen();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('tones', 'readwrite');
+    tx.objectStore('tones').delete('tone');
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error('删除失败'));
+  });
+  alarmCustomBuffer = null;
+}
+
 // 开始响铃（durationMs 毫秒后自动停止；默认 1 分钟）
 function startAlarm(durationMs = 60000) {
   stopAlarm();
@@ -318,6 +497,22 @@ function startAlarm(durationMs = 60000) {
       const master = alarmCtx.createGain();
       master.gain.value = vol; // 音量跟随设置（默认 0.9）
       master.connect(alarmCtx.destination);
+
+      if (cfg.tone === 'custom') {
+        // 自定义音乐片段：IndexedDB 读取 → 解码 → 循环播放
+        loadCustomTone().then((buf) => {
+          if (!buf) return;
+          alarmCtx.decodeAudioData(buf.slice(0), (audioBuf) => {
+            alarmCustomBuffer = audioBuf;
+            playCustomLoop(audioBuf, master);
+          }, (e) => console.warn('[alarm] 解码失败:', e));
+        }).catch((e) => console.warn('[alarm] 读取自定义铃声失败:', e));
+        // 兜底：自定义读取失败时退化为 classic 蜂鸣
+        alarmBeepTimer = setInterval(() => { try { beep('classic'); } catch (e) {} }, 2000);
+        alarmStopTimer = setTimeout(stopAlarm, durationMs);
+        return;
+      }
+
       const beep = (tone) => {
         if (!alarmCtx) return;
         try {
@@ -346,6 +541,64 @@ function startAlarm(durationMs = 60000) {
               osc.connect(g2); g2.connect(alarmCtx.destination);
               osc.start(t0); osc.stop(t0 + 0.24);
             });
+          } else if (tone === 'piano') {
+            // 钢琴：C-E-G-C 上行琶音（正弦+衰减包络）
+            [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+              const osc = alarmCtx.createOscillator();
+              osc.type = 'sine';
+              osc.frequency.value = f;
+              const g2 = alarmCtx.createGain();
+              const t0 = now + i * 0.12;
+              g2.gain.setValueAtTime(0.0001, t0);
+              g2.gain.exponentialRampToValueAtTime(vol * 0.9, t0 + 0.02);
+              g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.2);
+              osc.connect(g2); g2.connect(alarmCtx.destination);
+              osc.start(t0); osc.stop(t0 + 1.3);
+            });
+          } else if (tone === 'doorbell') {
+            // 门铃：E6 叮（短）+ C6 咚（长）
+            const notes = [[1318.5, 0.3, vol], [1046.5, 0.8, vol * 0.8]];
+            notes.forEach(([f, dur, v], i) => {
+              const osc = alarmCtx.createOscillator();
+              osc.type = 'sine';
+              osc.frequency.value = f;
+              const g2 = alarmCtx.createGain();
+              const t0 = now + i * 0.35;
+              g2.gain.setValueAtTime(0.0001, t0);
+              g2.gain.exponentialRampToValueAtTime(v, t0 + 0.03);
+              g2.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+              osc.connect(g2); g2.connect(alarmCtx.destination);
+              osc.start(t0); osc.stop(t0 + dur + 0.05);
+            });
+          } else if (tone === 'digital') {
+            // 电子：2000Hz 方波 4 连哔
+            for (let i = 0; i < 4; i++) {
+              const osc = alarmCtx.createOscillator();
+              osc.type = 'square';
+              osc.frequency.value = 2000;
+              const g2 = alarmCtx.createGain();
+              const t0 = now + i * 0.18;
+              g2.gain.setValueAtTime(vol * 0.7, t0);
+              g2.gain.exponentialRampToValueAtTime(0.001, t0 + 0.15);
+              osc.connect(g2); g2.connect(alarmCtx.destination);
+              osc.start(t0); osc.stop(t0 + 0.16);
+            }
+          } else if (tone === 'bird') {
+            // 鸟鸣：高频颤音（正弦 2 次快速上滑）
+            for (let i = 0; i < 3; i++) {
+              const osc = alarmCtx.createOscillator();
+              osc.type = 'sine';
+              const t0 = now + i * 0.4;
+              osc.frequency.setValueAtTime(1800, t0);
+              osc.frequency.linearRampToValueAtTime(2800, t0 + 0.08);
+              osc.frequency.linearRampToValueAtTime(1500, t0 + 0.2);
+              const g2 = alarmCtx.createGain();
+              g2.gain.setValueAtTime(0.0001, t0);
+              g2.gain.exponentialRampToValueAtTime(vol * 0.6, t0 + 0.02);
+              g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+              osc.connect(g2); g2.connect(alarmCtx.destination);
+              osc.start(t0); osc.stop(t0 + 0.3);
+            }
           } else {
             // classic：880Hz 方波，刺耳音，类似系统闹铃
             const osc = alarmCtx.createOscillator();
@@ -360,7 +613,7 @@ function startAlarm(durationMs = 60000) {
         } catch (e) { /* ignore */ }
       };
       beep(cfg.tone);
-      const intervalMs = cfg.tone === 'urgent' ? 1500 : 2000;
+      const intervalMs = cfg.tone === 'urgent' ? 1500 : (cfg.tone === 'digital' ? 900 : 2000);
       alarmBeepTimer = setInterval(() => { try { beep(cfg.tone); } catch (e) {} }, intervalMs);
     }
     // 震动（Android 支持）
@@ -373,11 +626,24 @@ function startAlarm(durationMs = 60000) {
   alarmStopTimer = setTimeout(stopAlarm, durationMs);
 }
 
+// 自定义音乐循环播放（不重叠：前一段播完再播下一段）
+function playCustomLoop(buffer, master) {
+  if (!alarmCtx || !buffer) return;
+  const src = alarmCtx.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  src.connect(master);
+  src.start();
+  alarmCustomSrc = src;
+}
+let alarmCustomSrc = null;
+
 // 停止响铃（含所有重试定时器）
 function stopAlarm() {
   try { if (alarmBeepTimer) clearInterval(alarmBeepTimer); } catch (e) {}
   try { if (alarmStopTimer) clearTimeout(alarmStopTimer); } catch (e) {}
   try { if (alarmVibrateTimer) clearInterval(alarmVibrateTimer); } catch (e) {}
+  try { if (alarmCustomSrc) { alarmCustomSrc.stop(); alarmCustomSrc = null; } } catch (e) {}
   try { if (alarmCtx) alarmCtx.close(); } catch (e) {}
   alarmCtx = null; alarmBeepTimer = null; alarmStopTimer = null; alarmVibrateTimer = null;
   try { if (navigator.vibrate) navigator.vibrate(0); } catch (e) {}
@@ -541,7 +807,7 @@ function applyVoiceText(buffer) {
   }
   if (parsed.cmd === 'income' || parsed.cmd === 'expense') {
     if (quickType !== parsed.cmd) {
-      const seg = document.querySelector(`#quickModal .seg-btn[data-type="${parsed.cmd}"]`);
+      const seg = document.querySelector(`#page-quick .seg-btn[data-type="${parsed.cmd}"]`);
       if (seg) setQuickType(parsed.cmd, seg);
     }
   }
@@ -618,7 +884,7 @@ function removeVoiceEntry(idx) {
     if (voiceMultiEntries.length === 1) {
       const e = voiceMultiEntries[0];
       if (e.kind === 'income' && quickType !== 'income') {
-        const seg = document.querySelector('#quickModal .seg-btn[data-type="income"]');
+        const seg = document.querySelector('#page-quick .seg-btn[data-type="income"]');
         if (seg) setQuickType('income', seg);
       }
       if (e.amount != null) document.getElementById('qAmount').value = e.amount;
@@ -661,7 +927,7 @@ async function saveQuick() {
     if (voiceSessionActive) stopVoiceSession();
     voiceMultiEntries = [];
     voiceBuffer = '';
-    closeModal('quickModal');
+    gotoPage('dashboard');
     const L = voiceLang;
     const okMsg = L === 'es-MX' ? `✔ ${saved} operaciones registradas` : L === 'en-US' ? `✔ ${saved} entries saved` : `✔ 已记录 ${saved} 笔`;
     showToast(errors ? okMsg + `，${errors} 笔失败` : okMsg);
@@ -689,7 +955,7 @@ async function saveQuick() {
   }
   // 保存后停止语音会话
   if (voiceSessionActive) stopVoiceSession();
-  closeModal('quickModal');
+  gotoPage('dashboard');
   showToast(quickType === 'expense' ? '支出已记录 ✔' : '收入已记录 ✔');
   speak(quickType === 'expense' ? '支出已记录' : '收入已记录');
   renderIncome();
@@ -702,7 +968,9 @@ async function saveQuick() {
     renderQuickCatSelect, onQuickCatChange, openQuickAddCat, closeQuickAddCat, confirmQuickAddCat,
     openQuickModal, setQuickType, setVoiceBtnState, getVoiceLangMeta, switchVoiceLang, syncVoiceLangUI,
     getQuickMem, setQuickMem, toggleVoice, startVoiceSession, stopVoiceSession, voiceHandleResult,
+    checkVoiceCapability,
     speak, startAlarm, stopAlarm, scheduleAlarmRetries, getAlarmSettings, previewAlarm, renderVoicePreview, applyVoiceText,
     removeVoiceEntry, saveQuick,
+    ALARM_TONES, saveCustomTone, removeCustomTone, loadCustomTone,
   });
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -144,6 +144,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     if (page === 'dashboard') { renderDashboard(); }
     if (page === 'monthly') { renderMonthly(); }
     if (page === 'reminder') { renderReminders(); }
+    if (page === 'quick') { openQuickModal(); }
     if (page === 'settings') { refreshSettingUI(); }
     // 页面切换后重排可见图表（修复图表堆积左侧：容器从隐藏→显示后宽度才就绪）
     resizeVisibleCharts();
@@ -173,6 +174,7 @@ function gotoPage(page) {
   if (page === 'expense') renderExpense();
   if (page === 'monthly') renderMonthly();
   if (page === 'reminder') renderReminders();
+  if (page === 'quick') openQuickModal();
   if (page === 'settings') refreshSettingUI();
   resizeVisibleCharts();
 }
@@ -563,7 +565,7 @@ async function renderAccountMetaList() {
   const metaBy = {};
   for (const m of (Array.isArray(accountMetaCache) ? accountMetaCache : [])) metaBy[m.account] = m;
   const accs = options.accounts || [];
-  if (!accs.length) { list.innerHTML = '<div class="recur-hint">暂无账户。</div>'; return; }
+  if (!accs.length) { list.innerHTML = '<div class="recur-hint">暂无账户，请在下方添加（支持自定义各国银行名）。</div>'; return; }
   list.innerHTML = accs.map(a => {
     const m = metaBy[a] || { initial_balance: 0, acc_type: 'asset' };
     return `
@@ -576,9 +578,49 @@ async function renderAccountMetaList() {
         </select>
         <input type="number" class="account-meta-input" data-acc="${escapeHtml(a)}" data-k="initial" value="${Number(m.initial_balance) || 0}" step="0.01" min="0" title="期初余额（基准币种）">
         <button class="btn-small" onclick="saveAccountMeta('${escJs(a)}')" title="保存期初余额与类型">💾</button>
+        <button class="account-del-btn" onclick="removeAccountItem('${escJs(a)}')" title="删除账户 ${escapeHtml(a)}">×</button>
       </span>
     </div>`;
   }).join('');
+}
+
+// 新增账户（写入 options.accounts，全球可自定义银行名）
+async function addAccountItem() {
+  const input = document.getElementById('newAccountName');
+  const v = input ? input.value.trim() : '';
+  if (!v) return showToast('请输入账户名称', 'error');
+  try {
+    await api('/options/accounts', 'POST', { value: v });
+  } catch (e) { return showToast(e.message || '添加失败', 'error'); }
+  if (input) input.value = '';
+  options = await api('/options');
+  await renderAccountMetaList();
+  fillCurrencySelects();
+  showToast('✅ 账户「' + v + '」已添加');
+}
+
+// 删除账户（从 options.accounts 移除；若该账户有记账记录则阻止，避免数据错乱）
+async function removeAccountItem(v) {
+  v = deJs(v);
+  if (!confirm('删除账户「' + v + '」？\n该账户的期初余额设置也会一并删除。\n（若已有记账记录将保留历史，仅从列表移除）')) return;
+  try {
+    // 先检查是否有记账记录
+    const r = await api('/account/records?account=' + encodeURIComponent(v));
+    if (r && r.count > 0) {
+      showToast('⚠️ 账户「' + v + '」有 ' + r.count + ' 条记账记录，请先转移或删除记录后再删除账户', 'error');
+      return;
+    }
+    await api('/options/accounts?value=' + encodeURIComponent(v), 'DELETE');
+    await api('/account-meta/' + encodeURIComponent(v), 'DELETE');
+  } catch (e) {
+    if (e.message && e.message.indexOf('记账记录') >= 0) return showToast(e.message, 'error');
+    // 兼容无记录检查接口时直接删除
+    try { await api('/options/accounts?value=' + encodeURIComponent(v), 'DELETE'); }
+    catch (e2) { return showToast(e2.message || '删除失败', 'error'); }
+  }
+  options = await api('/options');
+  await renderAccountMetaList();
+  showToast('已删除账户「' + v + '」');
 }
 
 // 保存单个账户的期初余额与类型
@@ -1023,6 +1065,53 @@ function applyRange() {
   renderDashboard();
 }
 
+// 侧边栏应用时同时保存为数据范围设置（下次启动沿用）
+function applyRangeAndSave() {
+  applyRange();
+  const s = document.getElementById('rangeStart').value;
+  const e = document.getElementById('rangeEnd').value;
+  if (s || e) {
+    settings.dataRange = { start: s, end: e };
+    try { api('/settings', 'POST', settings); } catch (err) { /* 静默 */ }
+  }
+}
+
+/* ================== 设置页数据范围快捷按钮 ================== */
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function setDataRangeUI(start, end, hint) {
+  document.getElementById('setDataStart').value = start || '';
+  document.getElementById('setDataEnd').value = end || '';
+  const h = document.getElementById('setDataHint');
+  if (h) h.textContent = hint || '';
+}
+// 恢复默认：首次启用日（或最早记录日）~ 今天（结束日期每天顺延）
+function setDataRangeDefault() {
+  const base = settings && settings.first_use_date;
+  const earliest = settings && settings.earliest_record_date;
+  let start = base || todayStr();
+  if (earliest && earliest < start) start = earliest;
+  setDataRangeUI(start, todayStr(), `默认范围：${start} ～ ${todayStr()}（从启用本系统之日起，结束日期每天自动顺延到今天）`);
+  showToast('已设置为默认数据范围（首次启用日起）');
+}
+function setDataRangeThisYear() {
+  const y = new Date().getFullYear();
+  setDataRangeUI(`${y}-01-01`, `${y}-12-31`, `${y} 年度 1 月 1 日 ～ 12 月 31 日`);
+  showToast('已设置为本年度');
+}
+function setDataRangeThisMonth() {
+  const d = new Date();
+  const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  setDataRangeUI(`${ym}-01`, `${ym}-31`, `${ym} 本月`);
+  showToast('已设置为本月');
+}
+function clearDataRange() {
+  setDataRangeUI('', '', '不限日期范围，查看全部数据');
+  showToast('已清空日期范围（查看全部数据）');
+}
+
 /* ================== 导出 ================== */
 async function exportData() {
   const data = currentSummary;
@@ -1356,13 +1445,89 @@ function refreshSettingUI() {
   // 提醒闹铃设置回填
   const alarm = settings.alarm || {};
   const toneEl = document.getElementById('alarmTone');
-  if (toneEl) toneEl.value = ['classic', 'urgent', 'gentle', 'silent'].includes(alarm.tone) ? alarm.tone : 'classic';
+  if (toneEl) {
+    const validTones = ['classic', 'urgent', 'gentle', 'piano', 'doorbell', 'digital', 'bird', 'custom', 'silent'];
+    toneEl.value = validTones.includes(alarm.tone) ? alarm.tone : 'classic';
+  }
   const volEl = document.getElementById('alarmVolume');
   if (volEl) {
     const vol = typeof alarm.volume === 'number' ? alarm.volume : 0.9;
     volEl.value = String(Math.round(Math.min(1, Math.max(0, vol)) * 100));
     syncAlarmVolumeLabel(volEl.value);
   }
+  // 自定义铃声状态显示
+  syncAlarmCustomToneUI();
+  // 数据范围设置回填（设置页）
+  fillDataRangeUI();
+}
+
+// 设置页数据范围回填：显示当前数据范围 + 提示文字
+function fillDataRangeUI() {
+  const startEl = document.getElementById('setDataStart');
+  const endEl = document.getElementById('setDataEnd');
+  const hintEl = document.getElementById('setDataHint');
+  if (!startEl) return;
+  const dr = settings && settings.dataRange;
+  startEl.value = (dr && dr.start) || currentRange.start || '';
+  endEl.value = (dr && dr.end) || currentRange.end || '';
+  const hint = [];
+  if (settings && settings.first_use_date) hint.push(`首次启用日期：${settings.first_use_date}`);
+  if (settings && settings.earliest_record_date) hint.push(`最早记账日期：${settings.earliest_record_date}`);
+  if (hint.length) hint.push('未设置时默认从首次启用之日起到今天');
+  if (hintEl) hintEl.textContent = hint.join(' · ');
+}
+
+// 自定义铃声 UI 状态：已上传 → 显示文件名 + 删除按钮
+async function syncAlarmCustomToneUI() {
+  const nameEl = document.getElementById('alarmCustomName');
+  const delBtn = document.getElementById('alarmCustomDelBtn');
+  if (!nameEl) return;
+  try {
+    const buf = await window.loadCustomTone();
+    if (buf) {
+      nameEl.textContent = '✔ 已上传音乐片段（' + (buf.byteLength / 1024 / 1024).toFixed(1) + ' MB）';
+      if (delBtn) delBtn.hidden = false;
+    } else {
+      nameEl.textContent = '';
+      if (delBtn) delBtn.hidden = true;
+    }
+  } catch (e) {
+    nameEl.textContent = '';
+    if (delBtn) delBtn.hidden = true;
+  }
+}
+
+// 上传自定义音乐片段
+async function handleAlarmCustomFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  try {
+    const r = await window.saveCustomTone(file);
+    if (r.ok) {
+      showToast('音乐片段已保存 ✔ 可在铃声中选择「🎶 我的音乐」');
+      // 若当前选择是 custom，直接试听
+      const toneEl = document.getElementById('alarmTone');
+      if (toneEl && toneEl.value === 'custom') previewAlarm();
+    } else {
+      showToast(r.msg || '保存失败', 'error');
+    }
+  } catch (e) {
+    showToast('保存失败: ' + (e.message || e), 'error');
+  } finally {
+    input.value = '';
+    syncAlarmCustomToneUI();
+  }
+}
+
+// 删除已上传的音乐片段
+async function removeAlarmCustomTone() {
+  try {
+    await window.removeCustomTone();
+    showToast('已删除音乐片段');
+  } catch (e) {
+    showToast('删除失败: ' + (e.message || e), 'error');
+  }
+  syncAlarmCustomToneUI();
 }
 
 // 闹铃音量滑块 → 百分比标签
@@ -1423,10 +1588,29 @@ async function saveSettings(close = true) {
   if (settings.scene === 'business' || settings.scene === 'family') {
     settings.dataMode = settings.scene;
   }
+  // 数据范围设置（设置页）
+  const dsEl = document.getElementById('setDataStart');
+  const deEl = document.getElementById('setDataEnd');
+  if (dsEl && deEl) {
+    const ds = dsEl.value, de = deEl.value;
+    if (ds || de) settings.dataRange = { start: ds, end: de };
+    else settings.dataRange = null;
+  }
   try {
     settings = await api('/settings', 'POST', settings);
   } catch (e) { return showToast('保存失败: ' + e.message, 'error'); }
   applySettings();
+  // 保存的数据范围生效：更新侧边栏 + 当前范围
+  if (settings.dataRange) {
+    currentRange.start = settings.dataRange.start || '';
+    currentRange.end = settings.dataRange.end || todayStr();
+    document.getElementById('rangeStart').value = currentRange.start;
+    document.getElementById('rangeEnd').value = currentRange.end;
+  } else {
+    applyDataRangeDefault();
+    document.getElementById('rangeStart').value = currentRange.start;
+    document.getElementById('rangeEnd').value = currentRange.end;
+  }
   // 设置已改为独立页面：保存后停留页面并提示（不再关闭弹窗）
   showToast('设置已保存 ✅');
   return settings;
@@ -2232,7 +2416,7 @@ if (window.VoiceEngine) {
 }
 
 /* ================== 事件绑定 ================== */
-document.getElementById('btnApplyRange').addEventListener('click', applyRange);
+document.getElementById('btnApplyRange').addEventListener('click', applyRangeAndSave);
 document.getElementById('btnSaveIncome').addEventListener('click', saveIncome);
 document.getElementById('btnSavePurchase').addEventListener('click', savePurchase);
 document.getElementById('btnSaveExpense').addEventListener('click', saveExpense);
@@ -2526,16 +2710,13 @@ async function enterApp(mode) {
 })();
 
 async function init() {
-  // 默认日期范围：本年度
-  const now = new Date();
-  currentRange.start = now.getFullYear() + '-01-01';
-  currentRange.end = now.getFullYear() + '-12-31';
-  document.getElementById('rangeStart').value = currentRange.start;
-  document.getElementById('rangeEnd').value = currentRange.end;
-
   // 登录守卫：无有效会话则停在登录页
   await loadOptions();
   try { settings = await api('/settings'); } catch (e) { /* 使用默认设置 */ }
+  // 默认日期范围：优先用户设置的数据范围，否则从首次启用之日起至今天
+  applyDataRangeDefault();
+  document.getElementById('rangeStart').value = currentRange.start;
+  document.getElementById('rangeEnd').value = currentRange.end;
   if (!isLoggedIn()) {
     showLoginScreen();
     return;
@@ -2544,8 +2725,33 @@ async function init() {
   await initAfterLogin();
 }
 
+// 应用数据范围默认值（首次启用日 / 最早记录日 ~ 今天；若用户已设置则用设置值）
+function applyDataRangeDefault() {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const dr = settings && settings.dataRange;
+  if (dr && typeof dr === 'object' && (dr.start || dr.end)) {
+    currentRange.start = dr.start || '';
+    currentRange.end = dr.end || today;
+    // 未设置结束日期时每天自动顺延到今天
+    if (!dr.end) currentRange.end = today;
+    return;
+  }
+  // 默认：首次启用日（或最早一笔记录日，取更早者）~ 今天
+  let base = settings && settings.first_use_date;
+  if (settings && settings.earliest_record_date && (!base || settings.earliest_record_date < base)) {
+    base = settings.earliest_record_date;
+  }
+  currentRange.start = base || today;
+  currentRange.end = today;
+}
+
 // 登录成功后的主初始化
 async function initAfterLogin() {
+  // 登录后 first_use_date 已落库：重新应用数据范围默认值
+  applyDataRangeDefault();
+  document.getElementById('rangeStart').value = currentRange.start;
+  document.getElementById('rangeEnd').value = currentRange.end;
   applySettings();
   // 功能补充 P4：填充币种下拉 + 汇率列表
   fillCurrencySelects();
@@ -2581,6 +2787,24 @@ async function initAfterLogin() {
   // 参考汇率工具：后台加载（不阻塞首屏）
   if (window.FxTool && window.FxTool.init) {
     try { window.FxTool.init(); } catch (e) { console.warn('[fx] init:', e); }
+  }
+  // 手机端下拉刷新（PWA 无原生 pull-to-refresh，自实现；仅触摸设备激活）
+  if (window.PullRefresh && window.PullRefresh.init) {
+    try {
+      window.PullRefresh.init({
+        onRefresh: async () => {
+          // 重新拉取选项（分类/账户/币种）+ 各页面数据 + 汇率
+          await loadOptions();
+          try { settings = await api('/settings'); } catch (e) { /* 保留旧值 */ }
+          refreshDashboards();
+          renderIncome();
+          renderExpense();
+          renderPurchase();
+          if (window.FxTool && window.FxTool.refresh) window.FxTool.refresh();
+          if (window.renderReminders) window.renderReminders();
+        },
+      });
+    } catch (e) { console.warn('[pull-refresh] init:', e); }
   }
 }
 init();

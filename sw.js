@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v23';
+const CACHE_NAME = 'jizhang-pwa-v43';
 const APP_SHELL = [
   './',
   './index.html',
@@ -22,6 +22,7 @@ const APP_SHELL = [
   './js/ocr/tesseract-engine.js',
   './js/ocr/paddle-engine.js',
   './js/ocr/ocr-manager.js',
+  './js/mexico/money.js',
   './js/mexico/field-normalizer.js',
   './js/mexico/document-detector.js',
   './js/mexico/cfdi-parser.js',
@@ -38,6 +39,7 @@ const APP_SHELL = [
   './js/asr/asr-manager.js',
   './js/voice/voice-parser.js',
   './js/voice/voice-sr.js',
+  './js/voice/voice-qa.js',
   // app.js 拆分模块（app.js v69 拆分）
   './js/voice/reminders.js',
   './js/voice/quick-voice.js',
@@ -46,6 +48,8 @@ const APP_SHELL = [
   './js/ai/ai-workbench.js',
   './js/ai/engine-manager.js',
   './js/ai/multimodal.js',
+  // 手机端下拉刷新
+  './js/pull-refresh.js',
   // 参考汇率工具（Exchange Rate Engine）
   './js/exchange-rate/exchange-rate-types.js',
   './js/exchange-rate/currency-registry.js',

@@ -47,6 +47,8 @@
       onFinal: (t) => activeCb && activeCb({ final: t }),
       onError: (code) => activeCb && activeCb({ error: mapLegacyCode(code) }),
       onEnd: () => { listening = false; activeCb && activeCb({ end: true, auto: false }); },
+      onState: (s) => activeCb && activeCb({ state: s }),
+      onModelProgress: (p) => activeCb && activeCb({ modelProgress: p }),
     });
     mgr.start().then(() => { listening = true; }).catch((e) => {
       listening = false;
@@ -58,8 +60,8 @@
   function mapLegacyCode(code) {
     const s = String(code || '');
     if (/^NO_SPEECH|no-speech$/.test(s)) return 'no-speech';
-    if (/^ASR_FAILED|aborted$/.test(s)) return 'aborted';
-    if (/^NETWORK|network$/.test(s)) return 'network';
+    if (/^ASR_FAILED|aborted|MODEL_LOAD_FAILED|BROWSER_UNSUPPORTED|MICROPHONE_UNAVAILABLE|WASM_FAILED|WEBGPU_FAILED$/.test(s)) return 'aborted';
+    if (/^NETWORK|network|NETWORK_REQUIRED$/.test(s)) return 'network';
     if (/^MICROPHONE_DENIED|not-allowed$/.test(s)) return 'not-allowed';
     return s;
   }

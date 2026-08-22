@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ============================================
-echo   智账 PWA - GitHub Pages 上传脚本（冲突自动处理版）
+echo   飞常明细 PWA - GitHub Pages 上传脚本（冲突自动处理版）
 echo   用法：1. 确认下面 REPO_URL 是你的仓库地址
 echo        2. 双击运行（需已安装 Git，且已登录 GitHub）
 echo ============================================
@@ -24,7 +24,7 @@ git remote add origin %REPO_URL%
 
 echo [3/5] 添加并提交文件...
 git add -A
-git commit -m "智账 PWA 部署：%date% %time%" 2>nul
+git commit -m "飞常明细 PWA 部署：%date% %time%" 2>nul
 if errorlevel 1 (
   echo   没有新提交（可能文件未变化），继续推送
 )

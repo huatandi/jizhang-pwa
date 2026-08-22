@@ -9,14 +9,20 @@
   // 标签 → 标准键（覆盖常见 OCR 变体；值会先 trim + 去冒号）
   const LABEL_MAP = [
     // 金额相关
-    [/^total(\s*a\s*pagar|\s*mxn|\s*pesos)?$/i, 'total'],
+    [/^total(\s*a\s*pagar|\s*mxn|\s*pesos|\s*general)?$/i, 'total'],
+    [/^importe\s*total$/i, 'total'],              // IMPORTE TOTAL（CFDI 常见）
+    [/^total\s*importe$/i, 'total'],
+    [/^gran\s*total$/i, 'total'],                 // GRAN TOTAL（西班牙语小票）
+    [/^total\s*(a\s*pagar|pagado|recibido)$/i, 'total'],
+    [/^pago\s*total$/i, 'total'],
     [/^subtotal$/i, 'subtotal'],
     [/^iva$/i, 'iva'],
     [/^ieps$/i, 'ieps'],
     [/^descuento$/i, 'descuento'],
     [/^monto$/i, 'monto'],
     [/^importe$/i, 'importe'],
-    [/^pago total$/i, 'total'],
+    [/^importe\s*(parcial|unitario|unit)$/i, 'importe_unitario'],
+    [/^total\s*impuestos$/i, 'total_impuestos'],
     // 票号 / 凭证
     [/^folio(\s*fiscal)?$/i, 'folio'],
     [/^ticket$/i, 'ticket'],

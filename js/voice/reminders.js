@@ -489,7 +489,11 @@ function getReminderVoiceLangMeta() {
 
 // 提醒语音会话
 function toggleReminderVoice() {
-  if (!VoiceSR.supported) return showToast('当前浏览器不支持语音识别', 'error');
+  const cap = (typeof window.checkVoiceCapability === 'function') ? window.checkVoiceCapability() : null;
+  if (cap && !cap.ok) {
+    setReminderVoiceBtnState('error');
+    return showToast(cap.message, 'error');
+  }
   if (reminderVoiceSessionActive) { stopReminderVoice(); return; }
   startReminderVoice();
 }
@@ -517,16 +521,22 @@ function setReminderVoiceBtnState(state) {
 }
 function reminderVoiceHandleResult(r) {
   if (r.error) {
-    setReminderVoiceBtnState('error');
     if (r.error === 'not-allowed' || r.error === 'service-not-allowed') {
       reminderVoiceSessionActive = false;
+      setReminderVoiceBtnState('error');
       showToast('未获得麦克风权限，请点击「点击说话」并允许麦克风后重试', 'error');
     } else if (r.error === 'network') {
       reminderVoiceSessionActive = false;
+      setReminderVoiceBtnState('error');
       showToast('语音识别网络不可用，可手动填写', 'error');
     } else if (r.error === 'no-speech') {
       // 没听到声音：保持监听状态即可
       if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening');
+    } else if (r.error === 'aborted' || r.error === 'unsupported') {
+      // 引擎启动失败/浏览器不支持：结束会话，避免假监听
+      reminderVoiceSessionActive = false;
+      setReminderVoiceBtnState('error');
+      showToast(r.error === 'unsupported' ? '当前浏览器不支持语音识别' : '语音引擎启动失败，请重试', 'error');
     } else if (reminderVoiceSessionActive) {
       if (reminderVoiceTimer) clearTimeout(reminderVoiceTimer);
       reminderVoiceTimer = setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1200);
@@ -682,5 +692,7 @@ function startReminderChecker() {
     markReminderDone, snoozeReminder, switchReminderVoiceLang, syncReminderVoiceLangUI, getReminderVoiceLangMeta,
     toggleReminderVoice, startReminderVoice, stopReminderVoice, setReminderVoiceBtnState, reminderVoiceHandleResult,
     applyReminderVoiceText, autoSaveReminderByVoice, renderReminderVoicePreview, checkRemindersDue, startReminderChecker,
+    // 只读状态访问器（quick-voice 需判断提醒语音会话是否活跃，避免双识别器冲突）
+    isReminderVoiceActive: () => reminderVoiceSessionActive,
   });
 })(typeof window !== 'undefined' ? window : globalThis);

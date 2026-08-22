@@ -76,6 +76,104 @@
     return out;
   }
 
+  /**
+   * 任意角度旋转（倾斜校正用；白底填充，避免黑边干扰 OCR）。
+   */
+  function rotateCanvas(canvas, deg) {
+    const rad = (deg * Math.PI) / 180;
+    const w = canvas.width, h = canvas.height;
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(rad);
+    ctx.drawImage(canvas, -w / 2, -h / 2);
+    return out;
+  }
+
+  /**
+   * 投影法倾斜估计（Deskew）：
+   * 对灰度图做水平投影，在 -8°~+8° 范围内搜索使"行投影峰谷方差最大"的角度。
+   * 该角度即文字行最水平的旋转角（反向旋转即扶正）。纯 Canvas 实现，零依赖。
+   * 复杂度：每角度一次投影扫描（降采样到 320px 宽，速度快）。
+   */
+  function estimateDeskew(canvas) {
+    try {
+      const W = 320; // 降采样宽度（速度）
+      const scale = W / canvas.width;
+      const H = Math.max(1, Math.round(canvas.height * scale));
+      const c2 = document.createElement('canvas');
+      c2.width = W; c2.height = H;
+      const ctx = c2.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(canvas, 0, 0, W, H);
+      const imgData = ctx.getImageData(0, 0, W, H);
+      const d = imgData.data;
+      const gray = new Uint8Array(W * H);
+      for (let i = 0; i < d.length; i += 4) {
+        gray[i / 4] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      }
+      const inked = (x, y) => gray[y * W + x] < 150; // 深色像素（文字）
+      let bestAngle = 0, bestVar = -1;
+      for (let ang = -8; ang <= 8; ang += 0.5) {
+        const rad = (ang * Math.PI) / 180;
+        const cos = Math.cos(rad), sin = Math.sin(rad);
+        const cx = W / 2, cy = H / 2;
+        const rows = new Float32Array(H + 8);
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            if (!inked(x, y)) continue;
+            const dx = x - cx, dy = y - cy;
+            // 投影到 Y 轴（考虑旋转）
+            const py = dy * cos - dx * sin + cy;
+            const idx = Math.round(py);
+            if (idx >= 0 && idx < rows.length) rows[idx]++;
+          }
+        }
+        // 方差 = 投影峰谷对比度（文字行对齐时峰值集中）
+        let mean = 0;
+        for (let i = 0; i < rows.length; i++) mean += rows[i];
+        mean /= rows.length;
+        let v = 0;
+        for (let i = 0; i < rows.length; i++) v += (rows[i] - mean) * (rows[i] - mean);
+        v /= rows.length;
+        if (v > bestVar) { bestVar = v; bestAngle = ang; }
+      }
+      return bestVar > 0 ? bestAngle : 0;
+    } catch (e) { return 0; }
+  }
+
+  /**
+   * 反光抑制：检测超过高阈值的"亮斑"像素，局部压暗到纸面亮度。
+   * 对手机拍摄的反光票据（热敏纸/塑封面）有效。
+   */
+  function reduceGlare(canvas) {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = imgData.data;
+    // 纸面典型亮度估计：取中位数亮度（反光只占少部分）
+    const lum = new Uint8Array(d.length / 4);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+      lum[j] = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+    }
+    const sorted = [...lum].sort((a, b) => a - b);
+    const paper = sorted[Math.floor(sorted.length * 0.6)] || 220;
+    const glareLum = Math.max(230, paper + 40);
+    for (let i = 0; i < d.length; i += 4) {
+      const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      if (l > glareLum) {
+        // 反光像素 → 压到纸面亮度（保留微弱色差）
+        const k = paper / l;
+        d[i] = Math.min(255, d[i] * k);
+        d[i + 1] = Math.min(255, d[i + 1] * k);
+        d[i + 2] = Math.min(255, d[i + 2] * k);
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas;
+  }
+
   /** 灰度化（返回新 canvas） */
   function toGrayscale(canvas) {
     const ctx = canvas.getContext('2d');
@@ -197,18 +295,29 @@
   }
 
   /**
-   * 完整预处理管线：load → resize → enhance。
-   * opts: { maxEdge, enhanceMode, rotateDeg }
-   * 返回 { canvas, width, height }
+   * 完整预处理管线：load → resize → deskew → enhance。
+   * opts: { maxEdge, enhanceMode, rotateDeg, deskew, upscaleSmall }
+   * 返回 { canvas, width, height, scale, deskewAngle }
    */
   async function pipeline(src, opts) {
     const o = opts || {};
     const img = await loadImage(src);
-    const { canvas, width, height } = smartResize(img, o.maxEdge || PROFILES.balanced);
+    const { canvas, width, height, scale } = smartResize(img, o.maxEdge || PROFILES.balanced);
     let c = canvas;
     if (o.rotateDeg) c = rotate(c, o.rotateDeg);
+    // V2：自动倾斜校正（手机斜拍的文字歪斜 → OCR 前扶正；纯投影法，零依赖）
+    let deskewAngle = 0;
+    if (o.deskew !== false) {
+      const d = estimateDeskew(c);
+      if (d && Math.abs(d) >= 0.4 && Math.abs(d) <= 15) {
+        deskewAngle = d;
+        c = rotateCanvas(c, d);
+      }
+    }
+    // V2：反光抑制（高光区域局部压暗，提升热敏纸/塑料卡面识别）
+    if (o.glowReduce) c = reduceGlare(c);
     if (o.enhanceMode && o.enhanceMode !== 'none') c = enhance(c, o.enhanceMode);
-    return { canvas: c, width: c.width, height: c.height };
+    return { canvas: c, width: c.width, height: c.height, scale, deskewAngle };
   }
 
   // canvas → ImageData（送 OCR 引擎）
@@ -223,6 +332,6 @@
 
   global.OcrKit = global.OcrKit || {};
   Object.assign(global.OcrKit, {
-    preprocess: { PROFILES, loadImage, smartResize, rotate, toGrayscale, enhance, binarize, pipeline, toImageData, toDataUrl },
+    preprocess: { PROFILES, loadImage, smartResize, rotate, rotateCanvas, estimateDeskew, reduceGlare, toGrayscale, enhance, binarize, pipeline, toImageData, toDataUrl },
   });
 })(typeof window !== 'undefined' ? window : globalThis);

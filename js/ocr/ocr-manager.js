@@ -20,6 +20,8 @@
     rotateDeg: 0,
     fallbackThreshold: 55, // 主引擎全文平均置信 < 该值 → 触发回退
     maxEdge: null,         // 手动覆盖目标边长
+    deskew: true,          // V2：自动倾斜校正（手机斜拍）
+    glowReduce: true,      // V2：自动反光抑制（热敏纸/塑封）
   };
 
   const LOW_MEMORY_HINT = navigator.deviceMemory != null ? navigator.deviceMemory : 4;
@@ -86,6 +88,7 @@
       // 1) 预处理（主线程，避免 4000×3000 直接进引擎）
       const prep = await global.OcrKit.preprocess.pipeline(src, {
         maxEdge, enhanceMode, rotateDeg: o.rotateDeg,
+        deskew: o.deskew, glowReduce: o.glowReduce,
       });
       const input = prep.canvas;
 
@@ -100,6 +103,7 @@
       } catch (e) {
         console.warn('[ocr] 主引擎失败，尝试回退:', e);
         result = await this._fallback(input, primaryName);
+        if (!result) throw new Error('OCR 主引擎与回退引擎均失败');
       }
 
       // 3) 低置信 → 回退 Tesseract，对比合并
@@ -114,6 +118,11 @@
 
       result.profile = profile;
       result.maxEdge = maxEdge;
+      result.deskewAngle = prep.deskewAngle || 0;
+      // V2：统一输出补全 —— 文档类型（通用检测，非墨西哥专用）
+      if (!result.documentType) {
+        result.documentType = detectDocType(result);
+      }
       return result;
     }
 
@@ -143,6 +152,57 @@
     return sum / result.words.length;
   }
 
+  /**
+   * V2 通用文档类型检测（跨语言/跨地区，非墨西哥专用）。
+   * 返回：invoice（发票）| receipt（小票）| bank_transfer（转账）| null
+   * 依据：关键词计分 + 结构信号（UUID、表格列头、金额标签）。
+   * 墨西哥细分类（CFDI/SPEI/OXXO）仍由 MexicoParser.detectDocumentType 负责。
+   */
+  const DOC_FEATURES = [
+    // 发票（多语言）
+    { type: 'invoice', re: /\b(invoice|factura|faktura|rechnung|fatura|fattura|发票|收据)\b/i, w: 3 },
+    { type: 'invoice', re: /\b(tax\s*invoice|cfdi|rfc|uuid|vat|gst|tax\s*id)\b/i, w: 2 },
+    { type: 'invoice', re: /\b(bill\s*to|emisor|receptor|subtotal)\b/i, w: 1 },
+    // 小票
+    { type: 'receipt', re: /\b(receipt|ticket|recibo|bon|kassenbon|voucher)\b/i, w: 3 },
+    { type: 'receipt', re: /\b(cantidad|qty|quantity|amount|importe|total)\b/i, w: 1 },
+    { type: 'receipt', re: /\b(store|tienda|shop|market|merchant)\b/i, w: 1 },
+    // 银行转账
+    { type: 'bank_transfer', re: /\b(spei|transfer|transferencia|bank\s*transfer|wire)\b/i, w: 3 },
+    { type: 'bank_transfer', re: /\b(ordenante|beneficiario|beneficiary|sender|clabe|swift|iban)\b/i, w: 2 },
+    { type: 'bank_transfer', re: /\b(tracking\s*key|clave\s*de\s*rastreo|referencia|reference)\b/i, w: 1 },
+  ];
+
+  function detectDocType(result) {
+    const fullText = (result && (result.text || result.fullText)) || '';
+    if (!fullText) return null;
+    const scores = {};
+    const reasons = {};
+    for (const f of DOC_FEATURES) {
+      if (f.re.test(fullText)) {
+        scores[f.type] = (scores[f.type] || 0) + f.w;
+        (reasons[f.type] = reasons[f.type] || []).push(f.re.source);
+      }
+    }
+    // 结构信号：UUID → 强发票信号
+    if (/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i.test(fullText)) {
+      scores.invoice = (scores.invoice || 0) + 3;
+      (reasons.invoice = reasons.invoice || []).push('uuid');
+    }
+    // 表格列头信号 → 小票/发票
+    const words = result.words || [];
+    const tableHits = words.filter(w => /cantidad|qty|quantity|producto|descripcion|importe|precio|amount|item/i.test(w.text)).length;
+    if (tableHits >= 3) {
+      scores.receipt = (scores.receipt || 0) + 2;
+      (reasons.receipt = reasons.receipt || []).push('item-table');
+    }
+    let type = null, max = 0;
+    for (const [t, s] of Object.entries(scores)) {
+      if (s > max) { max = s; type = t; }
+    }
+    return max >= 2 ? type : null;
+  }
+
   /** 合并两引擎结果：行级，按位置分组取置信高者；若一方无 bbox 则回退到全文拼接 */
   function mergeResults(a, b) {
     if (!b || !b.words || !b.words.length) return a;
@@ -158,5 +218,5 @@
 
   global.OcrKit = global.OcrKit || {};
   global.OcrKit.OcrManager = OcrManager;
-  global.OcrKit.ocrUtil = { avgConfidence, mergeResults, detectProfile };
+  global.OcrKit.ocrUtil = { avgConfidence, mergeResults, detectProfile, detectDocType };
 })(typeof window !== 'undefined' ? window : globalThis);

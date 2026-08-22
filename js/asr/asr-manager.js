@@ -90,6 +90,7 @@
         return this.engine;
       } catch (e) {
         console.warn('[asr] Whisper 初始化失败:', e);
+        this.mode = null; // 防止 mode 残留 'local'
       }
 
       // 回退：在线（需授权）
@@ -98,7 +99,9 @@
         this.mode = 'online';
         return this.engine;
       }
-      throw new Error(ERR.ASR_FAILED);
+      const err = new Error(ERR.ASR_FAILED);
+      err.cause = e;
+      throw err;
     }
 
     /** 开始连续识别（VAD + Whisper） */
@@ -121,7 +124,33 @@
           return;
         }
 
-        // 本地模式：AudioCapture + VAD
+        // 本地模式：先预热模型（首次下载会耗时，进度经 onModelProgress 上报），
+        // 再开启麦克风。避免用户说完话后才触发模型下载导致超时/无反馈。
+        this._emit('onState', 'initializing');
+        try {
+          await this.engine.initialize();
+        } catch (e) {
+          console.warn('[asr] Whisper 模型预热失败，回退在线或报错:', e);
+          // 预热失败：若有在线授权则降级，否则上抛规范错误码（防止原始 Error 泄漏给 UI）
+          if (this.allowOnline && global.AsrKit.webspeechSupported) {
+            this.engine = new global.AsrKit.WebSpeechEngine();
+            this.mode = 'online';
+            this.engine.setCallback((ev) => {
+              if (ev.interim) this._emit('onInterim', ev.interim);
+              if (ev.final) this._emit('onFinal', ev.final);
+              if (ev.error) this._emit('onError', ev.error);
+              if (ev.end && !ev.auto) this._emit('onEnd');
+            });
+            await this.engine.start({ lang: this.lang });
+            this._emit('onState', 'listening');
+            return;
+          }
+          const err = new Error(ERR.MODEL_LOAD_FAILED);
+          err.cause = e;
+          throw err;
+        }
+
+        // AudioCapture + VAD
         this.capture = new global.AsrKit.audio.AudioCapture();
         this.vad = new global.AsrKit.vad.VadEngine();
         this.vad.onSpeechStart = () => this._emit('onState', 'speaking');

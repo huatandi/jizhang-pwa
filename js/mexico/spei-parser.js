@@ -28,6 +28,20 @@
     return null;
   }
 
+  /** 行内金额提取：Paddle 行级词 "Monto $500.00" → "500.00" */
+  function inlineMoney(words, labelRe) {
+    for (const w of words) {
+      const t = (w.text || '').trim();
+      if (!t || !labelRe.test(t)) continue;
+      const m = t.match(/(?:^|[\s:：])\$?\s*([\d.,-]+\s*(?:MXN|USD|EUR|CNY|PESOS)?)/i);
+      if (m && m[1]) {
+        const v = M.money.parseMoney(m[1]);
+        if (v != null) return String(v);
+      }
+    }
+    return null;
+  }
+
   function parseSpei(result) {
     const words = result.words || [];
     const fullText = result.fullText || '';
@@ -75,12 +89,16 @@
     const cb = field(words, fullText, /^cuenta\s*(del\s*)?beneficiario$/i, /cuenta\s*(?:del\s*)?beneficiario\s*[:：]?\s*([\d*]{4,})/i);
     if (cb) doc.beneficiaryAccount = cb.value;
 
-    // ---- Monto / 币种 ----
-    const amt = field(words, fullText, /^(monto|importe)$/i, /(?:monto|importe)\s*[:：]?\s*\$?\s*([\d,]+\.\d{2})/i, { exclude: [/total|referencia/i] });
+    // ---- Monto / 币种（行内优先：Paddle "Monto $500.00" / "Importe: 1.234,56"） ----
+    const amtInline = inlineMoney(words, /^(?:monto|importe)\b/i);
+    const amt = amtInline != null ? { value: amtInline, conf: 95 } : field(words, fullText, /^(monto|importe)$/i, /(?:monto|importe)\s*[:：]?\s*\$?\s*([\d.,-]+\s*(?:MXN|USD|EUR|CNY|PESOS)?)/i, { exclude: [/total|referencia/i] });
     if (amt) {
-      doc.amount = parseFloat(amt.value.replace(/[$,\s]/g, ''));
-      const cm = fullText.match(/\b(MXN|USD|EUR|CNY)\b/i);
-      doc.currency = cm ? cm[1].toUpperCase() : 'MXN';
+      const amtVal = M.money.parseMoney(amt.value);
+      if (amtVal != null) {
+        doc.amount = amtVal;
+        const cm = fullText.match(/\b(MXN|USD|EUR|CNY)\b/i);
+        doc.currency = cm ? cm[1].toUpperCase() : 'MXN';
+      }
     }
 
     return doc;

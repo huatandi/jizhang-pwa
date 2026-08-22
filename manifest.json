@@ -1,7 +1,7 @@
 {
-  "name": "智账 · 智能记账系统",
-  "short_name": "智账",
-  "description": "复刻 Excel 明细表功能的智能记账系统（开店经营/家庭记账 · 多币种 · AI 识别）",
+  "name": "飞常明细 · 智能记账系统",
+  "short_name": "飞常明细",
+  "description": "飞常明细 · 全球通用记账系统（开店经营/家庭记账 · 多币种 · AI 识别 · 语音记账）",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

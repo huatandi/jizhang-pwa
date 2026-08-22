@@ -111,6 +111,13 @@
       let stored = '12345';
       if (row) { try { const v = JSON.parse(row.value); if (typeof v === 'string' && v) stored = v; } catch (e) {} }
       if (String(password || '') !== stored) return fail('密码错误，请重试', 401);
+      // 首次启用日期：首次登录时记录（PWA 本地数据范围默认起点）
+      const fuRow = DB.prepare("SELECT value FROM options WHERE key='first_use_date'").get();
+      if (!fuRow) {
+        const today = new Date();
+        const pad2 = n => String(n).padStart(2, '0');
+        DB.prepare("INSERT OR IGNORE INTO options (key, value) VALUES ('first_use_date', ?)").run(JSON.stringify(`${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`));
+      }
       // 切换模式
       let cur = { version: 1, scene: mode, dataMode: mode, modules: { dashboard: true, income: true, purchase: true, expense: true, monthly: true, scan: true }, budget: { monthly: 0 } };
       const sr = DB.prepare("SELECT value FROM options WHERE key='app_settings'").get();
@@ -180,11 +187,24 @@
 
     // ---- settings ----
     if (path === '/settings' && method === 'GET') {
-      const defaults = { version: 1, scene: 'business', modules: { dashboard: true, income: true, purchase: true, expense: true, monthly: true, scan: true }, budget: { monthly: 0 }, alarm: { tone: 'classic', volume: 0.9 } };
+      const defaults = { version: 1, scene: 'business', modules: { dashboard: true, income: true, purchase: true, expense: true, monthly: true, scan: true }, budget: { monthly: 0 }, alarm: { tone: 'classic', volume: 0.9 }, dataRange: null };
       const row = DB.prepare("SELECT value FROM options WHERE key='app_settings'").get();
       let settings = defaults;
       if (row) { try { settings = { ...defaults, ...JSON.parse(row.value) }; } catch (e) {} }
-      return ok(settings);
+      // 首次启用日期 + 最早一笔记账日期（数据范围默认起点候选）
+      let firstUse = null;
+      const fuRow = DB.prepare("SELECT value FROM options WHERE key='first_use_date'").get();
+      if (fuRow) { try { const v = JSON.parse(fuRow.value); if (typeof v === 'string' && v) firstUse = v; } catch (e) {} }
+      if (!firstUse) {
+        const today = new Date(); const pad2 = n => String(n).padStart(2, '0');
+        firstUse = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`;
+      }
+      let earliestRecord = null;
+      try {
+        const r = DB.prepare("SELECT MIN(date) m FROM (SELECT date FROM income UNION ALL SELECT date FROM expense UNION ALL SELECT doc_date AS date FROM purchase)").get();
+        if (r && r.m) earliestRecord = String(r.m).slice(0, 10);
+      } catch (e) { /* ignore */ }
+      return ok({ ...settings, first_use_date: firstUse, earliest_record_date: earliestRecord });
     }
     if (path === '/settings' && method === 'POST') {
       const s = body || {};
@@ -208,8 +228,21 @@
         },
         budget: { monthly: Math.max(0, Number((s.budget && s.budget.monthly) || 0)), categories: catBudgets },
         recurring: { rules: recurring },
-        alarm
+        alarm,
+        dataRange: null
       };
+      // 数据范围（用户可选的日期期间；null = 未设置，前端回退为 首次启用日 ~ 今天）
+      if (s.dataRange && typeof s.dataRange === 'object') {
+        const ds = String(s.dataRange.start || '').trim();
+        const de = String(s.dataRange.end || '').trim();
+        const dRe = /^\d{4}-\d{2}-\d{2}$/;
+        const vStart = dRe.test(ds) ? ds : '';
+        const vEnd = dRe.test(de) ? de : '';
+        if (vStart && vEnd && vStart <= vEnd) clean.dataRange = { start: vStart, end: vEnd };
+        else if (vStart && !vEnd) clean.dataRange = { start: vStart, end: '' };
+        else if (!vStart && vEnd) clean.dataRange = { start: '', end: vEnd };
+        else clean.dataRange = null;
+      }
       DB.prepare("INSERT OR REPLACE INTO options (key, value) VALUES ('app_settings', ?)").run(JSON.stringify(clean));
       return ok(clean);
     }
@@ -681,6 +714,15 @@
     if (path === '/account-meta' && method === 'GET') {
       return ok(DB.prepare('SELECT * FROM account_meta ORDER BY account').all());
     }
+    // 账户记录数检查（删除账户前确认是否已有记账记录）
+    if (path === '/account/records' && method === 'GET') {
+      const account = String(query.account || '').trim();
+      if (!account) return fail('缺少 account 参数');
+      const inc = DB.prepare('SELECT COUNT(*) c FROM income WHERE account=? AND mode=?').get(account, mode).c;
+      const exp = DB.prepare('SELECT COUNT(*) c FROM expense WHERE account=? AND mode=?').get(account, mode).c;
+      const pay = DB.prepare('SELECT COUNT(*) c FROM purchase WHERE pay_method=? AND mode=?').get(account, mode).c;
+      return ok({ count: Number(inc) + Number(exp) + Number(pay) });
+    }
     const amMatch = path.match(/^\/account-meta\/([^/]+)$/);
     if (amMatch && method === 'PUT') {
       const name = decodeURIComponent(amMatch[1]);
@@ -691,6 +733,11 @@
         ON CONFLICT(account) DO UPDATE SET initial_balance=excluded.initial_balance, acc_type=excluded.acc_type`)
         .run(name, initial, type);
       return ok({ ok: true, account: name, initial_balance: initial, acc_type: type });
+    }
+    if (amMatch && method === 'DELETE') {
+      const name = decodeURIComponent(amMatch[1]);
+      DB.prepare('DELETE FROM account_meta WHERE account=?').run(name);
+      return ok({ ok: true });
     }
 
     // ---- recurring ----

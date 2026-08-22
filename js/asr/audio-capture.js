@@ -85,7 +85,7 @@
       // AudioWorklet 优先
       if (typeof this.ctx.audioWorklet === 'object' && this.ctx.audioWorklet.addModule) {
         try {
-          await this.ctx.audioWorklet.addModule('js/asr/audio-processor.js');
+          await this.ctx.audioWorklet.addModule('js/asr/audio-processor.js?v=38');
           this.workletNode = new AudioWorkletNode(this.ctx, 'audio-capture-processor', {
             numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, outputChannelCount: [1],
           });

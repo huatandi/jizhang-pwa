@@ -14,7 +14,7 @@
         sp = document.createElement('div');
         sp.id = 'pwaSplash';
         sp.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0b1120;color:#e2e8f0;font-family:sans-serif;gap:16px';
-        sp.innerHTML = '<div style="font-size:42px">📋</div><div style="font-size:16px;font-weight:600">智账 · 正在加载…</div><div style="width:40px;height:40px;border:3px solid rgba(255,176,32,.2);border-top-color:#ffb020;border-radius:50%;animation:pwaSpin 1s linear infinite"></div><style>@keyframes pwaSpin{to{transform:rotate(360deg)}}</style>';
+        sp.innerHTML = '<div style="font-size:42px">📋</div><div style="font-size:16px;font-weight:600">飞常明细 · 正在加载…</div><div style="width:40px;height:40px;border:3px solid rgba(255,176,32,.2);border-top-color:#ffb020;border-radius:50%;animation:pwaSpin 1s linear infinite"></div><style>@keyframes pwaSpin{to{transform:rotate(360deg)}}</style>';
         document.body.appendChild(sp);
       }
     } catch (e) { /* ignore */ }
@@ -59,7 +59,7 @@
     }
     // 4. 加载主应用
     const s = document.createElement('script');
-    s.src = 'js/app.js?v=74';
+    s.src = 'js/app.js?v=90';
     s.onload = () => hideSplash();
     s.onerror = () => { hideSplash(); console.error('[boot] app.js 加载失败'); };
     document.body.appendChild(s);

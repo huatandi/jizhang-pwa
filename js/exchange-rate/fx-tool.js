@@ -22,6 +22,7 @@
     base: null,         // 本币 = 批量获取的基准
     offline: false,
     updatedAt: null,
+    editFav: false,     // 常用货币编辑模式
   };
 
   // 货币 → 国旗 emoji（常见货币；未收录用 🪙）
@@ -110,13 +111,46 @@
     }
   }
 
+  // ---- 常用货币自定义（增删，持久化到 fx_prefs.custom_fav） ----
+  function readCustomFavs() {
+    try {
+      const p = JSON.parse(localStorage.getItem('fx_prefs') || 'null') || {};
+      if (Array.isArray(p.custom_fav)) {
+        return p.custom_fav
+          .map((c) => String(c).toUpperCase().trim())
+          .filter((c) => c && c !== state.base && /^[A-Z]{3}$/.test(c));
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+  function writeCustomFavs(list) {
+    try {
+      const p = JSON.parse(localStorage.getItem('fx_prefs') || 'null') || {};
+      p.custom_fav = list;
+      localStorage.setItem('fx_prefs', JSON.stringify(p));
+    } catch (e) { /* ignore */ }
+  }
+  // 生效的常用列表：用户自定义优先，否则按本币智能推荐
+  function getFavQuotes() {
+    const custom = readCustomFavs();
+    if (custom) return custom;
+    return Registry.favoritesFor(state.base).filter((c) => c !== state.base);
+  }
+  function savePrefs() {
+    try {
+      const p = JSON.parse(localStorage.getItem('fx_prefs') || 'null') || {};
+      p.home = state.base; p.to = state.to;
+      localStorage.setItem('fx_prefs', JSON.stringify(p));
+    } catch (e) { /* ignore */ }
+  }
+
   // ---- 加载汇率 ----
   async function loadRates(background) {
     const card = el('fxCard');
     if (card && card.hidden) card.hidden = false;
     setStatus(background ? '更新中…' : '获取参考汇率…');
 
-    const quotes = Registry.favoritesFor(state.base).filter((c) => c !== state.base);
+    const quotes = getFavQuotes();
     try {
       const rates = await Engine.getFavoriteRates(state.base, quotes, { refreshInBackground: !background });
       state.rates = {};
@@ -238,15 +272,23 @@
   function renderFavGrid() {
     const grid = el('fxFavGrid');
     if (!grid) return;
-    const quotes = Registry.favoritesFor(state.base).filter((c) => c !== state.base);
+    const quotes = getFavQuotes();
     const hint = el('fxFavHint');
     if (hint) hint.textContent = `点击查看对 ${state.base} 参考汇率`;
+    const editBtn = el('fxFavEditBtn');
+    if (editBtn) editBtn.textContent = state.editFav ? '✅ 完成' : '✏️ 编辑';
+    const addRow = el('fxFavAddRow');
+    if (addRow) addRow.hidden = false; // 添加入口常显，无需进入编辑模式
     grid.innerHTML = quotes.map((code) => {
       const r = state.rates[code];
       const rate = r ? Number(r.rate).toFixed(4) : '--';
       const provider = r ? (r.provider === 'BANXICO' ? 'BANXICO' : 'Frankfurter') : '';
+      const delBtn = state.editFav
+        ? `<button class="fx-fav-del" onclick="event.stopPropagation();FxTool.removeFav('${code}')" title="删除 ${code}">×</button>`
+        : '';
       return `
-      <div class="fx-fav-item ${code === state.to ? 'active' : ''}" data-code="${code}" onclick="FxTool.setTo('${code}')">
+      <div class="fx-fav-item ${code === state.to ? 'active' : ''} ${state.editFav ? 'editing' : ''}" data-code="${code}" onclick="FxTool.setTo('${code}')">
+        ${delBtn}
         <div class="fx-fav-head">
           <span class="fx-fav-flag">${flagOf(code)}</span>
           <span class="fx-fav-code">${code}</span>
@@ -255,6 +297,79 @@
         <div class="fx-fav-src">${provider}</div>
       </div>`;
     }).join('');
+  }
+
+  // ---- 常用货币编辑：进入/退出编辑模式 ----
+  function toggleEditFav() {
+    state.editFav = !state.editFav;
+    renderFavGrid();
+    showToast && showToast(state.editFav ? '编辑模式：点 × 删除货币' : '已退出编辑模式');
+  }
+
+  // 删除常用货币（从自定义列表移除；若之前是默认推荐则转为自定义并排除该币）
+  function removeFav(code) {
+    const custom = readCustomFavs() || Registry.favoritesFor(state.base).filter((c) => c !== state.base);
+    const next = custom.filter((c) => c !== code);
+    if (next.length === custom.length) { showToast && showToast(code + ' 不在常用列表中'); return; }
+    writeCustomFavs(next);
+    if (state.to === code) {
+      state.to = next.length ? next[0] : (state.base === 'USD' ? 'EUR' : 'USD');
+    }
+    delete state.rates[code];
+    loadRates(true).catch(() => {});
+    renderFavGrid();
+    renderPair();
+    showToast && showToast(`${code} 已从常用货币移除`);
+  }
+
+  // 添加常用货币：打开多选选择器（排除本币与已添加）
+  function openFavPicker() {
+    const current = getFavQuotes();
+    const quotes = Object.keys(Registry.REGISTRY)
+      .filter((c) => c !== state.base && !current.includes(c))
+      .sort((a, b) => a.localeCompare(b));
+    if (!quotes.length) { showToast && showToast('已添加所有可用货币'); return; }
+    const html = `
+      <div class="fx-picker">
+        <div class="fx-picker-search"><input id="fxFavPickSearch" placeholder="🔍 搜索代码 / 名称（如 USD / dollar / peso）" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-1)"></div>
+        <div class="fx-picker-grid">
+          ${quotes.map((c) => `
+            <div class="fx-pick-item" data-code="${c}" onclick="FxTool.pickFav('${c}')">
+              <span>${flagOf(c)}</span><span class="fx-pick-code">${c}</span><span class="fx-pick-name">${nameOf(c)}</span>
+            </div>`).join('')}
+        </div>
+        <div style="margin-top:10px;text-align:center"><button class="btn-small" onclick="closeModal('fxFavPickerModal')">完成</button></div>
+      </div>`;
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'fxFavPickerModal';
+    modal.innerHTML = `<div class="modal fx-picker-modal"><div class="modal-header"><h3>添加常用货币（点击选择，可多个）</h3><button class="modal-close" onclick="closeModal('fxFavPickerModal')">×</button></div><div class="modal-body">${html}</div></div>`;
+    document.body.appendChild(modal);
+    openModal('fxFavPickerModal');
+    const search = el('fxFavPickSearch');
+    if (search) {
+      search.addEventListener('input', () => {
+        const kw = search.value.trim().toLowerCase();
+        document.querySelectorAll('#fxFavPickerModal .fx-pick-item').forEach((item) => {
+          const code = item.dataset.code;
+          const name = (nameOf(code) + ' ' + code + ' ' + Registry.get(code).name + ' ' + Registry.get(code).nativeName).toLowerCase();
+          item.style.display = (!kw || name.includes(kw)) ? '' : 'none';
+        });
+      });
+      search.focus();
+    }
+  }
+
+  // 多选添加：点一个加一个，不关闭弹窗
+  function pickFav(code) {
+    const custom = readCustomFavs() || Registry.favoritesFor(state.base).filter((c) => c !== state.base);
+    if (!custom.includes(code)) custom.push(code);
+    else { showToast && showToast(`${code} 已在常用列表中`); return; }
+    writeCustomFavs(custom);
+    const item = document.querySelector(`#fxFavPickerModal .fx-pick-item[data-code="${code}"]`);
+    if (item) { item.style.opacity = '0.4'; item.style.pointerEvents = 'none'; }
+    loadRates(true).catch(() => {});
+    showToast && showToast(`${code} 已添加 ✅ 可继续添加或点击「完成」`);
   }
 
   // ---- 交互 ----
@@ -267,6 +382,7 @@
   }
 
   function setTo(code) {
+    if (state.editFav) return; // 编辑模式下点击卡片仅用于删除，不切换
     if (code === state.from) return;
     state.to = code;
     renderPair();
@@ -320,12 +436,6 @@
     renderFavGrid();
   }
 
-  function savePrefs() {
-    try {
-      localStorage.setItem('fx_prefs', JSON.stringify({ home: state.base, to: state.to }));
-    } catch (e) { /* ignore */ }
-  }
-
   // ---- 刷新 ----
   function refresh() {
     loadRates(false);
@@ -358,5 +468,6 @@
 
   global.FxTool = {
     init, refresh, swap, setTo, openPicker, pick, showInfo,
+    toggleEditFav, removeFav, openFavPicker, pickFav,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

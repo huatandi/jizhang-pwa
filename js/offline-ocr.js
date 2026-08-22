@@ -13,8 +13,18 @@
   let worker = null;
   let working = false;
 
-  // 语言包路径（tesseract.js 从该路径加载 traineddata.gz）
+  // 语言包路径（tesseract.js 从该路径加载 traineddata.gz）；本地缺文件时回退官方 CDN
   const LANG_PATH = 'vendor/tesseract/';
+  const CDN_CORE_PATH = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1/';
+  const CDN_LANG_PATH = 'https://tessdata.projectnaptha.com/4.0.0/';
+
+  // 探测浏览器 SIMD 支持（与 worker 内 wasm-feature-detect 相同的字节）
+  function supportsSimd() {
+    try {
+      return typeof WebAssembly !== 'undefined' && !!WebAssembly.validate
+        && WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,1,11]));
+    } catch (e) { return false; }
+  }
 
   // 默认 OCR 语言：跟随 global-config（本币地区 → 浏览器语言），兜底 spa+eng（墨西哥旧默认）
   function resolveOcrLang() {
@@ -33,10 +43,22 @@
     if (typeof Tesseract === 'undefined') {
       throw new Error('Tesseract 未加载（vendor/tesseract/tesseract.min.js）');
     }
+    // 本地 vendor 缺核心文件时回退 CDN
+    // ⚠️ worker 探测到 relaxed-simd 时会请求 tesseract-core-relaxedsimd-lstm.wasm.js，
+    //    该文件在 tesseract.js-core@5.x 已移除 → 必须直接给完整核心 URL 跳过探测。
+    let corePath = 'vendor/tesseract/';
+    let langPath = LANG_PATH;
+    try {
+      const head = await fetch(corePath + 'tesseract-core-simd-lstm.wasm.js', { method: 'HEAD' });
+      if (!head.ok) throw new Error('local core missing');
+    } catch (e) {
+      corePath = CDN_CORE_PATH + (supportsSimd() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
+      langPath = CDN_LANG_PATH;
+    }
     worker = await Tesseract.createWorker(lang || resolveOcrLang(), 1, {
       workerPath: 'vendor/tesseract/worker.min.js',
-      langPath: LANG_PATH,
-      corePath: 'vendor/tesseract/',
+      langPath,
+      corePath,
       logger: () => {},
     });
     return worker;

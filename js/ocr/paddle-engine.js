@@ -19,7 +19,7 @@
     wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/',
     numThreads: 2,
     simd: true,
-    worker: true,        // 官方 SDK 内置 Web Worker，主线程不冻结
+    worker: false,       // 官方 SDK 默认 true（CDN Worker 跨域受限）；GitHub Pages/本地无 COEP 时 false 更稳
     deviceProfile: 'balanced', // high | balanced | low（由 OcrManager 传入并映射 maxEdge）
   };
 
@@ -87,14 +87,29 @@
       const width = (input.width != null) ? input.width : (input.naturalWidth || 0);
       const height = (input.height != null) ? input.height : (input.naturalHeight || 0);
 
-      // ---- 适配：SDK 返回格式（v5/v6 均为 { text, points|boxes, score } 的行级数组） ----
-      const rows = Array.isArray(raw) ? raw : (raw && (raw.texts || raw.res || raw.result || []));
+      // ---- 适配：SDK 返回格式（v0.4.x 为 [{ image, items: [{ poly, text, score }], metrics, runtime }]） ----
+      // 兼容多种形态：直接行级数组 / { items } / { texts | res | result } / [ { items } ]
+      let rows = null;
+      if (Array.isArray(raw)) {
+        // 可能是 [ { items: [...] } ]（官方 predict 返回）也可能是行级数组
+        if (raw.length && raw[0] && Array.isArray(raw[0].items)) {
+          rows = raw.flatMap(r => r.items || []);
+        } else if (raw.length && raw[0] && (raw[0].texts || raw[0].res || raw[0].result)) {
+          rows = raw[0].texts || raw[0].res || raw[0].result;
+        } else {
+          rows = raw;
+        }
+      } else if (raw) {
+        rows = raw.items || raw.texts || raw.res || raw.result || [];
+      }
       const words = [];
       for (const r of rows || []) {
         if (!r) continue;
         const text = r.text != null ? String(r.text) : (r.rec_text || '');
         if (!text) continue;
-        const pts = r.points || r.boxes || r.box || r.quad || null;
+        // poly: [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]；或 boxes/box/quad
+        const pts = r.poly || r.points || r.boxes || r.box || r.quad || null;
+        // score 0~1 → 百分比
         const conf = r.score != null ? Number(r.score) * 100 : (r.confidence != null ? Number(r.confidence) : 0);
         words.push({ text, confidence: conf, box: pts });
       }

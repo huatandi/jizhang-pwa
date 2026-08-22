@@ -109,9 +109,18 @@
 
   global.AsrKit = global.AsrKit || {};
   Object.assign(global.AsrKit, {
-    modelManager: {
-      MODEL_VERSIONS, MODEL_MEMORY_MB, PLAN_BY_PROFILE,
-      detectProfile, resolvePlan, versionKey, ModelManager,
-    },
+    modelManager: (function () {
+      const inst = new ModelManager();
+      // 静态/纯函数 + 实例方法（asr-manager 依赖 fitsMemory / isCached / putMeta / getMeta）
+      return Object.assign({
+        MODEL_VERSIONS, MODEL_MEMORY_MB, PLAN_BY_PROFILE,
+        detectProfile, resolvePlan, versionKey, ModelManager,
+      }, {
+        fitsMemory: inst.fitsMemory.bind(inst),
+        isCached: inst.isCached.bind(inst),
+        putMeta: inst.putMeta.bind(inst),
+        getMeta: inst.getMeta.bind(inst),
+      });
+    })(),
   });
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -3,9 +3,9 @@
  * OcrKit · ocr-types —— OCR 引擎统一抽象层
  *
  * 所有 OCR 引擎（Paddle / Tesseract / 未来 WebOcr）都必须实现 OcrEngine 接口，
- * 业务层（Mexico Parser）只消费 OcrResult，绝不直接调用引擎 API。
+ * 业务层（Mexico Parser / 工作台）只消费 OcrResult，绝不直接调用引擎 API。
  *
- * 数据结构（JSDoc 即类型契约）：
+ * 数据结构（JSDoc 即类型契约）——V2 统一输出：
  *
  *   @typedef {Object} OcrWord
  *   @property {string} text          识别文本
@@ -13,13 +13,24 @@
  *   @property {Array<[number,number]>} box  4 点四边形：[[x0,y0],[x1,y1],[x2,y2],[x3,y3]]
  *                                          顺序：左上 → 右上 → 右下 → 左下（图像坐标系）
  *
- *   @typedef {Object} OcrResult
+ *   @typedef {Object} OcrLine      （V2 新增：行级聚合，语义解析的真正输入）
+ *   @property {string} text          整行拼接文本
+ *   @property {number} confidence    行平均置信度 0~100
+ *   @property {Array<[number,number]>} box  行包围盒（4 点四边形）
+ *   @property {OcrWord[]} words      该行内的词（保留词级详情）
+ *   @property {number} y            行中心 Y（便于行序排序）
+ *
+ *   @typedef {Object} OcrResult     （V2 统一输出结构）
  *   @property {string} engine        引擎名（'paddle' | 'tesseract' | ...）
+ *   @property {string} text          全文（与 fullText 同值，语义解析首选）
+ *   @property {string} fullText      全文（按行拼接，兼容旧消费方）
  *   @property {OcrWord[]} words      词（或行）级结果，bbox 必须保留
- *   @property {string} fullText      全文（按行拼接）
+ *   @property {OcrLine[]} lines      （V2）行级聚合，含行文本/置信度/包围盒
  *   @property {number} width         图像宽度
  *   @property {number} height        图像高度
  *   @property {number} processingTimeMs  推理耗时
+ *   @property {string|null} documentType （V2）文档类型（invoice/receipt/bank_transfer/...）
+ *   @property {string|null} profile  设备档位（high/balanced/low）
  *
  *   @typedef {Object} OcrEngine
  *   @property {string} name
@@ -32,7 +43,55 @@
   const ENGINES = { PADDLE: 'paddle', TESSERACT: 'tesseract' };
 
   /**
-   * 规范化引擎输出 → 统一 OcrResult。
+   * 词级 → 行级聚合：按 bbox 中心 Y 聚类（约 0.55 倍行高容差），同行按 X 排序拼接。
+   * 这是语义解析（字段配对 / TOTAL 识别）的基础——OCR 引擎输出的词序往往不可靠，
+   * 行聚合后按 左→右 顺序拼接，才能得到"TOTAL $1,234.56"这种可解析的行。
+   * @param {OcrWord[]} words
+   * @returns {OcrLine[]}
+   */
+  function clusterLines(words) {
+    const ws = (words || []).filter(w => w && w.box && w.text != null);
+    if (!ws.length) return [];
+    // 按中心 Y 排序，逐行聚类
+    const withY = ws.map(w => {
+      const y = (w.box[0][1] + w.box[2][1]) / 2;
+      const h = Math.abs(w.box[2][1] - w.box[0][1]) || 1;
+      return { w, y, h };
+    }).sort((a, b) => a.y - b.y);
+
+    const lines = [];
+    let cur = null;
+    for (const item of withY) {
+      if (!cur || Math.abs(item.y - cur.avgY) > Math.max(cur.avgH, item.h) * 0.55) {
+        cur = { avgY: item.y, avgH: item.h, items: [item] };
+        lines.push(cur);
+      } else {
+        cur.avgY = (cur.avgY * cur.items.length + item.y) / (cur.items.length + 1);
+        cur.avgH = Math.max(cur.avgH, item.h);
+        cur.items.push(item);
+      }
+    }
+    return lines.map(line => {
+      const items = line.items.sort((a, b) => a.w.box[0][0] - b.w.box[0][0]);
+      const words = items.map(i => i.w);
+      const confs = words.map(w => Number(w.confidence) || 0);
+      const conf = confs.length ? confs.reduce((s, c) => s + c, 0) / confs.length : 0;
+      const x0 = Math.min(...words.map(w => w.box[0][0]));
+      const y0 = Math.min(...words.map(w => w.box[0][1]));
+      const x2 = Math.max(...words.map(w => w.box[2][0]));
+      const y2 = Math.max(...words.map(w => w.box[2][1]));
+      return {
+        text: words.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim(),
+        confidence: conf,
+        box: [[x0, y0], [x2, y0], [x2, y2], [x0, y2]],
+        words,
+        y: line.avgY,
+      };
+    });
+  }
+
+  /**
+   * 规范化引擎输出 → 统一 OcrResult（V2：含 text / lines / documentType）。
    * 各引擎原始输出结构不同，统一在这里转换，业务层永远看到同一形状。
    */
   function normalizeResult(engine, words, width, height, processingTimeMs, extra) {
@@ -49,14 +108,21 @@
       .filter(Boolean);
 
     // fullText：按原始行序拼接（依赖引擎已按 top→bottom 排序）
-    const fullText = safe.map(w => w.text).join('\n');
+    const fullText = extra && typeof extra.fullText === 'string' && extra.fullText
+      ? extra.fullText
+      : safe.map(w => w.text).join('\n');
+    const lines = clusterLines(safe);
     return {
       engine,
-      words: safe,
+      text: fullText,
       fullText,
+      words: safe,
+      lines,
       width: Number(width) || 0,
       height: Number(height) || 0,
       processingTimeMs: Number(processingTimeMs) || 0,
+      documentType: (extra && extra.documentType) || null,
+      profile: (extra && extra.profile) || null,
       ...(extra || {}),
     };
   }
@@ -104,5 +170,6 @@
     OcrEngineBase,
     normalizeResult,
     normalizeBox,
+    clusterLines,
   });
 })(typeof window !== 'undefined' ? window : globalThis);

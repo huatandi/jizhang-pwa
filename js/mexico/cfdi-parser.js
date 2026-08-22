@@ -66,8 +66,11 @@
     // ---- Moneda / TipoCambio ----
     const moneda = field(words, fullText, /^moneda$/i, /moneda\s*[:：]?\s*([a-z]{3})/i);
     if (moneda) doc.moneda = moneda.value.toUpperCase();
-    const tc = field(words, fullText, /^tipo\s*de\s*cambio$/i, /tipo\s*de\s*cambio\s*[:：]?\s*([\d.,]+)/i);
-    if (tc) doc.tipoCambio = parseFloat(tc.value.replace(/,/g, ''));
+    const tc = field(words, fullText, /^tipo\s*de\s*cambio$/i, /tipo\s*de\s*cambio\s*[:：]?\s*([\d.,-]+)/i);
+    if (tc) {
+      const tcVal = M.money.parseMoney(tc.value);
+      if (tcVal != null) doc.tipoCambio = tcVal;
+    }
 
     // ---- Forma / Metodo Pago ----
     const fp = field(words, fullText, /^forma\s*de\s*pago$/i, /forma\s*de\s*pago\s*[:：]?\s*([A-Z0-9]{2,4})/i);
@@ -127,36 +130,51 @@
     return Object.keys(part).length ? part : null;
   }
 
-  /** 金额字段：先找标签右侧最近金额格式词，Regex 兜底 */
+  /** 金额字段：三路径（行内匹配 → bbox 几何 → 整文 Regex） */
   function parseMoneyField(words, fullText, labelRe, anyRe) {
-    const moneyRe = /^\$?\s*([\d,]+\.\d{2})$/;
-    // bbox 路径
+    const money = M.money;
+    // ① 行内模式（Paddle 行级输出）：词本身就是 "Subtotal: $1,234.56" / "TOTAL MXN 1.234,56"
+    //    宽松匹配：以标签开头（可带冒号/币种），后随金额 → 直接提取
+    const inlineRe = new RegExp('(?:^|[\\s:：])(' + anyRe.source.replace(/\\b/g, '').replace(/\(\?:/g, '(?:') + ')[\\s:：]*\\$?\\s*([\\d.,-]+)', 'i');
+    for (const w of words) {
+      const t = (w.text || '').trim();
+      if (!t) continue;
+      const m = t.match(inlineRe);
+      if (m && m[2]) {
+        const v = money.parseMoney(m[2]);
+        if (v != null) return v;
+      }
+    }
+    // ② bbox 路径：标签右侧同行最近的金额形态词（Tesseract 词级输出）
     let best = null;
     for (const w of words) {
       if (!labelRe.test(w.text)) continue;
       const right = M.nearestRight(w.box, words, { sameLine: true });
-      if (right && moneyRe.test(right.text)) {
-        const v = parseFloat(right.text.replace(/[$,\s]/g, ''));
-        if (best == null || right.confidence > best.conf) best = { value: v, conf: right.confidence };
+      if (right && money.isMoneyLike(right.text)) {
+        const v = money.parseMoney(right.text);
+        if (v != null && (best == null || right.confidence > best.conf)) best = { value: v, conf: right.confidence };
       }
     }
     if (best) return best.value;
-    // 整文路径：匹配标签后的金额（最多一次）
-    const m = fullText.match(anyRe.source + '\\s*[:：]?\\s*\\$?\\s*([\\d,]+\\.\\d{2})', 'i');
-    if (m && m[1]) return parseFloat(m[1].replace(/,/g, ''));
+    // ③ 整文路径：匹配标签后的金额（最多一次）
+    const m = fullText.match(anyRe.source + '\\s*[:：]?\\s*\\$?\\s*([\\d.,-]+\\s*(?:MXN|USD|EUR|CNY|PESOS)?)', 'i');
+    if (m && m[1]) {
+      const v = money.parseMoney(m[1]);
+      if (v != null) return v;
+    }
     return undefined;
   }
 
   /** 商品明细：表格行（描述 + 数量 + 单价 + importe），基于 bbox 行聚类 */
   function parseConceptos(words, fullText) {
     const out = [];
+    const money = M.money;
     // 找表头（Descripcion/Cantidad/Importe）下方的行
     let headY = null;
     for (const w of words) {
       if (/descripcion|cantidad|importe/i.test(w.text) && headY == null) headY = M.boxCenterY(w.box);
     }
     if (headY == null) return out;
-    const moneyRe = /^\$?\s*([\d,]+\.\d{2})$/;
     const lines = {};
     for (const w of words) {
       if (!w.box || M.boxCenterY(w.box) < headY) continue;
@@ -166,14 +184,46 @@
     }
     for (const [_, line] of Object.entries(lines)) {
       const row = M.rowWords(line);
-      const desc = row.find(w => /[A-Za-zÁÉÍÓÚÑ]{3}/.test(w.text) && !moneyRe.test(w.text));
-      const nums = row.filter(w => moneyRe.test(w.text)).map(w => parseFloat(w.text.replace(/[$,\s]/g, '')));
-      if (!desc || !nums.length) continue;
-      const item = { description: desc.text.trim() };
+      let itemDesc = null;
+      // Paddle 行级词：整行文本 "2 Coca-Cola $36.00" → 行内拆分
+      const rowText = row.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim();
+      if (row.length === 1 && money.isMoneyLike(row[0].text)) continue; // 纯金额行跳过
+      const desc = row.find(w => /[A-Za-zÁÉÍÓÚÑ]{3}/.test(w.text) && !money.isMoneyLike(w.text));
+      const nums = row.filter(w => money.isMoneyLike(w.text)).map(w => money.parseMoney(w.text)).filter(v => v != null);
+      // 行级词的金额拆分（"2 Coca-Cola $36.00" → [36.00]，"2 x $3.00 = $36.00" → [2, 3, 36]）
+      let rowNums = nums;
+      if (!rowNums.length && row.length >= 1) {
+        const allNums = [];
+        const mRe = /[-+]?\d[\d,.]*\d/g;
+        const parts = [];
+        for (const w of row) {
+          const texts = String(w.text).match(mRe);
+          if (texts) parts.push(...texts);
+        }
+        // 描述：去数字后的字母段
+        if (parts.length) {
+          for (const p of parts) {
+            const v = money.parseMoney(p);
+            if (v != null) allNums.push(v);
+          }
+        }
+        rowNums = allNums;
+        if (!desc) {
+          const descWord = row.find(w => {
+            const noNum = String(w.text).replace(/[-+]?\d[\d,.]*\d/g, '').trim();
+            return /[A-Za-zÁÉÍÓÚÑ]{3}/.test(noNum);
+          });
+          if (descWord) itemDesc = descWord.text.replace(/[-+]?\d[\d,.]*\d/g, '').replace(/[$,\s]+/g, ' ').trim();
+        }
+      }
+      if (!desc && !itemDesc) continue;
+      if (!rowNums.length) continue;
+      const item = { description: (itemDesc || (desc && desc.text.trim()) || '').trim() };
+      if (!item.description) continue;
       // 约定：数量/单价/importe 按出现顺序
-      if (nums.length === 3) { item.quantity = nums[0]; item.unitPrice = nums[1]; item.total = nums[2]; }
-      else if (nums.length === 2) { item.quantity = nums[0]; item.total = nums[1]; }
-      else item.total = nums[0];
+      if (rowNums.length === 3) { item.quantity = rowNums[0]; item.unitPrice = rowNums[1]; item.total = rowNums[2]; }
+      else if (rowNums.length === 2) { item.quantity = rowNums[0]; item.total = rowNums[1]; }
+      else item.total = rowNums[0];
       item.subtotal = item.total;
       out.push(item);
     }

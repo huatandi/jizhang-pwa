@@ -91,6 +91,8 @@
 
     const words = result.words || [];
     const fullText = (result.fullText || result.text || '').replace(/\s+/g, ' ').trim();
+    // V2：OcrManager 已做通用文档类型检测
+    docType = result.documentType || null;
 
     // 地区插件：墨西哥票据结构化解析（CFDI / SPEI / OXXO），仅墨西哥用户激活
     const gcfg = gc();
@@ -98,7 +100,7 @@
     if (isMx && global.MexicoParser && global.MexicoParser.parse && words.length) {
       try {
         const parsed = global.MexicoParser.parse(result);
-        docType = parsed.type;
+        docType = parsed.type || docType;
         structured = parsed.document || {};
       } catch (e) { console.warn('[mm] MexicoParser 解析失败:', e); }
     }
@@ -113,16 +115,11 @@
       rfcVal = D.rfc || (D.emisor && D.emisor.rfc) || (D.receptor && D.receptor.rfc) || (fullText.match(/[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}/) || [''])[0] || null;
     }
 
-    // 通用票据类型推断（非墨西哥地区）：小票 / 发票 / 银行回单 / 未知
-    let genericType = null;
+    // 通用票据类型：OcrManager 已检测（invoice/receipt/bank_transfer），映射到业务名
     if (!docType) {
-      const hasInvoice = /\b(invoice|factura|receipt|bill|faktura|rechnung|recibo|nota)\b/i.test(fullText);
-      const hasBank = /\b(bank|banco|transfer|transferencia|deposit|pago|payment|remittance)\b/i.test(fullText);
-      const hasItemTable = words.filter(w => /quantity|qty|amount|precio|price|importe|total|cantidad/i.test(w.text)).length >= 3;
-      if (hasInvoice || hasItemTable) genericType = 'RECEIPT';
-      else if (hasBank) genericType = 'BANK_TRANSFER';
+      if (result.documentType === 'receipt' || result.documentType === 'invoice') docType = 'RECEIPT';
+      else if (result.documentType === 'bank_transfer') docType = 'BANK_TRANSFER';
     }
-    if (!docType && genericType) docType = genericType;
 
     const coreFields = {
       amount: amountVal != null ? Math.round(Number(amountVal) * 100) / 100 : null,
@@ -151,6 +148,9 @@
       confidence: (global.OcrKit.ocrUtil && global.OcrKit.ocrUtil.avgConfidence)
         ? Math.round(global.OcrKit.ocrUtil.avgConfidence(result)) : null,
       words,
+      lines: result.lines || [],
+      engine: result.engine || null,
+      processingMs: result.processingTimeMs || 0,
     };
   }
 

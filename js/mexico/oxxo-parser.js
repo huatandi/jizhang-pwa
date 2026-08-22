@@ -19,8 +19,23 @@
   }
 
   function money(v) {
-    const n = parseFloat(String(v).replace(/[$,\s]/g, ''));
-    return Number.isFinite(n) ? n : undefined;
+    if (v == null) return undefined;
+    const n = M.money.parseMoney(String(v));
+    return n != null ? n : undefined;
+  }
+
+  /** 行内金额提取：Paddle 行级词 "TOTAL $43.50" → 43.5；"Importe total 1.234,56" → 1234.56 */
+  function inlineMoney(words, labelRe) {
+    for (const w of words) {
+      const t = (w.text || '').trim();
+      if (!t || !labelRe.test(t)) continue;
+      const m = t.match(/(?:^|[\s:：])\$?\s*([\d.,-]+\s*(?:MXN|USD|EUR|CNY|PESOS)?)/i);
+      if (m && m[1]) {
+        const v = M.money.parseMoney(m[1]);
+        if (v != null) return String(v);
+      }
+    }
+    return null;
   }
 
   function parseOxxo(result) {
@@ -47,17 +62,18 @@
     // ---- 商品明细（行聚类：数量 × 商品名 ... 金额） ----
     doc.items = parseItems(words);
 
-    // ---- 金额 ----
-    doc.subtotal = money(field(words, fullText, /^subtotal$/i, /subtotal\s*[:：]?\s*\$?\s*([\d,]+\.\d{2})/i));
-    doc.iva = money(field(words, fullText, /^iva$/i, /iva\s*[:：]?\s*\$?\s*([\d,]+\.\d{2})/i));
-    doc.total = money(field(words, fullText, /^(total|importe\s*total|total\s*a\s*pagar)$/i, /(?:total|importe\s*total|total\s*a\s*pagar)\s*[:：]?\s*\$?\s*([\d,]+\.\d{2})/i));
+    // ---- 金额（行内模式优先：Paddle 行级词 "TOTAL $43.50" / "Importe total 1.234,56"） ----
+    const moneyRe = /[\d.,-]+\s*(?:MXN|USD|EUR|CNY|PESOS)?/i;
+    doc.subtotal = money(inlineMoney(words, /^subtotal\b/i) || field(words, fullText, /^subtotal$/i, new RegExp('subtotal\\s*[:：]?\\s*\\$?\\s*(' + moneyRe.source + ')', 'i')));
+    doc.iva = money(inlineMoney(words, /^iva\b/i) || field(words, fullText, /^iva$/i, new RegExp('iva\\s*[:：]?\\s*\\$?\\s*(' + moneyRe.source + ')', 'i')));
+    doc.total = money(inlineMoney(words, /^(?:total|importe\s*total|total\s*a\s*pagar|gran\s*total)\b/i) || field(words, fullText, /^(total|importe\s*total|total\s*a\s*pagar|gran\s*total)$/i, new RegExp('(?:total|importe\\s*total|total\\s*a\\s*pagar|gran\\s*total)\\s*[:：]?\\s*\\$?\\s*(' + moneyRe.source + ')', 'i')));
 
     return doc;
   }
 
   /** 小票商品行：寻找金额行聚类（数量/单价/小计），描述取同行的非数字词 */
   function parseItems(words) {
-    const moneyRe = /^\$?\s*[\d,]+\.\d{2}$/;
+    const money = M.money;
     const lines = {};
     for (const w of words) {
       if (!w.box) continue;
@@ -68,15 +84,14 @@
     const out = [];
     for (const [_, line] of Object.entries(lines)) {
       const row = M.rowWords(line);
-      const nums = row.filter(w => moneyRe.test(w.text));
+      const nums = row.filter(w => money.isMoneyLike(w.text)).map(w => money.parseMoney(w.text)).filter(v => v != null);
       const hasNum = nums.length > 0;
-      const desc = row.find(w => /[A-Za-zÁÉÍÓÚÑ0-9]{2}/.test(w.text) && !moneyRe.test(w.text));
+      const desc = row.find(w => /[A-Za-zÁÉÍÓÚÑ0-9]{2}/.test(w.text) && !money.isMoneyLike(w.text));
       if (!hasNum || !desc) continue;
-      const vals = nums.map(w => parseFloat(w.text.replace(/[$,\s]/g, '')));
       const item = { description: desc.text.trim() };
-      if (vals.length === 1) item.total = vals[0];
-      else if (vals.length === 2) { item.quantity = vals[0]; item.total = vals[vals.length - 1]; }
-      else { item.quantity = vals[0]; item.unitPrice = vals[1]; item.total = vals[vals.length - 1]; }
+      if (nums.length === 1) item.total = nums[0];
+      else if (nums.length === 2) { item.quantity = nums[0]; item.total = nums[nums.length - 1]; }
+      else { item.quantity = nums[0]; item.unitPrice = nums[1]; item.total = nums[nums.length - 1]; }
       out.push(item);
     }
     return out.slice(0, 100);
