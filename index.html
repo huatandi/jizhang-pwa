@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="智账">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=39">
+  <link rel="stylesheet" href="css/style.css?v=40">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -669,8 +669,8 @@
           <input type="text" id="supplierNewName" placeholder="输入新供应商名称">
           <button class="btn-primary" onclick="addSupplier()">＋ 新增</button>
         </div>
-        <div style="max-height:380px;overflow-y:auto;margin-top:14px;">
-          <table id="supplierTable">
+        <div style="max-height:380px;overflow:auto;-webkit-overflow-scrolling:touch;margin-top:14px;">
+          <table id="supplierTable" style="min-width:620px;width:100%;">
             <thead>
               <tr>
                 <th>供应商名称</th><th>进货笔数</th><th>进货总额</th><th>已付货款</th><th>未付 / 折扣</th><th>折扣率</th><th>操作</th>

@@ -1401,6 +1401,8 @@ select option {
   /* 表格卡片窄屏横向滚动 */
   .table-card { overflow-x: auto; }
   .table-card table { min-width: 560px; }
+  /* 列数多的表（进货8列/供应商7列/查询）给更宽滚动空间，内容不被压扁 */
+  #purchaseTable, #supplierTable, #queryTable { min-width: 760px; }
   .table-card th { top: 0; }
 
   .btn-primary, .btn-secondary { width: 100%; }
