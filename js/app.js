@@ -5035,7 +5035,8 @@ async function enterApp(mode) {
     const dx = e.touches[0].clientX - sx;
     const dy = e.touches[0].clientY - sy;
     // 横向位移明显大于纵向 → 阻止（页面不再左右晃动）
-    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+    // 阈值 6px：iOS 弹性滚动即使小幅拖动也会触发，必须尽早拦截
+    if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy) * 1.2) {
       if (e.cancelable) e.preventDefault();
     }
   }, { passive: false });
@@ -5043,64 +5044,90 @@ async function enterApp(mode) {
   document.addEventListener('touchcancel', () => { started = false; }, { passive: true });
 })();
 
-// 运行时横向溢出守卫：页面加载/旋转/滚动后，若文档宽度超过视口，
-// 自动找出溢出元素并压缩，保证 iOS 上永不出现横向拖动（兜底所有未预料的溢出源）
+// 运行时横向溢出守卫：页面加载/旋转/滚动/内容变化后，若文档宽度超过视口，
+// 自动找出所有溢出元素并压缩，保证 iOS 上永不出现横向拖动（兜底所有未预料的溢出源）
 (function () {
-  let lastFix = 0;
+  let fixTimer = null;
   function fixOverflow() {
-    const now = Date.now();
-    if (now - lastFix < 300) return; // 防抖
-    lastFix = now;
-    const doc = document.documentElement;
-    const max = Math.max(window.innerWidth, doc.clientWidth);
-    if (doc.scrollWidth <= max + 1) return; // 正常
-    // 1) 找出超出视口的元素（宽度 > 视口 且非 fixed 定位）
-    const offenders = [];
-    document.querySelectorAll('body *').forEach((el) => {
-      if (!el.offsetWidth) return;
-      const r = el.getBoundingClientRect();
-      const cs = window.getComputedStyle(el);
-      if (cs.position === 'fixed') return; // fixed 不撑破滚动
-      if (r.right > max + 1) {
-        offenders.push({ el, w: el.offsetWidth, right: Math.round(r.right) });
-      }
-    });
-    // 2) 压缩最宽的溢出元素
-    offenders.sort((a, b) => b.right - a.right);
-    const top = offenders.slice(0, 3);
-    for (const o of top) {
-      const el = o.el;
-      try {
-        if (el.tagName === 'TABLE' || el.closest('.table-card')) {
-          // 表格：确保在可滚动容器内
-          let card = el.closest('.table-card');
-          if (!card) { card = el.parentElement; if (card) card.style.overflowX = 'auto'; }
-          if (card) { card.style.maxWidth = '100%'; }
-        } else if (el.tagName === 'IMG' || el.tagName === 'CANVAS' || el.tagName === 'SVG') {
-          el.style.maxWidth = '100%';
-        } else {
-          el.style.maxWidth = '100%';
+    if (fixTimer) clearTimeout(fixTimer);
+    fixTimer = setTimeout(() => {
+      const doc = document.documentElement;
+      const body = document.body;
+      const max = Math.max(window.innerWidth, doc.clientWidth, body ? body.clientWidth : 0);
+      if (!body) return;
+      // 文档正常 → 不做任何事
+      if (doc.scrollWidth <= max + 1) return;
+      // 1) 找出所有超出视口的元素
+      const offenders = [];
+      document.querySelectorAll('body *').forEach((el) => {
+        if (!el.offsetWidth) return;
+        const r = el.getBoundingClientRect();
+        const cs = window.getComputedStyle(el);
+        if (cs.position === 'fixed') return; // fixed 不撑破滚动
+        if (r.right > max + 1) {
+          offenders.push({ el, right: Math.round(r.right) });
         }
-      } catch (e) { /* ignore */ }
+      });
+      offenders.sort((a, b) => b.right - a.right);
+      // 2) 修复所有溢出元素（不再只修前3个）
+      for (const o of offenders) {
+        const el = o.el;
+        try {
+          if (el.tagName === 'TABLE') {
+            let card = el.closest('.table-card');
+            if (!card) { card = el.parentElement; if (card) card.style.overflowX = 'auto'; }
+            if (card) card.style.maxWidth = '100%';
+            el.style.maxWidth = '100%';
+            el.style.tableLayout = 'fixed';
+          } else if (el.tagName === 'IMG' || el.tagName === 'CANVAS' || el.tagName === 'SVG') {
+            el.style.maxWidth = '100%';
+          } else {
+            el.style.maxWidth = '100%';
+            // 常见 flex/grid 溢出：允许收缩
+            if (el.style.flex !== undefined) { try { if (getComputedStyle(el).display.includes('flex')) el.style.minWidth = '0'; } catch (e) {} }
+          }
+        } catch (e) { /* ignore */ }
+      }
+      // 3) 最终兜底：body 强制 clip + 宽限
+      if (doc.scrollWidth > max + 1) {
+        body.style.overflowX = 'clip';
+        body.style.maxWidth = '100%';
+        doc.style.overflowX = 'clip';
+      }
+      // 4) 再查一次，若仍超宽说明有 fixed 定位超宽（如 mobile-nav），强制其贴视口
+      if (doc.scrollWidth > max + 1) {
+        document.querySelectorAll('body *').forEach((el) => {
+          const cs = window.getComputedStyle(el);
+          if (cs.position === 'fixed' && cs.left === '0px' && cs.right === '0px') {
+            el.style.maxWidth = '100vw';
+          }
+        });
+      }
+    }, 80);
+  }
+  // 事件监听：加载/缩放/旋转/滚动/内容变化
+  window.addEventListener('load', () => setTimeout(fixOverflow, 300));
+  window.addEventListener('resize', () => fixOverflow());
+  window.addEventListener('orientationchange', () => setTimeout(fixOverflow, 300));
+  window.addEventListener('scroll', fixOverflow, { passive: true });
+  // 弹窗切换
+  const hook = (fn) => {
+    const orig = window[fn];
+    if (typeof orig === 'function') {
+      window[fn] = function (...args) { const r = orig.apply(this, args); setTimeout(fixOverflow, 120); return r; };
     }
-    // 3) 最终兜底：body 强制 clip
-    if (doc.scrollWidth > max + 1) {
-      document.body.style.overflowX = 'clip';
-    }
+  };
+  hook('openModal'); hook('closeModal'); hook('gotoPage');
+  // MutationObserver：任何 DOM 变化（动态表格/图表渲染）后检查
+  if (window.MutationObserver) {
+    const mo = new MutationObserver(() => fixOverflow());
+    document.addEventListener('DOMContentLoaded', () => {
+      mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'width', 'height'] });
+    });
   }
-  window.addEventListener('load', () => setTimeout(fixOverflow, 400));
-  window.addEventListener('resize', () => setTimeout(fixOverflow, 200));
-  window.addEventListener('orientationchange', () => setTimeout(fixOverflow, 400));
-  // 每次切换页面/弹窗后也检查
-  const origOpenModal = window.openModal;
-  if (typeof origOpenModal === 'function') {
-    window.openModal = function (...args) { const r = origOpenModal.apply(this, args); setTimeout(fixOverflow, 150); return r; };
-  }
-  const origCloseModal = window.closeModal;
-  if (typeof origCloseModal === 'function') {
-    window.closeModal = function (...args) { const r = origCloseModal.apply(this, args); setTimeout(fixOverflow, 150); return r; };
-  }
-  document.addEventListener('DOMContentLoaded', () => setTimeout(fixOverflow, 300));
+  document.addEventListener('DOMContentLoaded', () => setTimeout(fixOverflow, 200));
+  // 立即检查一次
+  if (document.body) setTimeout(fixOverflow, 100);
 })();
 
 async function init() {

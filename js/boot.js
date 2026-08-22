@@ -24,6 +24,20 @@
   }
 
   async function boot() {
+    // iOS 防横向溢出：内联强制样式（CSS 加载失败也生效，先于一切渲染）
+    try {
+      const docEl = document.documentElement, b = document.body;
+      if (docEl) {
+        docEl.style.overflowX = 'clip';
+        docEl.style.maxWidth = '100%';
+        docEl.style.width = '100%';
+      }
+      if (b) {
+        b.style.overflowX = 'clip';
+        b.style.maxWidth = '100%';
+        b.style.width = '100%';
+      }
+    } catch (e) { /* ignore */ }
     showSplash();
     let offlineReady = false;
     try {
@@ -45,7 +59,7 @@
     }
     // 4. 加载主应用
     const s = document.createElement('script');
-    s.src = 'js/app.js?v=59';
+    s.src = 'js/app.js?v=60';
     s.onload = () => hideSplash();
     s.onerror = () => { hideSplash(); console.error('[boot] app.js 加载失败'); };
     document.body.appendChild(s);
