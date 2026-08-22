@@ -280,16 +280,16 @@ function voiceHandleResult(r) {
     const tip = document.getElementById('voiceTip');
     const raw = r.modelProgress.progress || 0;
     const pct = Math.min(100, Math.round(raw > 1 ? raw : raw * 100));
-    if (tip) tip.textContent = `⬇️ 正在加载语音模型 ${pct}%…（首次使用需下载，约 30-250MB）`;
+    if (tip) tip.textContent = `🔇 语音引擎准备中 ${pct}%…`;
     const textEl = document.getElementById('btnVoiceText');
-    if (textEl && pct < 100) textEl.textContent = `加载 ${pct}%`;
+    if (textEl && pct < 100) textEl.textContent = `准备 ${pct}%`;
     return;
   }
   if (r.state === 'initializing') {
     const tip = document.getElementById('voiceTip');
-    if (tip) tip.textContent = '⬇️ 正在加载语音模型…（首次使用需下载，约 30-250MB）';
+    if (tip) tip.textContent = '🔇 语音引擎准备中…';
     const textEl = document.getElementById('btnVoiceText');
-    if (textEl) textEl.textContent = '加载中…';
+    if (textEl) textEl.textContent = '准备中…';
     return;
   }
   if (r.state === 'listening') {
@@ -969,6 +969,7 @@ async function saveQuick() {
     openQuickModal, setQuickType, setVoiceBtnState, getVoiceLangMeta, switchVoiceLang, syncVoiceLangUI,
     getQuickMem, setQuickMem, toggleVoice, startVoiceSession, stopVoiceSession, voiceHandleResult,
     checkVoiceCapability,
+    getVoiceSessionActive: () => voiceSessionActive,
     speak, startAlarm, stopAlarm, scheduleAlarmRetries, getAlarmSettings, previewAlarm, renderVoicePreview, applyVoiceText,
     removeVoiceEntry, saveQuick,
     ALARM_TONES, saveCustomTone, removeCustomTone, loadCustomTone,

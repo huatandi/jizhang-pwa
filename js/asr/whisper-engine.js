@@ -23,6 +23,7 @@
     language: null,        // hint：null → 由 global-config 解析（'zh' | 'en' | 'es' ...）
     task: 'automatic-speech-recognition',
     chunkLengthSec: 10,
+    checkModelFile: true,  // 初始化前预检模型仓库文件可用性，避免下载后失败退出
   };
 
   let module = null;
@@ -66,11 +67,29 @@
       return 'wasm';
     }
 
+    /** 预检模型仓库是否提供 q8 整合文件（transformers.js v4 用 model_quantized.onnx）。
+     *  某些仓库（如 whisper-small）没有该文件 → 初始化必失败，提前回退到 whisper-base。 */
+    async _ensureModelAvailable() {
+      if (!this.config.checkModelFile) return;
+      const repo = this.config.modelRepo;
+      const name = String(repo || '').split('/').pop();
+      if (name !== 'whisper-small') return; // 仅 small 已知缺 q8
+      try {
+        const head = await fetch(`https://huggingface.co/${repo}/resolve/main/onnx/model_quantized.onnx`, { method: 'HEAD' });
+        if (head.status === 404) {
+          console.warn('[asr] whisper-small 无 q8 整合文件，回退 whisper-base');
+          this.config.modelRepo = 'Xenova/whisper-base';
+          this.config.dtype = 'q8';
+        }
+      } catch (e) { /* 网络不可用则不预检，走正常流程 */ }
+    }
+
     async initialize() {
       if (pipeline) return pipeline;
       if (initPromise) return initPromise;
       initPromise = (async () => {
         try {
+          await this._ensureModelAvailable();
           const mod = await this._loadModule();
           const { pipeline: pipeFn, env } = mod;
 

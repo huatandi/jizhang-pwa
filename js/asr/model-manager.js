@@ -9,9 +9,11 @@
  *  - 提供「预下载」能力（后台预热）
  *
  * 档位 → 模型映射（whisper）：
- *   high     → whisper-small（Q8）≈ 250MB  桌面/旗舰安卓
+ *   high     → whisper-base（Q8）≈ 76MB  桌面/旗舰安卓
+ *              ⚠️ 不用 whisper-small：其 HF ONNX 目录无整合 model_quantized.onnx（Q8），
+ *              transformers.js v4 请求 404 → 下载后立即失败退出。
  *   balanced → whisper-base（Q8）≈ 76MB    主流设备（默认）
- *   low      → whisper-tiny（Q5）≈ 30MB    旧机/低内存 iPhone
+ *   low      → whisper-tiny（Q8）≈ 30MB    旧机/低内存 iPhone
  */
 (function (global) {
   const MODEL_VERSIONS = {
@@ -28,9 +30,9 @@
   };
 
   const PLAN_BY_PROFILE = {
-    high:     { model: 'whisper-small', dtype: 'q8',  baseRepo: 'Xenova/whisper-small' },
+    high:     { model: 'whisper-base', dtype: 'q8',  baseRepo: 'Xenova/whisper-base' },
     balanced: { model: 'whisper-base',  dtype: 'q8',  baseRepo: 'Xenova/whisper-base' },
-    low:      { model: 'whisper-tiny',  dtype: 'q5',  baseRepo: 'Xenova/whisper-tiny' },
+    low:      { model: 'whisper-tiny',  dtype: 'q8',  baseRepo: 'Xenova/whisper-tiny' },
   };
 
   function detectProfile() {

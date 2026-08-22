@@ -176,6 +176,10 @@ function gotoPage(page) {
   if (page === 'reminder') renderReminders();
   if (page === 'quick') openQuickModal();
   if (page === 'settings') refreshSettingUI();
+  // 进入扫描识别页 → 后台预加载 OCR 引擎（首次 Paddle WASM 加载较慢，提前预热避免拍照后干等）
+  if (page === 'scan' && window.AIKit && window.AIKit.preloadOcr) {
+    try { window.AIKit.preloadOcr().catch(() => {}); } catch (e) { /* ignore */ }
+  }
   resizeVisibleCharts();
 }
 // 直接跳转设置页（不依赖 nav-item click）
@@ -626,10 +630,12 @@ async function removeAccountItem(v) {
 // 保存单个账户的期初余额与类型
 async function saveAccountMeta(nameEncoded) {
   const name = deJs(nameEncoded);
-  // 按 data-acc 属性精确查找（name 已 HTML 转义，属性值同样转义后匹配）
-  const sel = `[data-acc="${name.replace(/"/g, '&quot;')}"]`;
-  const typeSel = document.querySelector(`.account-meta-controls select${sel}`);
-  const initInp = document.querySelector(`.account-meta-controls input${sel}`);
+  // 按 data-acc 属性精确查找（遍历而非 querySelector，兼容含 [ ] " 等特殊字符的账户名）
+  let typeSel = null, initInp = null;
+  for (const row of document.querySelectorAll('#accountMetaList .rate-item')) {
+    const sel = row.querySelector('select[data-acc]');
+    if (sel && sel.getAttribute('data-acc') === name) { typeSel = sel; initInp = row.querySelector('input[data-acc]'); break; }
+  }
   const initial = Number(initInp ? initInp.value : 0);
   const accType = typeSel ? typeSel.value : 'asset';
   try {
@@ -2805,6 +2811,13 @@ async function initAfterLogin() {
         },
       });
     } catch (e) { console.warn('[pull-refresh] init:', e); }
+  }
+  // 语音模型后台静默预热：页面加载后延迟触发，不显示任何下载提示。
+  // 首次会静默下载 Whisper 模型（缓存后离线可用）；下载中不打扰用户，点击说话时若未就绪再实时准备。
+  if (window.VoiceSR && typeof window.VoiceSR.warmup === 'function') {
+    setTimeout(() => {
+      window.VoiceSR.warmup().catch(() => {});
+    }, 3000);
   }
 }
 init();

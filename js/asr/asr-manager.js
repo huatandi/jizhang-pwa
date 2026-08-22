@@ -69,11 +69,12 @@
       // 本地 Whisper
       const WhisperEngine = global.AsrKit.WhisperEngine;
       const profile = global.AsrKit.modelManager.detectProfile();
-      const plan = global.AsrKit.modelManager.resolvePlan(profile, this.opts.modelForce);
+      let plan = global.AsrKit.modelManager.resolvePlan(profile, this.opts.modelForce);
+      // 内存不够 → 降级到能跑动的档位（而非 emit 后继续用原 plan 导致 OOM 崩溃）
       if (!global.AsrKit.modelManager.fitsMemory(plan)) {
-        // 内存不够 → 降级 tiny
         const tiny = global.AsrKit.modelManager.resolvePlan('low');
         if (global.AsrKit.modelManager.fitsMemory(tiny)) {
+          plan = tiny;
           this._emit('onError', ERR.OUT_OF_MEMORY);
         }
       }

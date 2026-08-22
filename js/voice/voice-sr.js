@@ -72,10 +72,46 @@
     activeCb = null;
   }
 
+  // 后台静默预热：应用初始化后调用，不触发任何 UI 提示。
+  // 首次会静默下载 Whisper 模型（transformers.js 内部缓存），之后用户点击说话时模型已就绪。
+  // 因 whisper-engine 的 pipeline 是模块级缓存，预热成功后任何后续 initialize() 直接复用，不再下载。
+  let warmupPromise = null;
+  async function warmup() {
+    if (!global.AsrKit || !global.AsrKit.WhisperEngine) return false;
+    if (warmupPromise) return warmupPromise;
+    warmupPromise = (async () => {
+      try {
+        const mgr = _ensureManager();
+        const profile = global.AsrKit.modelManager.detectProfile();
+        let plan = global.AsrKit.modelManager.resolvePlan(profile, null);
+        if (!global.AsrKit.modelManager.fitsMemory(plan)) {
+          const tiny = global.AsrKit.modelManager.resolvePlan('low');
+          if (global.AsrKit.modelManager.fitsMemory(tiny)) plan = tiny;
+        }
+        const engine = new global.AsrKit.WhisperEngine({
+          device: 'auto',
+          dtype: plan.dtype,
+          modelRepo: plan.baseRepo,
+          language: defaultVoiceLang().split('-')[0],
+          checkModelFile: true,
+        });
+        // 不传 onProgress → 全程静默，无任何 UI 事件
+        await engine.initialize();
+        mgr._warmEngine = engine;
+        return true;
+      } catch (e) {
+        console.warn('[asr] 后台静默预热未完成（不影响功能，点击说话时将自动加载）:', e && e.message);
+        return false;
+      }
+    })();
+    return warmupPromise;
+  }
+
   global.VoiceSR = {
     supported: !!(global.AsrKit && global.AsrKit.AsrManager),
     listen,
     stop,
+    warmup,
     isListening: () => listening,
     get manager() { return _ensureManager(); },
     setAllowOnline: (v) => { allowOnline = !!v; if (manager) manager.allowOnline = !!v; },

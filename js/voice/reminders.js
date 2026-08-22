@@ -499,7 +499,7 @@ function toggleReminderVoice() {
 }
 function startReminderVoice() {
   // 先停掉快速记账的语音会话，避免两个识别器冲突
-  if (voiceSessionActive) stopVoiceSession();
+  if (window.getVoiceSessionActive && window.getVoiceSessionActive()) stopVoiceSession();
   reminderVoiceBuffer = '';
   setReminderVoiceBtnState('listening');
   reminderVoiceSessionActive = true;
