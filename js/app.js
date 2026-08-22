@@ -4524,7 +4524,7 @@ function syncRepeatDayUI() {
   }
 }
 
-// 打开提醒弹窗（仅打开弹窗，语音需点击 🎙️ 话筒按钮才开始）
+// 打开提醒弹窗（mode='voice' 时打开后自动开始语音监听）
 function openReminderModal(mode) {
   editingReminderId = null;
   document.getElementById('rContent').value = '';
@@ -4539,7 +4539,15 @@ function openReminderModal(mode) {
   document.getElementById('btnSaveReminder').textContent = '保存提醒';
   renderReminderVoicePreview();
   openModal('reminderModal');
-  document.getElementById('rContent').focus();
+  // 语音添加提醒：打开弹窗后自动开始监听（无需再点话筒）
+  if (mode === 'voice') {
+    setTimeout(() => {
+      if (!VoiceSR.supported) return showToast('当前浏览器不支持语音识别，可手动填写', 'error');
+      if (!reminderVoiceSessionActive) startReminderVoice();
+    }, 350);
+  } else {
+    document.getElementById('rContent').focus();
+  }
 }
 
 // 编辑提醒
