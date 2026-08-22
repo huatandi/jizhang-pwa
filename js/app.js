@@ -162,6 +162,8 @@ function closeModal(id) {
   if (id === 'quickModal' && voiceSessionActive) stopVoiceSession();
   // 关闭提醒弹窗时停止提醒语音
   if (id === 'reminderModal' && reminderVoiceSessionActive) stopReminderVoice();
+  // 关闭到期提醒弹窗时停止闹铃（用户点"知道了"等）
+  if (id === 'reminderNotifyModal') stopAlarm();
 }
 document.querySelectorAll('.modal-overlay').forEach(ov => {
   ov.addEventListener('click', (e) => { if (e.target === ov) ov.classList.remove('active'); });
@@ -3960,6 +3962,77 @@ function speak(text) {
   } catch (e) { /* ignore */ }
 }
 
+// ===== 提醒闹铃（模拟系统闹铃：响铃1分钟；未处理则10/20/30分钟后重复响1分钟） =====
+let alarmCtx = null;           // Web Audio 上下文
+let alarmBeepTimer = null;     // 蜂鸣循环定时器
+let alarmStopTimer = null;     // 1分钟自动停止
+let alarmVibrateTimer = null;  // 震动循环（Android；iOS 不支持 vibrate 无害）
+let alarmRetryTimers = [];     // 10/20/30 分钟重试定时器
+
+// 开始响铃（durationMs 毫秒后自动停止；默认 1 分钟）
+function startAlarm(durationMs = 60000) {
+  stopAlarm();
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      alarmCtx = new AC();
+      const gain = alarmCtx.createGain();
+      gain.gain.value = 0.15;
+      gain.connect(alarmCtx.destination);
+      const beep = () => {
+        if (!alarmCtx) return;
+        try {
+          const osc = alarmCtx.createOscillator();
+          osc.type = 'square'; // 刺耳音，类似系统闹铃
+          osc.frequency.value = 880;
+          const g2 = alarmCtx.createGain();
+          g2.gain.setValueAtTime(0.15, alarmCtx.currentTime);
+          g2.gain.exponentialRampToValueAtTime(0.001, alarmCtx.currentTime + 1.1);
+          osc.connect(g2); g2.connect(alarmCtx.destination);
+          osc.start();
+          osc.stop(alarmCtx.currentTime + 1.2);
+        } catch (e) { /* ignore */ }
+      };
+      beep();
+      alarmBeepTimer = setInterval(() => { try { beep(); } catch (e) {} }, 2000);
+    }
+    // 震动（Android 支持）
+    if (navigator.vibrate) {
+      navigator.vibrate([1000, 500, 1000, 500, 1000]);
+      alarmVibrateTimer = setInterval(() => { try { navigator.vibrate([1000, 500, 1000]); } catch (e) {} }, 3000);
+    }
+  } catch (e) { console.warn('[alarm]', e); }
+  // 响铃满 1 分钟自动停止
+  alarmStopTimer = setTimeout(stopAlarm, durationMs);
+}
+
+// 停止响铃（含所有重试定时器）
+function stopAlarm() {
+  try { if (alarmBeepTimer) clearInterval(alarmBeepTimer); } catch (e) {}
+  try { if (alarmStopTimer) clearTimeout(alarmStopTimer); } catch (e) {}
+  try { if (alarmVibrateTimer) clearInterval(alarmVibrateTimer); } catch (e) {}
+  try { if (alarmCtx) alarmCtx.close(); } catch (e) {}
+  alarmCtx = null; alarmBeepTimer = null; alarmStopTimer = null; alarmVibrateTimer = null;
+  try { if (navigator.vibrate) navigator.vibrate(0); } catch (e) {}
+  alarmRetryTimers.forEach(t => clearTimeout(t));
+  alarmRetryTimers = [];
+}
+
+// 渐进式重复：若弹窗仍开着（用户未处理），10/20/30 分钟后各再响 1 分钟
+function scheduleAlarmRetries() {
+  alarmRetryTimers.forEach(t => clearTimeout(t));
+  alarmRetryTimers = [];
+  [10, 20, 30].forEach(min => {
+    const t = setTimeout(() => {
+      const ov = document.getElementById('reminderNotifyModal');
+      if (ov && ov.classList.contains('active') && currentNotifyReminder) {
+        startAlarm(60000);
+      }
+    }, min * 60000);
+    alarmRetryTimers.push(t);
+  });
+}
+
 // 渲染实时识别预览（已识别摘要 + 缺什么提示）
 function renderVoicePreview() {
   const box = document.getElementById('voicePreview');
@@ -4662,6 +4735,7 @@ async function markReminderDone(id) {
   notifiedReminderIds.delete(target);
   currentNotifyReminder = null;
   closeModal('reminderNotifyModal');
+  stopAlarm();
   showToast('提醒已完成 ✔');
   renderReminders();
   // 关联账务跳转：付货款→进货、收货款→收入、支出→支出
@@ -4688,6 +4762,7 @@ async function snoozeReminder(minutes) {
     notifiedReminderIds.delete(target);
     currentNotifyReminder = null;
     closeModal('reminderNotifyModal');
+    stopAlarm();
     showToast(minutes === 1440 ? '已推迟到明天提醒 🌅' : `已推迟 ${minutes} 分钟 ⏳`);
     renderReminders();
   } catch (e) {
@@ -4766,6 +4841,10 @@ function reminderVoiceHandleResult(r) {
   if (r.final) {
     reminderVoiceBuffer = (reminderVoiceBuffer + ' ' + r.final).trim();
     applyReminderVoiceText(reminderVoiceBuffer);
+    // 语音终结词（保存/完毕/完成/结束/好了 等）→ 表示记录完毕，自动保存本提醒
+    if (/(?:保存|完毕|完成|结束|好了|搞定|可以了|就这样|保存提醒|确定|存好|submit|save|finish|done|listo|guardar)/i.test(r.final)) {
+      setTimeout(() => autoSaveReminderByVoice(), 350);
+    }
   } else if (r.interim) {
     applyReminderVoiceText(reminderVoiceBuffer + ' ' + r.interim);
   }
@@ -4779,7 +4858,10 @@ function reminderVoiceHandleResult(r) {
 }
 // 应用语音解析结果到提醒表单
 function applyReminderVoiceText(buffer) {
-  const parsed = ReminderParser.parse(buffer);
+  // 语音终结词（保存/完毕/完成/结束/好了/搞定 等）表示"说完了"，不进入任何字段
+  const FINAL_RE = /(?:保存|完毕|完成|结束|好了|搞定|可以了|就这样|保存提醒|确定|存好|submit|save|finish|done|listo|guardar)\s*[:：]?/gi;
+  const clean = String(buffer || '').replace(FINAL_RE, ' ').replace(/\s+/g, ' ').trim();
+  const parsed = ReminderParser.parse(clean);
   const filled = [];
   if (parsed.datetime) { document.getElementById('rAt').value = parsed.datetime; filled.push('时间'); }
   if (parsed.location) { document.getElementById('rLocation').value = parsed.location; filled.push('地点'); }
@@ -4793,6 +4875,27 @@ function applyReminderVoiceText(buffer) {
   else if (reminderVoiceLang === 'en-US') showToast(filled.length ? '✔ Recognized: ' + filled.join(', ') : 'Text recognized, say the time');
   else showToast(filled.length ? '✔ 已识别：' + filled.join('、') : '已识别文本，请说时间');
   setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
+}
+
+// 语音终结词触发自动保存：校验内容/时间齐全后保存
+async function autoSaveReminderByVoice() {
+  // 防重入（连续两个终结词片段）
+  if (window._autoSavingReminder) return;
+  window._autoSavingReminder = true;
+  try {
+    const content = document.getElementById('rContent').value.trim();
+    const rAt = document.getElementById('rAt').value;
+    if (!content && !rAt) {
+      showToast('未识别到提醒内容，请重新说（如：明天九点 在办公室 开会）', 'error');
+      return;
+    }
+    if (!content) { showToast('请说出提醒事项（如：明天九点 在办公室 开会）', 'error'); return; }
+    if (!rAt) { showToast('未识别到提醒时间，请说（如：明天早上九点）', 'error'); return; }
+    // 校验通过 → 保存（saveReminder 内部会关闭弹窗 + 停止语音）
+    await saveReminder();
+  } finally {
+    setTimeout(() => { window._autoSavingReminder = false; }, 1500);
+  }
 }
 function renderReminderVoicePreview() {
   const box = document.getElementById('reminderVoicePreview');
@@ -4834,6 +4937,9 @@ async function checkRemindersDue() {
         `;
       }
       openModal('reminderNotifyModal');
+      // 闹铃：响 1 分钟；未处理则 10/20/30 分钟后重复响 1 分钟
+      startAlarm(60000);
+      scheduleAlarmRetries();
       // 其余到期提醒：toast 提示，避免静默丢失
       if (data.reminders.length > 1) {
         const others = data.reminders.slice(1).map(x => x.content).filter(Boolean).join('、');
