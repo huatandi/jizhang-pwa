@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="智账">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=38">
+  <link rel="stylesheet" href="css/style.css?v=39">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -837,20 +837,20 @@
         </div>
       </div>
 
-      <!-- 语音记账：卡片下方居中，点击持续说话自动识别 -->
+      <!-- 语音记账：卡片下方居中，点击持续说话自动识别（话筒已移至底部取消/保存之间） -->
       <div class="voice-dock">
         <!-- 语音识别实时预览（始终可见） -->
         <div class="voice-preview" id="voicePreview"></div>
         <button class="voice-lang" id="btnVoiceLang" onclick="switchVoiceLang()" title="切换识别语言">中文</button>
-        <button class="voice-btn" id="btnVoice" onclick="toggleVoice()" title="点击开始/结束说话记账">
+        <span class="voice-tip" id="voiceTip">🎙️ 点击底部话筒，持续说话自动识别 金额 · 日期 · 账户 · 分类</span>
+      </div>
+
+      <div class="modal-footer quick-footer">
+        <button class="btn-secondary" onclick="closeModal('quickModal')">取消</button>
+        <button class="voice-btn quick-voice-btn" id="btnVoice" onclick="toggleVoice()" title="点击开始/结束说话记账">
           <span class="voice-btn-icon">🎙️</span>
           <span class="voice-btn-text" id="btnVoiceText">点击说话</span>
         </button>
-        <span class="voice-tip" id="voiceTip">🎙️ 点击开始，持续说话自动识别 金额 · 日期 · 账户 · 分类</span>
-      </div>
-
-      <div class="modal-footer">
-        <button class="btn-secondary" onclick="closeModal('quickModal')">取消</button>
         <button class="btn-primary" id="btnSaveQuick">保存</button>
       </div>
     </div>
