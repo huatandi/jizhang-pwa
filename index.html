@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=49">
+  <link rel="stylesheet" href="css/style.css?v=50">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -633,7 +633,7 @@
               <label class="full">
                 <div class="quick-cat-row">
                   <select id="qCategory" class="quick-cat-select" onchange="onQuickCatChange(this)"></select>
-                  <button type="button" class="quick-cat-add" onclick="openQuickAddCat()" title="添加新分类">＋</button>
+                  <button type="button" class="quick-cat-add" onclick="openQuickAddCat()" title="添加新分类">＋ 新增分类</button>
                 </div>
               </label>
               <div class="quick-cat-add-box full" id="quickAddCatBox" hidden>
@@ -660,6 +660,7 @@
                 <span class="voice-btn-icon">🎙️</span>
                 <span class="voice-btn-text" id="btnVoiceText">点击说话</span>
               </button>
+              <button class="btn-secondary btn-lg" onclick="cancelQuick()" title="取消并退出记账">取消</button>
               <button class="btn-primary btn-lg" id="btnSaveQuick">💾 保存</button>
             </div>
           </div>
@@ -1258,7 +1259,7 @@
        reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
   <script src="js/voice/reminders.js?v=56"></script>
-  <script src="js/voice/quick-voice.js?v=57"></script>
+  <script src="js/voice/quick-voice.js?v=58"></script>
   <script src="js/ledger-crud.js?v=38"></script>
   <script src="js/ai/ai-workbench.js?v=53"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->

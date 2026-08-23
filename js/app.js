@@ -2484,7 +2484,11 @@ if (window.VoiceEngine) {
     parseCnNumber: VE.parseCnNumber,
     // 主解析委托新引擎（保留旧返回结构 { text, cmd, kind, date, account, amount, category, remark }）
     parse: function (text, kind) {
-      const ex = VE.extract(text, { mode: 'quick', kind: kind || 'expense' });
+      const ex = VE.extract(text, {
+        mode: 'quick', kind: kind || 'expense',
+        accounts: (typeof options !== 'undefined' && options.accounts) || undefined,
+        cats: (typeof options !== 'undefined' && (kind === 'income' ? options.departments : options.expense_categories)) || undefined,
+      });
       return {
         text, cmd: ex.cmd, kind: ex.kind || kind || 'expense',
         date: ex.date, account: ex.account, amount: ex.amount,

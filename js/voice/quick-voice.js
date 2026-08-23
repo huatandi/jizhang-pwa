@@ -95,6 +95,13 @@ function openQuickModal(autoVoice) {
   // 语音记账入口：仅打开页面，不自动开始聆听，需点击 🎙️ 话筒按钮才开始
 }
 
+// 取消快速记账：停止语音并返回上一页
+function cancelQuick() {
+  try { if (getVoiceSessionActive()) stopVoiceSession(); } catch (e) {}
+  gotoPage('dashboard');
+  showToast('已取消记账');
+}
+
 function setQuickType(t, btn) {
   quickType = t;
   quickCategory = '';
@@ -1094,7 +1101,7 @@ async function saveQuick() {
     renderQuickCatSelect, onQuickCatChange, openQuickAddCat, closeQuickAddCat, confirmQuickAddCat,
     openQuickModal, setQuickType, setVoiceBtnState, getVoiceLangMeta, switchVoiceLang, syncVoiceLangUI,
     getQuickMem, setQuickMem, toggleVoice, startVoiceSession, stopVoiceSession, voiceHandleResult,
-    checkVoiceCapability,
+    checkVoiceCapability, cancelQuick,
     getVoiceSessionActive: () => voiceSessionActive,
     toggleIncomeVoice, stopIncomeVoice, incomeVoiceHandleResult, applyIncomeVoiceText,
     getIncomeVoiceActive: () => incomeVoiceActive,

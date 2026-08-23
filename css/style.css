@@ -2220,12 +2220,12 @@ select option {
   min-width: 0;
 }
 .quick-cat-add {
-  flex: 0 0 46px;
+  flex: 0 0 auto;
   border: 1.5px dashed var(--primary);
   background: var(--primary-soft);
   color: var(--primary);
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1;
   border-radius: 9px;
   cursor: pointer;
@@ -2233,6 +2233,8 @@ select option {
   display: flex;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
+  padding: 0 12px;
 }
 .quick-cat-add:hover {
   background: var(--primary);
