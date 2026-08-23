@@ -38,7 +38,9 @@
     if (!global.AsrKit || !global.AsrKit.AsrManager) { cb && cb({ error: 'unsupported' }); return; }
     stop();
     activeCb = cb || null;
-    allowOnline = !!(opts && opts.allowOnline);
+    // 默认允许在线回退（WebSpeech 系统语音识别兜底，无需额外授权）：
+    // Whisper 模型下载失败/内存不足时自动降级，避免"引擎启动失败"。
+    allowOnline = opts ? opts.allowOnline !== false : true;
     const mgr = _ensureManager();
     mgr.allowOnline = allowOnline;
     mgr.setLang((opts && opts.lang) || defaultVoiceLang());
