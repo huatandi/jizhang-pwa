@@ -503,8 +503,34 @@ function startReminderVoice() {
   reminderVoiceBuffer = '';
   setReminderVoiceBtnState('listening');
   reminderVoiceSessionActive = true;
-  VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
-  speak('请说');
+  // 先播放"请说"提示音，等语音播完（约1秒）再启动麦克风。
+  // 否则 speechSynthesis 的输出会被麦克风采集 → 触发 VAD 把提示音当语音 → 无谓推理甚至崩溃。
+  const announce = () => speak('请说');
+  try {
+    if ('speechSynthesis' in window) {
+      const u = new SpeechSynthesisUtterance('请说');
+      u.lang = reminderVoiceLang === 'es-MX' ? 'es-MX' : reminderVoiceLang === 'en-US' ? 'en-US' : 'zh-CN';
+      u.onend = () => {
+        if (reminderVoiceSessionActive && !VoiceSR.isListening()) {
+          VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+        }
+      };
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+      // 兜底：某些浏览器不触发 onend（静音/后台），1.2 秒后无论如何启动监听
+      setTimeout(() => {
+        if (reminderVoiceSessionActive && !VoiceSR.isListening()) {
+          VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+        }
+      }, 1200);
+    } else {
+      announce();
+      VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+    }
+  } catch (e) {
+    announce();
+    VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+  }
 }
 function stopReminderVoice() {
   reminderVoiceSessionActive = false;
