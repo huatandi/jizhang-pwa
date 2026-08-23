@@ -30,19 +30,25 @@ function defaultWbLang() {
 async function aiUploadFiles(files) {
   const list = [...files];
   if (!list.length) return showToast('请选择单据图片', 'error');
+  // 图片判定放宽：iOS 拍照/相册 type 可能为空或 HEIC
+  const imgs = list.filter(isImageFile);
+  if (!imgs.length) return showToast('请选择图片文件（JPG/PNG/HEIC 等）', 'error');
 
   // ---- PWA 离线版：无服务器 AI 接口 → 本地 OcrKit 逐张识别，直接填入识别工作台 ----
-  const serverAi = await checkServerAi();
-  if (!serverAi) {
-    return aiUploadLocal(files);
+  try {
+    const serverAi = await checkServerAi();
+    if (!serverAi) {
+      return aiUploadLocal(imgs);
+    }
+  } catch (e) {
+    console.warn('[ai] AI 接口探测失败，走本地识别:', e);
+    return aiUploadLocal(imgs);
   }
 
   const fd = new FormData();
-  for (const f of list) {
-    if (!f.type.startsWith('image/')) { showToast('跳过非图片文件: ' + f.name, 'error'); continue; }
+  for (const f of imgs) {
     fd.append('files', f);
   }
-  if (!fd.has('files')) return;
   // OCR 语言选择（持久化记忆）
   const langSel = document.getElementById('aiOcrLang');
   if (langSel) {
@@ -50,7 +56,7 @@ async function aiUploadFiles(files) {
     try { localStorage.setItem('sm_ai_ocr_lang', langSel.value); } catch (e) { /* ignore */ }
   }
   const btn = document.getElementById('aiDropzone');
-  btn.style.opacity = '0.6';
+  if (btn) btn.style.opacity = '0.6';
   try {
     const res = await fetch('/api/ai/documents', { method: 'POST', body: fd });
     const data = await res.json();
@@ -64,7 +70,7 @@ async function aiUploadFiles(files) {
     console.error(e);
     showToast('上传失败: ' + e.message, 'error');
   } finally {
-    btn.style.opacity = '1';
+    if (btn) btn.style.opacity = '1';
   }
 }
 
@@ -75,7 +81,7 @@ async function checkServerAi() {
   if (_serverAiChecked) return _serverAiResult;
   _serverAiChecked = true;
   try {
-    const jobs = await api('/ai/jobs');
+    const jobs = await withTimeout(api('/ai/jobs'), 4000, 'AI 接口探测超时');
     _serverAiResult = Array.isArray(jobs);
   } catch (e) {
     _serverAiResult = false;
@@ -83,17 +89,30 @@ async function checkServerAi() {
   return _serverAiResult;
 }
 
+// iOS 拍照/相册文件 type 可能为空或 HEIC：按扩展名兜底判定图片
+function isImageFile(f) {
+  if (!f) return false;
+  if (f.type && f.type.startsWith('image/')) return true;
+  return /\.(jpe?g|png|heic|heif|webp|gif|bmp|tiff?)$/i.test(f.name || '');
+}
+
 // PWA 本地批量识别：逐张走 OcrKit（Paddle→Tesseract），识别后自动填入工作台字段
 let _localAiIndex = 0;
 async function aiUploadLocal(files) {
-  const list = [...files].filter(f => f.type.startsWith('image/'));
+  const list = [...files].filter(isImageFile);
   if (!list.length) return showToast('没有可识别的图片', 'error');
   const btn = document.getElementById('aiDropzone');
   if (btn) btn.style.opacity = '0.6';
   let doneCount = 0, failCount = 0;
   try {
     // 打开识别工作台（等待图片加载完成）
-    await openWorkbenchForFile(list[0]);
+    try {
+      await openWorkbenchForFile(list[0]);
+    } catch (e) {
+      console.error('[ocr] 打开工作台失败:', e);
+      showToast('打开识别工作台失败: ' + (e && e.message || e), 'error');
+      return;
+    }
     for (let i = 0; i < list.length; i++) {
       const f = list[i];
       _localAiIndex = i + 1;
@@ -144,7 +163,11 @@ function openWorkbenchForFile(file) {
     const img = document.getElementById('wbImg');
     if (img) {
       img.onload = () => { URL.revokeObjectURL(url); resolve(); };
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        showToast('⚠️ 图片加载失败（格式可能不受支持），请换一张', 'error');
+        resolve();
+      };
       img.src = url;
     } else { resolve(); }
     // 清空字段
@@ -154,7 +177,9 @@ function openWorkbenchForFile(file) {
     }
     const t = document.getElementById('wbType');
     if (t) t.value = 'expense';
-    fillSelect('wbCategory', options.expense_categories, true);
+    try {
+      fillSelect('wbCategory', (options && options.expense_categories) || [], true);
+    } catch (e) { console.warn('[ai] 分类下拉填充失败（options 未就绪）:', e); }
     showWbOcr('本地识别中…识别完成后文字显示在这里，字段自动填入下方');
     openModal('aiWorkbenchModal');
   });
@@ -647,7 +672,9 @@ async function aiOpenWorkbench(id) {
   document.getElementById('wbReference').value = '';
   document.getElementById('wbTracking').value = '';
   document.getElementById('wbType').value = 'expense';
-  fillSelect('wbCategory', options.expense_categories, true);
+  try {
+    fillSelect('wbCategory', (options && options.expense_categories) || [], true);
+  } catch (e) { console.warn('[ai] 分类下拉填充失败:', e); }
   document.getElementById('wbOcr').textContent = '点击「🔍 提取文字」识别单据上的文字内容…';
   document.getElementById('wbOcr').classList.remove('has-text');
   // 若已有待确认记录，预填已知字段
@@ -1024,7 +1051,8 @@ async function wbLocalOcr() {
   }
 }
 
-// 图片元素 → dataURL
+// 图片元素 → dataURL（降采样：iPhone 拍照 HEIC 常达 12MP+，canvas 有尺寸/内存限制）
+const WB_MAX_EDGE = 2048; // 长边上限：OCR 足够清晰，且避开 iOS canvas 限制
 function imgToDataUrl(img) {
   return new Promise((resolve, reject) => {
     try {
@@ -1033,11 +1061,20 @@ function imgToDataUrl(img) {
         resolve(img.toDataURL('image/jpeg', 0.9));
         return;
       }
+      const nw = img.naturalWidth || img.clientWidth || (img.width || 0);
+      const nh = img.naturalHeight || img.clientHeight || (img.height || 0);
+      if (!nw || !nh) { reject(new Error('图片尺寸读取失败')); return; }
+      let dw = nw, dh = nh;
+      if (Math.max(nw, nh) > WB_MAX_EDGE) {
+        const k = WB_MAX_EDGE / Math.max(nw, nh);
+        dw = Math.round(nw * k);
+        dh = Math.round(nh * k);
+      }
       const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth || img.clientWidth || (img.width || 0);
-      canvas.height = img.naturalHeight || img.clientHeight || (img.height || 0);
+      canvas.width = dw;
+      canvas.height = dh;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, dw, dh);
       resolve(canvas.toDataURL('image/jpeg', 0.9));
     } catch (e) { reject(e); }
   });
@@ -1664,10 +1701,24 @@ function initAiPanelCollapse() {
   }
 }
 
-// 初始化
+// 初始化（幂等：登录/场景切换可能重复进入，避免重复绑定事件）
+let _aiPanelInited = false;
 function initAiPanel() {
   const dropzone = document.getElementById('aiDropzone');
   const fileInput = document.getElementById('aiFiles');
+  if (!dropzone || !fileInput) return;
+  if (_aiPanelInited) {
+    // 已绑定过：仅恢复 OCR 语言记忆，避免重复挂事件
+    const langSel = document.getElementById('aiOcrLang');
+    if (langSel) {
+      try {
+        const saved = localStorage.getItem('sm_ai_ocr_lang');
+        if (saved && [...langSel.options].some(o => o.value === saved)) langSel.value = saved;
+      } catch (e) { /* ignore */ }
+    }
+    return;
+  }
+  _aiPanelInited = true;
   // 恢复上次选择的 OCR 语言
   const langSel = document.getElementById('aiOcrLang');
   if (langSel) {
@@ -1676,8 +1727,21 @@ function initAiPanel() {
       if (saved && [...langSel.options].some(o => o.value === saved)) langSel.value = saved;
     } catch (e) { /* ignore */ }
   }
-  dropzone.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', (e) => { aiUploadFiles(e.target.files); fileInput.value = ''; });
+  // dropzone 为 div：点击/回车直接触发隐藏 file input（iOS 视觉隐藏 input 可被 JS click 触发）
+  const triggerPick = () => { try { fileInput.click(); } catch (e) { console.warn('[ai] 打开文件选择器失败:', e); showToast('无法打开文件选择器，请检查浏览器权限', 'error'); } };
+  dropzone.addEventListener('click', (e) => { e.preventDefault(); triggerPick(); });
+  dropzone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); triggerPick(); }
+  });
+  fileInput.addEventListener('change', (e) => {
+    const picked = e.target && e.target.files;
+    if (picked && picked.length) {
+      // 立即固化为数组（FileList 是 live 引用，iOS 上 setTimeout 后可能失效）
+      const arr = Array.prototype.slice.call(picked);
+      setTimeout(() => aiUploadFiles(arr), 0);
+    }
+    try { fileInput.value = ''; } catch (err) { /* ignore */ }
+  });
   dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag-over'); });
   dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
   dropzone.addEventListener('drop', (e) => {
@@ -1685,15 +1749,22 @@ function initAiPanel() {
     dropzone.classList.remove('drag-over');
     aiUploadFiles(e.dataTransfer.files);
   });
-  // 工作台「选择图片」：本地选图 → 显示 → 自动本地识别填入字段（PWA 离线可用）
+  // 工作台「选择图片」：按钮触发隐藏 input（iOS 可靠路径）
   const wbFile = document.getElementById('wbFileInput');
+  const wbPickBtn = document.getElementById('wbPickBtn');
+  if (wbPickBtn) {
+    wbPickBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      try { if (wbFile) wbFile.click(); } catch (err) { console.warn('[ai] 打开文件选择器失败:', err); }
+    });
+  }
   if (wbFile) {
     wbFile.addEventListener('change', async (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
-      await openWorkbenchForFile(file);
-      const img = document.getElementById('wbImg');
       try {
+        await openWorkbenchForFile(file);
+        const img = document.getElementById('wbImg');
         showToast('📷 正在识别单据…');
         const res = await wbLocalOcrV2(img);
         if (res && res.text) {
@@ -1708,9 +1779,9 @@ function initAiPanel() {
       } catch (err) {
         console.error('[ocr] 工作台本地识别失败:', err);
         showWbOcr('');
-        showToast('本地识别失败: ' + err.message, 'error');
+        showToast('本地识别失败: ' + (err && err.message || err), 'error');
       }
-      wbFile.value = '';
+      try { wbFile.value = ''; } catch (err) { /* ignore */ }
     });
   }
   document.getElementById('aiReviewList').addEventListener('click', (e) => {

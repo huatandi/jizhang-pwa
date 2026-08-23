@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=50">
+  <link rel="stylesheet" href="css/style.css?v=51">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -527,11 +527,11 @@
         <div class="ai-panel">
           <div class="chart-title">🤖 本地 AI 批量识别 <span class="badge-local">🔒 本地处理 · 断网可用</span> <span id="aiEngineBadge" class="ai-engine-badge" style="font-size:11px;opacity:.8;margin-left:6px"></span></div>
           <div class="ai-upload-row">
-            <label class="ai-dropzone" id="aiDropzone">
-              <input type="file" id="aiFiles" accept="image/*" multiple hidden>
+            <div class="ai-dropzone" id="aiDropzone" role="button" tabindex="0" aria-label="选择或拖入单据图片">
+              <input type="file" id="aiFiles" accept="image/*" multiple class="file-input-hidden">
               <span class="ai-drop-icon">📤</span>
               <span><strong>点击选择或拖入单据</strong>（可多选，支持银行转账/流水/Factura/小票）</span>
-            </label>
+            </div>
             <div class="ai-upload-stats">
               <div class="ai-stat"><span id="aiStatPending">0</span>待处理</div>
               <div class="ai-stat"><span id="aiStatProcessing">0</span>处理中</div>
@@ -1138,9 +1138,8 @@
             <button type="button" class="wb-zoom-btn" onclick="wbZoomToggle()" title="放大查看">⛶</button>
           </div>
           <div class="workbench-tools">
-            <label class="btn-secondary wb-pick-btn" title="从本机选择单据图片（本地识别，完全离线）">🖼️ 选择图片
-              <input type="file" id="wbFileInput" accept="image/*" hidden>
-            </label>
+            <button type="button" class="btn-secondary wb-pick-btn" id="wbPickBtn" title="从本机选择单据图片（本地识别，完全离线）">🖼️ 选择图片</button>
+            <input type="file" id="wbFileInput" accept="image/*" class="file-input-hidden">
             <button class="btn-primary" id="wbExtractBtn" onclick="wbExtract()">🔍 提取文字</button>
             <button class="btn-secondary" onclick="wbRetry()">🔄 重新识别</button>
             <button class="btn-secondary" id="wbLocalOcrBtn" onclick="wbLocalOcr()" title="本地 OCR 识别（离线可用，识别后自动对号入座填入字段）">📷 本地识别</button>
@@ -1261,7 +1260,7 @@
   <script src="js/voice/reminders.js?v=56"></script>
   <script src="js/voice/quick-voice.js?v=58"></script>
   <script src="js/ledger-crud.js?v=38"></script>
-  <script src="js/ai/ai-workbench.js?v=53"></script>
+  <script src="js/ai/ai-workbench.js?v=54"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=38"></script>
   <!-- ===== 参考汇率工具（Exchange Rate Engine V1.0）=====

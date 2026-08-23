@@ -793,6 +793,18 @@ select option {
   color: var(--text-2);
   font-size: 14px;
 }
+/* 视觉隐藏文件输入框：iOS Safari 上 display:none 的 file input 无法通过 JS .click()/label 可靠触发，
+   必须用定位 + 透明隐藏（保留可聚焦/可点击性） */
+.file-input-hidden {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
 .ai-dropzone:hover, .ai-dropzone.drag-over {
   border-color: var(--primary);
   background: var(--primary-soft);
