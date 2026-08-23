@@ -62,8 +62,18 @@
       };
     }
 
-    /** 选择引擎：本地优先，失败降级在线（需授权） */
+    /** 选择引擎：本地优先，失败降级在线（需授权）；forceOnline 时直接在线 */
     async _selectEngine() {
+      // forceOnline：跳过 Whisper（含已缓存的 local mode），直接 WebSpeech
+      if (this.opts.forceOnline) {
+        if (global.AsrKit.webspeechSupported) {
+          this.engine = new global.AsrKit.WebSpeechEngine();
+          this.mode = 'online';
+          return this.engine;
+        }
+        const err = new Error(ERR.ASR_FAILED);
+        throw err;
+      }
       if (this.mode === 'local') return this.engine;
 
       // 本地 Whisper

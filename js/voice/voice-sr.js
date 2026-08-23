@@ -43,6 +43,9 @@
     allowOnline = opts ? opts.allowOnline !== false : true;
     const mgr = _ensureManager();
     mgr.allowOnline = allowOnline;
+    // forceOnline：Whisper 连续失败后强制直接用 WebSpeech（跳过本地模型初始化）
+    if (opts && opts.forceOnline) mgr.opts = mgr.opts || {};
+    if (opts && opts.forceOnline) mgr.opts.forceOnline = true;
     mgr.setLang((opts && opts.lang) || defaultVoiceLang());
     mgr.setCallback({
       onInterim: (t) => activeCb && activeCb({ interim: t }),

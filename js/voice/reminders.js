@@ -566,15 +566,25 @@ function reminderVoiceHandleResult(r) {
       // 没听到声音：保持监听状态即可
       if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening');
     } else if (r.error === 'aborted' || r.error === 'unsupported') {
-      // 引擎启动失败/浏览器不支持：自动重试最多 3 次（Whisper 模型可能正在下载/临时失败），
-      // 仍失败则明确提示可手动填写保存（避免"语音识别失败→无法保存"的断链）
+      // 引擎启动失败/浏览器不支持：自动重试。
+      // 第1次原样重试（Whisper 可能正在下载）；第2次起强制 WebSpeech（跳过 Whisper 反复初始化）；
+      // 仍失败则明确引导手动填写保存（避免"语音识别失败→无法保存"的断链）。
       const wasActive = reminderVoiceSessionActive;
       reminderVoiceSessionActive = false;
       setReminderVoiceBtnState('error');
-      if (r.error === 'aborted' && wasActive && (window.__reminderVoiceRetryCount || 0) < 3) {
-        window.__reminderVoiceRetryCount = (window.__reminderVoiceRetryCount || 0) + 1;
-        showToast(`语音引擎启动失败，第 ${window.__reminderVoiceRetryCount} 次重试…`, 'error');
-        setTimeout(() => { if (!reminderVoiceSessionActive) startReminderVoice(); }, 1500);
+      const retryCount = window.__reminderVoiceRetryCount || 0;
+      if (r.error === 'aborted' && wasActive && retryCount < 3) {
+        window.__reminderVoiceRetryCount = retryCount + 1;
+        const useOnline = retryCount >= 1; // 第2次起强制在线（跳过本地 Whisper）
+        showToast(useOnline ? `语音引擎重试中（改用系统语音）…` : `语音引擎启动失败，正在重试…`, 'error');
+        setTimeout(() => {
+          if (!reminderVoiceSessionActive) {
+            reminderVoiceSessionActive = true;
+            setReminderVoiceBtnState('listening');
+            // 强制在线模式：WebSpeech 系统语音（Whisper 连续失败的可靠兜底）
+            VoiceSR.listen({ lang: reminderVoiceLang, continuous: true, forceOnline: useOnline }, reminderVoiceHandleResult);
+          }
+        }, 1500);
         return;
       }
       window.__reminderVoiceRetryCount = 0;

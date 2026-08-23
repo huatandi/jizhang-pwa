@@ -265,7 +265,7 @@ function checkVoiceCapability() {
 function startVoiceSession() {
   // 先停掉语音提醒会话，避免两个识别器冲突
   if (window.isReminderVoiceActive && window.isReminderVoiceActive()) stopReminderVoice();
-  window.__voiceRetryOnce = true;
+  window.__voiceRetryCount = 0;
   voiceBuffer = '';
   voiceMultiEntries = [];
   voiceSessionActive = true;
@@ -337,11 +337,16 @@ function voiceHandleResult(r) {
       };
       showToast(msgMap[r.error] || r.error, 'error');
       if (wasActive && r.error === 'aborted') {
-        // 一次性重试机会（模型可能正在下载/临时失败）
+        // 一次性重试机会（模型可能正在下载/临时失败）：
+        // 第1次原样重试；第2次起强制 WebSpeech（跳过 Whisper 反复初始化）
+        const rc = window.__voiceRetryCount || 0;
+        window.__voiceRetryCount = rc + 1;
+        const useOnline = rc >= 1;
         voiceRestartTimer = setTimeout(() => {
-          if (!voiceSessionActive && window.__voiceRetryOnce) {
-            window.__voiceRetryOnce = false;
-            startVoiceSession();
+          if (!voiceSessionActive) {
+            voiceSessionActive = true;
+            setVoiceBtnState('listening');
+            VoiceSR.listen({ lang: voiceLang, continuous: true, forceOnline: useOnline }, voiceHandleResult);
           }
         }, 1500);
       }
