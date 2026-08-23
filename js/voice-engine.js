@@ -496,6 +496,20 @@
   function parseAccount(text, accounts) {
     const t = String(text || '');
     const low = t.toLowerCase();
+    // -1) BankResolver 优先（V3 银行专有词：普通话中文音译/拼音 → 标准银行名）
+    //     例："桑坦德"→Santander、"贝贝瓦"→BBVA、"班诺特"→Banorte
+    try {
+      const br = typeof window !== 'undefined' ? window.BankResolver : (typeof globalThis !== 'undefined' ? globalThis.BankResolver : null);
+      if (br && typeof br.resolve === 'function' && accounts && accounts.length) {
+        const r = br.resolve(t, { transcript: t, context: 'account' });
+        if (r && r.confidence >= 0.75) {
+          // 解析出的标准银行名须在账户列表中（用户可能改名/缩写）
+          const accList = accounts.map(a => String(a || '').trim());
+          const hit = accList.find(a => br.editDist ? br.editDist(String(a).toLowerCase(), r.canonical.toLowerCase()) <= 1 : String(a).toLowerCase() === r.canonical.toLowerCase()) || accList.find(a => String(a).toLowerCase() === r.canonical.toLowerCase());
+          if (hit) return hit;
+        }
+      }
+    } catch (e) { /* BankResolver 不可用不影响原逻辑 */ }
     // 0) RecognitionCore 本地知识库增强：用户词/系统银行/品牌别名归一化（同步查已载入缓存）
     try {
       const rc = typeof window !== 'undefined' ? window.RecognitionCore : (typeof globalThis !== 'undefined' ? globalThis.RecognitionCore : null);
@@ -673,7 +687,7 @@
   };
 
   // 显式标签提取：返回 { field → {value, consumed} }
-  function extractLabels(text) {
+  function extractLabels(text, accounts) {
     const labels = {};
     let rest = String(text || '');
     // 按字段名从长到短处理，避免"日期"与"时间"交叉
@@ -706,6 +720,24 @@
         } else if (f === 'time') {
           const tm = parseTime(val);
           if (tm) labels.time = { value: tm, consumed };
+        } else if (f === 'account') {
+          // 账户 label 值需先经 parseAccount 规范化/校验：
+          //   1) 捕获值夹带后续动词（"账户花了500比索" → 值截断到动词前）
+          //   2) 值以动词开头（"从桑坦德账户花了..."）→ 账户名在标签词之前，
+          //      放弃 label，交给语义提取（2f parseAccount 整句包含匹配）
+          //   3) 普通话叫法（"账户桑坦德"）经 BankResolver → 标准名（Santander）
+          const ACTION = /(?:花了|付了|买了|用了|支付|消费|扣款|转入|转出|存了|取了|支出|收入|付款|pago|paid|bought|spent|transfer)/i;
+          let accVal = val;
+          const am = accVal.match(ACTION);
+          if (am && am.index > 0) accVal = accVal.slice(0, am.index).trim();
+          if (am && am.index === 0) {
+            // 动词开头：不设置 label（保留 rest 原文，语义提取处理）
+            continue;
+          }
+          let resolved = accVal;
+          const parsedAcc = parseAccount(accVal, accounts || optsAccounts());
+          if (parsedAcc) resolved = parsedAcc;
+          if (resolved) labels.account = { value: resolved, consumed };
         } else {
           if (val) labels[f] = { value: val, consumed };
         }
@@ -746,7 +778,7 @@
     if (cmdR.cmd === 'save' || cmdR.cmd === 'clear' || cmdR.cmd === 'done') out.cmd = cmdR.cmd;
 
     // 1) 显式标签
-    const { labels, rest: restAfterLabels } = extractLabels(body);
+    const { labels, rest: restAfterLabels } = extractLabels(body, opts.accounts || optsAccounts());
     body = restAfterLabels;
     if (labels.amount) out.amount = labels.amount.value;
     if (labels.date) out.date = labels.date.value;

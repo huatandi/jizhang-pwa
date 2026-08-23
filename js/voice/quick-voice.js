@@ -866,7 +866,7 @@ function writeVoiceField(field, value, pushHistory) {
 }
 function restoreVoiceField(field, oldValue) { writeVoiceField(field, oldValue, false); }
 // 改口覆盖：金额转数字；账户/分类需命中下拉（否则提示）；返回是否成功
-function applyVoiceFieldOverride(field, value) {
+function applyVoiceFieldOverride(field, value, oldValue) {
   if (field === 'amount') {
     const n = Number(value);
     if (isNaN(n) || n <= 0) return false;
@@ -874,9 +874,31 @@ function applyVoiceFieldOverride(field, value) {
     return true;
   }
   if (field === 'account' || field === 'category') {
+    // 账户：先经 BankResolver 把普通话叫法解析成标准银行名（"桑坦德"→Santander），再匹配下拉
+    let target = value;
+    if (field === 'account' && window.BankResolver && typeof window.BankResolver.resolve === 'function') {
+      const r = window.BankResolver.resolve(String(value), { transcript: String(value), context: 'account' });
+      if (r && r.confidence >= 0.75) target = r.canonical;
+    }
     const sel = document.getElementById(field === 'account' ? 'qAccount' : 'qCategory');
-    if (sel && [...sel.options].some(o => o.value === value)) { writeVoiceField(field, value); return true; }
-    showToast('⚠️ 「' + value + '」不在列表中，请到设置添加', 'error');
+    if (sel && [...sel.options].some(o => o.value === target)) {
+      writeVoiceField(field, target);
+      // 用户学习（V3 银行增强 ④）：改口确认"不是三坦德，是桑坦德" →
+      // 记录 oldValue(三坦德,ASR/普通话音译词) → 标准银行(Santander)，
+      // 下次同样的普通话叫法/ASR 错误词直接识别。
+      if (field === 'account' && window.BankResolver && typeof window.BankResolver.learn === 'function') {
+        const wrong = String(oldValue || '').trim();
+        if (wrong && String(wrong).toLowerCase() !== String(target).toLowerCase()) {
+          // 只有当 oldValue 不是标准名/列表项时才学习（避免把"现金→BBVA"这类正常改口记成错误词）
+          const accs = options.accounts || [];
+          const isStd = accs.some(a => String(a).toLowerCase() === wrong.toLowerCase()) ||
+            (window.MXBankDictionary && window.MXBankDictionary.banks.some(b => b.canonical.toLowerCase() === wrong.toLowerCase()));
+          if (!isStd) BankResolver.learn(wrong, target);
+        }
+      }
+      return true;
+    }
+    showToast('⚠️ 「' + target + '」不在列表中，请到设置添加', 'error');
     return false;
   }
   if (field === 'date') {
@@ -923,7 +945,7 @@ function applyVoiceText(buffer) {
         return;
       }
       // update：覆盖对应字段
-      const ok = applyVoiceFieldOverride(corr.field, corr.value);
+      const ok = applyVoiceFieldOverride(corr.field, corr.value, corr.oldValue);
       renderVoicePreview();
       const label = fieldLabel(corr.field);
       const doneMsg = voiceLang === 'es-MX' ? (label + ': ' + corr.value) : voiceLang === 'en-US' ? (label + ': ' + corr.value) : (label + '已改为 ' + corr.value);
@@ -1068,6 +1090,13 @@ function applyVoiceText(buffer) {
   if (parsed.account) {
     const sel = document.getElementById('qAccount');
     if (sel && [...sel.options].some(o => o.value === parsed.account)) {
+      // 记录 ASR 原始账户词（供"不是X是Y"改口学习：若原词非标准名 → learn 到标准银行）
+      if (window.BankResolver && window.MXBankDictionary) {
+        const accWords = String(parsed.accountRaw || parsed.account).trim();
+        const isStd = options.accounts.some(a => String(a).toLowerCase() === accWords.toLowerCase()) ||
+          window.MXBankDictionary.banks.some(b => b.canonical.toLowerCase() === accWords.toLowerCase());
+        if (!isStd) window.__voiceLastAccountWord = accWords;
+      }
       writeVoiceField('account', parsed.account);
       filled = true;
       speak(voiceLang === 'es-MX' ? ('Cuenta: ' + parsed.account) : voiceLang === 'en-US' ? ('Account: ' + parsed.account) : '账户 ' + parsed.account);
