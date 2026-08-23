@@ -701,7 +701,7 @@
     }
     // 2c) 日期
     if (out.date == null) {
-      const d = parseDate(body);
+      const d = parseDate(body, opts.now); // opts.now：测试/调用方可注入"今天"，保证相对日期可预期
       if (d) {
         out.date = d;
         // 移除日期表达
@@ -860,7 +860,7 @@
     opts = opts || {};
     const t = String(text || '').trim();
     if (!t) return { content: '', location: '', datetime: '', date: '', time: '', advance_minutes: 0, method: 'voice', note: '', rest: '' };
-    const ex = extract(t, { mode: 'reminder', kind: 'expense', cats: opts.cats, accounts: opts.accounts });
+    const ex = extract(t, { mode: 'reminder', kind: 'expense', cats: opts.cats, accounts: opts.accounts, now: opts.now });
     const date = ex.date || '';
     const time = ex.time || '';
     const effectiveDate = date || (opts.now ? fmtDate(opts.now) : todayLocal());
