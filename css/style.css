@@ -2297,13 +2297,15 @@ select option {
   border-radius: 9px;
   grid-column: 1 / -1;
 }
+/* display:flex 会覆盖 hidden 属性（作者样式优先于 UA 的 [hidden]）→ 必须显式关闭 */
+.quick-cat-add-box[hidden] { display: none; }
 .quick-cat-add-box input {
   flex: 1;
   min-width: 0;
   padding: 8px 12px;
   border: 1.5px solid var(--border);
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text);
   background: var(--surface);
   outline: none;

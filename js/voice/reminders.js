@@ -559,9 +559,17 @@ function reminderVoiceHandleResult(r) {
       // 没听到声音：保持监听状态即可
       if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening');
     } else if (r.error === 'aborted' || r.error === 'unsupported') {
-      // 引擎启动失败/浏览器不支持：结束会话，避免假监听
+      // 引擎启动失败/浏览器不支持：先自动重试一次（模型可能正在下载/临时失败），再失败才提示
+      const wasActive = reminderVoiceSessionActive;
       reminderVoiceSessionActive = false;
       setReminderVoiceBtnState('error');
+      if (r.error === 'aborted' && wasActive && !window.__reminderVoiceRetryOnce) {
+        window.__reminderVoiceRetryOnce = true;
+        showToast('语音引擎启动失败，正在重试…', 'error');
+        setTimeout(() => { if (!reminderVoiceSessionActive) startReminderVoice(); }, 1500);
+        return;
+      }
+      window.__reminderVoiceRetryOnce = false;
       showToast(r.error === 'unsupported' ? '当前浏览器不支持语音识别' : '语音引擎启动失败，请重试', 'error');
     } else if (reminderVoiceSessionActive) {
       if (reminderVoiceTimer) clearTimeout(reminderVoiceTimer);
@@ -572,9 +580,14 @@ function reminderVoiceHandleResult(r) {
   if (r.final) {
     reminderVoiceBuffer = (reminderVoiceBuffer + ' ' + r.final).trim();
     applyReminderVoiceText(reminderVoiceBuffer);
-    // 语音终结词（保存/完毕/完成/结束/好了 等）→ 表示记录完毕，自动保存本提醒
-    if (/(?:保存|完毕|完成|结束|好了|搞定|可以了|就这样|保存提醒|确定|存好|submit|save|finish|done|listo|guardar)/i.test(r.final)) {
-      setTimeout(() => autoSaveReminderByVoice(), 350);
+    // 语音命令：说"保存" → 停止录音后自动保存；说"完毕/结束/完成"等 → 仅终止录音（事情已说完）
+    if (/(?:保存|保存提醒|确定|存好|确认|submit|save|guardar|guarda|guárdalo|confirma)/i.test(r.final)) {
+      stopReminderVoice();
+      // 延迟让最后一段 final 先写入表单再校验保存
+      setTimeout(() => autoSaveReminderByVoice(), 600);
+    } else if (/(?:完毕|结束|完成|好了|搞定|可以了|就这样|finish|done|listo|terminado|terminar)/i.test(r.final)) {
+      stopReminderVoice();
+      showToast('✔ 已停止录音，检查后点「保存提醒」即可');
     }
   } else if (r.interim) {
     applyReminderVoiceText(reminderVoiceBuffer + ' ' + r.interim);
@@ -608,7 +621,7 @@ function applyReminderVoiceText(buffer) {
   setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
 }
 
-// 语音终结词触发自动保存：校验内容/时间齐全后保存
+// 语音"保存"命令触发自动保存：校验内容/时间齐全后保存；缺失时重启语音引导补充
 async function autoSaveReminderByVoice() {
   // 防重入（连续两个终结词片段）
   if (window._autoSavingReminder) return;
@@ -618,15 +631,34 @@ async function autoSaveReminderByVoice() {
     const rAt = document.getElementById('rAt').value;
     if (!content && !rAt) {
       showToast('未识别到提醒内容，请重新说（如：明天九点 在办公室 开会）', 'error');
+      restartReminderVoiceAfterSaveFail();
       return;
     }
-    if (!content) { showToast('请说出提醒事项（如：明天九点 在办公室 开会）', 'error'); return; }
-    if (!rAt) { showToast('未识别到提醒时间，请说（如：明天早上九点）', 'error'); return; }
+    if (!content) {
+      showToast('请说出提醒事项（如：明天九点 在办公室 开会）', 'error');
+      restartReminderVoiceAfterSaveFail();
+      return;
+    }
+    if (!rAt) {
+      showToast('未识别到提醒时间，请说（如：明天早上九点）', 'error');
+      restartReminderVoiceAfterSaveFail();
+      return;
+    }
     // 校验通过 → 保存（saveReminder 内部会关闭弹窗 + 停止语音）
     await saveReminder();
   } finally {
     setTimeout(() => { window._autoSavingReminder = false; }, 1500);
   }
+}
+// 语音保存失败后 1.2s 自动重启会话，让用户直接补充缺失字段
+function restartReminderVoiceAfterSaveFail() {
+  setTimeout(() => {
+    if (!reminderVoiceSessionActive) {
+      reminderVoiceSessionActive = true;
+      setReminderVoiceBtnState('listening');
+      VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+    }
+  }, 1200);
 }
 function renderReminderVoicePreview() {
   const box = document.getElementById('reminderVoicePreview');
