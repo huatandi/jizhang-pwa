@@ -271,12 +271,40 @@ function startVoiceSession() {
   voiceSessionActive = true;
   setVoiceBtnState('listening');
   renderVoicePreview();
+  // 开始录音前提示音（用户要求）
+  announceStart();
+  // 60 秒无有效识别 → 自动停止（避免"说错后卡死一直聆听"）
+  resetVoiceIdleTimer();
   VoiceSR.listen({ lang: voiceLang, continuous: true }, voiceHandleResult);
+}
+
+// 60 秒无有效语音 → 自动停止会话（用户要求：1 分钟内无法完成就主动取消/结束）
+let voiceIdleTimer = null;
+function resetVoiceIdleTimer() {
+  if (voiceIdleTimer) clearTimeout(voiceIdleTimer);
+  voiceIdleTimer = setTimeout(() => {
+    if (voiceSessionActive) {
+      stopVoiceSession();
+      showToast('⏱ 60 秒未识别到有效语音，已自动停止（可再次点击说话）', 'error');
+    }
+  }, 60000);
+}
+// 开始录音提示音："请说"
+function announceStart() {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance('请说');
+    u.lang = voiceLang === 'es-MX' ? 'es-MX' : voiceLang === 'en-US' ? 'en-US' : 'zh-CN';
+    u.rate = 1;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  } catch (e) { /* ignore */ }
 }
 
 function stopVoiceSession() {
   voiceSessionActive = false;
   if (voiceRestartTimer) { clearTimeout(voiceRestartTimer); voiceRestartTimer = null; }
+  if (voiceIdleTimer) { clearTimeout(voiceIdleTimer); voiceIdleTimer = null; }
   VoiceSR.stop();
   setVoiceBtnState('idle');
 }
@@ -314,6 +342,7 @@ function voiceHandleResult(r) {
   } else if (r.final) {
     // 持续识别：把每句累积起来整体解析，自动填充对应字段
     voiceBuffer += (voiceBuffer ? ' ' : '') + r.final;
+    resetVoiceIdleTimer(); // 有识别内容 → 重置超时
     applyVoiceText(voiceBuffer);
   } else if (r.error) {
     // 区分可自动恢复错误（no-speech）与需人工介入错误（权限/模型/网络）
@@ -916,7 +945,13 @@ function applyVoiceText(buffer) {
   if (parsed.category) {
     quickCategory = parsed.category;
     const sel = document.getElementById('qCategory');
-    if (sel && [...sel.options].some(o => o.value === parsed.category)) sel.value = parsed.category;
+    if (sel && [...sel.options].some(o => o.value === parsed.category)) {
+      sel.value = parsed.category;
+      filled = true;
+      speak(voiceLang === 'es-MX' ? ('Categoría: ' + parsed.category) : voiceLang === 'en-US' ? ('Category: ' + parsed.category) : '分类 ' + parsed.category);
+    } else {
+      showToast('⚠️ 分类「' + parsed.category + '」不在列表中', 'error');
+    }
   }
   if (parsed.date) {
     document.getElementById('qDate').value = parsed.date;

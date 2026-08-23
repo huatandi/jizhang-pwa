@@ -517,6 +517,7 @@ function startReminderVoice() {
   reminderVoiceBuffer = '';
   setReminderVoiceBtnState('listening');
   reminderVoiceSessionActive = true;
+  resetReminderIdleTimer(); // 60 秒无有效语音自动停止
   // 先播放"请说"提示音，等语音播完（约1秒）再启动麦克风。
   // 否则 speechSynthesis 的输出会被麦克风采集 → 触发 VAD 把提示音当语音 → 无谓推理甚至崩溃。
   const announce = () => speak('请说');
@@ -548,8 +549,22 @@ function startReminderVoice() {
 }
 function stopReminderVoice() {
   reminderVoiceSessionActive = false;
+  if (reminderIdleTimer) { clearTimeout(reminderIdleTimer); reminderIdleTimer = null; }
   VoiceSR.stop();
   setReminderVoiceBtnState('idle');
+}
+// 60 秒无有效语音 → 自动停止（用户要求：1 分钟内无法完成就主动取消/结束）
+let reminderIdleTimer = null;
+function resetReminderIdleTimer() {
+  if (reminderIdleTimer) clearTimeout(reminderIdleTimer);
+  reminderIdleTimer = setTimeout(() => {
+    if (reminderVoiceSessionActive) {
+      reminderVoiceSessionActive = false;
+      VoiceSR.stop();
+      setReminderVoiceBtnState('idle');
+      showToast('⏱ 60 秒未识别到有效语音，已自动停止（可再次点击说话）', 'error');
+    }
+  }, 60000);
 }
 function setReminderVoiceBtnState(state) {
   const btn = document.getElementById('btnReminderVoice');
@@ -603,6 +618,7 @@ function reminderVoiceHandleResult(r) {
     return;
   }
   if (r.final) {
+    resetReminderIdleTimer(); // 有识别内容 → 重置超时
     reminderVoiceBuffer = (reminderVoiceBuffer + ' ' + r.final).trim();
     applyReminderVoiceText(reminderVoiceBuffer);
     // 语音命令：检测整个累积 buffer（而非单段 final），宽松模式容忍 ASR 偏差：
