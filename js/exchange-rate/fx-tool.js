@@ -273,15 +273,27 @@
     const grid = el('fxFavGrid');
     if (!grid) return;
     const quotes = getFavQuotes();
+    // 参考基准：跟随前货币（from），而非固定本币（base）——用户改前货币后常用列表同步改变
+    const ref = state.from || state.base;
     const hint = el('fxFavHint');
-    if (hint) hint.textContent = `点击查看对 ${state.base} 参考汇率`;
+    if (hint) hint.textContent = `点击查看对 ${ref} 参考汇率`;
     const editBtn = el('fxFavEditBtn');
     if (editBtn) editBtn.textContent = state.editFav ? '✅ 完成' : '✏️ 编辑';
     const addRow = el('fxFavAddRow');
     if (addRow) addRow.hidden = false; // 添加入口常显，无需进入编辑模式
+    // 1 from ≈ X：以 base 为桥交叉换算。fromRate = 1 base = ? from；codeRate = 1 base = ? code
+    // 基准币（base）自身 rate 视为 1（rates 表不存基准自身）
+    const refRate = ref === state.base ? { rate: 1 } : state.rates[ref];
     grid.innerHTML = quotes.map((code) => {
-      const r = state.rates[code];
-      const rate = r ? Number(r.rate).toFixed(4) : '--';
+      const r = code === state.base ? { rate: 1 } : state.rates[code];
+      let rate = '--';
+      if (r && refRate && Number(refRate.rate) > 0) {
+        // 1 from = codeRate / fromRate code
+        const cross = Number(r.rate) / Number(refRate.rate);
+        rate = cross.toFixed(4);
+      } else if (r && code === ref) {
+        rate = '1.0000';
+      }
       const provider = r ? (r.provider === 'BANXICO' ? 'BANXICO' : 'Frankfurter') : '';
       const delBtn = state.editFav
         ? `<button class="fx-fav-del" onclick="event.stopPropagation();FxTool.removeFav('${code}')" title="删除 ${code}">×</button>`
@@ -293,7 +305,7 @@
           <span class="fx-fav-flag">${flagOf(code)}</span>
           <span class="fx-fav-code">${code}</span>
         </div>
-        <div class="fx-fav-rate">1 ${state.base} ≈ ${rate} ${code}</div>
+        <div class="fx-fav-rate">1 ${ref} ≈ ${rate} ${code}</div>
         <div class="fx-fav-src">${provider}</div>
       </div>`;
     }).join('');
