@@ -133,6 +133,21 @@ function showToast(msg, type = 'success') {
 }
 
 /* ================== 导航 ================== */
+// 页面顶栏模式徽章：在当前激活页面的标题后显示「开店/家庭」，提示当前登录模式
+function updatePageModeBadge() {
+  const activePage = document.querySelector('.page.active');
+  const h2 = activePage && activePage.querySelector('.page-header h2');
+  if (!h2) return;
+  // 移除旧的模式徽章，避免重复
+  const old = h2.querySelector('.page-mode-badge');
+  if (old) old.remove();
+  const isFamily = settings && settings.scene === 'family';
+  const badge = document.createElement('span');
+  badge.className = 'page-mode-badge' + (isFamily ? ' family' : ' business');
+  badge.textContent = isFamily ? '🏠 家庭模式' : '🏪 开店模式';
+  h2.appendChild(badge);
+}
+// 导航点击后刷新徽章
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => {
     const page = btn.dataset.page;
@@ -148,6 +163,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     if (page === 'settings') { refreshSettingUI(); }
     // 页面切换后重排可见图表（修复图表堆积左侧：容器从隐藏→显示后宽度才就绪）
     resizeVisibleCharts();
+    updatePageModeBadge();
   });
 });
 
@@ -181,6 +197,7 @@ function gotoPage(page) {
     try { window.AIKit.preloadOcr().catch(() => {}); } catch (e) { /* ignore */ }
   }
   resizeVisibleCharts();
+  updatePageModeBadge();
 }
 // 直接跳转设置页（不依赖 nav-item click）
 function openSettingsPage() {
@@ -190,6 +207,7 @@ function openSettingsPage() {
   if (sp) sp.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === 'settings'));
   resizeVisibleCharts();
+  updatePageModeBadge();
 }
 
 /* ================== Modal 管理 ================== */
@@ -1766,6 +1784,7 @@ async function applyScenePreset(scene, btn, silent) {
   renderReminders();
   syncModeSwitch();
   resizeVisibleCharts();
+  updatePageModeBadge();
 }
 
 // 快速切换模式：点击 logo 旁的模式按钮，直接转换家庭/开店
@@ -2915,5 +2934,7 @@ async function initAfterLogin() {
       window.VoiceSR.warmup().catch(() => {});
     }, 3000);
   }
+  // 顶栏模式徽章（当前登录模式：开店/家庭）
+  updatePageModeBadge();
 }
 init();

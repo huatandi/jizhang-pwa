@@ -188,7 +188,29 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
-.page-header h2 { font-size: 24px; font-weight: 700; color: var(--text); }
+.page-header h2 { font-size: 24px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* 页面顶栏模式徽章：提示当前登录模式（开店/家庭），一眼可辨 */
+.page-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.page-mode-badge.business {
+  background: linear-gradient(135deg, #ffb020, #f59e0b);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+}
+.page-mode-badge.family {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.35);
+}
 .subtitle { color: var(--text-3); font-size: 13px; margin-top: 4px; }
 
 .btn-primary {
