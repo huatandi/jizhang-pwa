@@ -734,15 +734,26 @@ async function checkRemindersDue() {
           n.onclick = () => { window.focus(); closeModal('reminderNotifyModal'); };
         }
       } catch (e) { /* 通知失败不影响 */ }
-      // TTS 语音播报：播完（约数秒）后启动持续闹铃
+      // TTS 语音播报：仅"语音自动"提醒播报内容（隐私保护：手动提醒不播报内容，只响铃+卡片）
+      // 播完（约数秒）后启动持续闹铃
       const ttsText = `${r.content}${r.location ? '，地点' + r.location : ''}，时间到了`;
-      speak(ttsText, () => {
-        // 语音播报完成 → 启动持续响铃（若用户已处理则不响）
-        const ov = document.getElementById('reminderNotifyModal');
-        if (ov && ov.classList.contains('active') && currentNotifyReminder) {
-          startAlarm();
-        }
-      });
+      const doSpeak = String(r.remind_method || 'manual') !== 'manual';
+      if (doSpeak) {
+        speak(ttsText, () => {
+          const ov = document.getElementById('reminderNotifyModal');
+          if (ov && ov.classList.contains('active') && currentNotifyReminder) {
+            startAlarm();
+          }
+        });
+      } else {
+        // 手动提醒：不播报内容（隐私），稍后直接持续响铃
+        setTimeout(() => {
+          const ov = document.getElementById('reminderNotifyModal');
+          if (ov && ov.classList.contains('active') && currentNotifyReminder) {
+            startAlarm();
+          }
+        }, 800);
+      }
     }
   } catch (e) { /* 静默失败，不影响其他功能 */ }
 }

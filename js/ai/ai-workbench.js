@@ -1747,18 +1747,59 @@ function wbCollectFields() {
   };
 }
 
-// 「保存」：仅把工作台字段作为一条账务保存，不学习模板
+// 「保存」：对号入座 —— 把工作台识别字段填入记账表单(支出/收入弹窗)，用户核对后点弹窗保存入账
 async function wbSave() {
   const fields = wbCollectFields();
   if (!fields.date && !fields.amount) {
     return showToast('请至少填写日期或金额', 'error');
   }
+  // PWA 本地路径（无 wbDocId）：打开记账弹窗并预填识别字段 → 用户确认后入账
   if (!wbDocId) {
-    // PWA 本地路径：直接作为账务保存（/income 或 /expense）
     const amt = Number(fields.amount);
     if (!fields.amount || !Number.isFinite(amt) || amt <= 0) return showToast('请输入有效的正数金额', 'error');
     if (fields.date && !/^\d{4}-\d{2}-\d{2}$/.test(fields.date)) return showToast('日期格式无效', 'error');
     const isIncome = fields.transaction_type === 'income';
+    closeModal('aiWorkbenchModal');
+    if (isIncome) {
+      // 收入表单预填
+      if (typeof window.openIncomeModal === 'function') {
+        window.openIncomeModal(fields.date);
+        const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+        set('iAmount', fields.amount);
+        set('iRemark', fields.remark || fields.merchant || '');
+        const proj = document.getElementById('iProject');
+        const projectName = fields.company || fields.merchant || '';
+        if (proj && projectName && [...proj.options].some(o => o.value === projectName)) proj.value = projectName;
+        const pay = document.getElementById('iPayMethod');
+        const payName = fields.bank_receiver || fields.bank_payer || (fields.account_tail ? '尾号' + fields.account_tail : '');
+        if (pay && payName && [...pay.options].some(o => o.value === payName)) pay.value = payName;
+        const acc = document.getElementById('iAccount');
+        const accName = fields.bank_receiver || fields.bank_payer || (options.accounts && options.accounts[0]) || '';
+        if (acc && accName && [...acc.options].some(o => o.value === accName)) acc.value = accName;
+        showToast('💰 已填入收入表单，核对后点「保存」入账');
+        setTimeout(() => document.getElementById('iAmount') && document.getElementById('iAmount').focus(), 100);
+        return;
+      }
+    } else {
+      // 支出表单预填
+      if (typeof window.openExpenseModal === 'function') {
+        window.openExpenseModal(fields.date);
+        const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+        set('eAmount', fields.amount);
+        set('eHandler', '');
+        set('eRemark', fields.remark || fields.merchant || '');
+        const cat = document.getElementById('eCategory');
+        const catName = fields.category || '';
+        if (cat && catName && [...cat.options].some(o => o.value === catName)) cat.value = catName;
+        const acc = document.getElementById('eAccount');
+        const accName = fields.bank_payer || fields.bank_receiver || (options.accounts && options.accounts[0]) || '';
+        if (acc && accName && [...acc.options].some(o => o.value === accName)) acc.value = accName;
+        showToast('💸 已填入支出表单，核对后点「保存」入账');
+        setTimeout(() => document.getElementById('eAmount') && document.getElementById('eAmount').focus(), 100);
+        return;
+      }
+    }
+    // 兜底：无记账表单时直接入账
     try {
       const body = isIncome ? {
         date: fields.date,
@@ -1780,14 +1821,13 @@ async function wbSave() {
       };
       await api(isIncome ? '/income' : '/expense', 'POST', body);
       showToast(isIncome ? '✅ 收入已入账' : '✅ 支出已入账');
-      closeModal('aiWorkbenchModal');
       refreshDashboards();
       renderIncome && renderIncome();
       renderExpense && renderExpense();
-      return;
     } catch (e) {
       return showToast('保存失败: ' + e.message, 'error');
     }
+    return;
   }
 
   try {
