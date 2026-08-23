@@ -496,27 +496,34 @@
   function parseAccount(text, accounts) {
     const t = String(text || '');
     const low = t.toLowerCase();
+    // 0) RecognitionCore 本地知识库增强：用户词/系统银行/品牌别名归一化（同步查已载入缓存）
+    try {
+      const rc = typeof window !== 'undefined' ? window.RecognitionCore : (typeof globalThis !== 'undefined' ? globalThis.RecognitionCore : null);
+      if (rc && rc.knowledgeBase && rc.knowledgeBase.SYSTEM_ENTITIES) {
+        const sys = rc.knowledgeBase.SYSTEM_ENTITIES;
+        const normAlias = rc.knowledgeBase.normalizeAlias || ((s) => String(s || '').toLowerCase().replace(/[\s\-_./]/g, ''));
+        const key = normAlias(t);
+        // 系统银行/品牌/账户别名 → 权威名（同步查系统词库；用户词库是异步 IndexedDB，走原逻辑兜底）
+        for (const group of [sys.banks, sys.brands, sys.accounts]) {
+          for (const [canonical, e] of Object.entries(group || {})) {
+            if (normAlias(canonical) === key) return canonical;
+            if (e.aliases && e.aliases.some(a => normAlias(a) === key)) return canonical;
+            // 编辑距离 ≤2 模糊（BBA→BBVA）
+            if (e.aliases && e.aliases.some(a => {
+              const na = normAlias(a);
+              if (na.length >= 3 && Math.abs(na.length - key.length) <= 2 && editDistLocal(na, key) <= 2) return true;
+              return false;
+            })) return canonical;
+          }
+        }
+      }
+    } catch (e) { /* 知识库不可用不影响原逻辑 */ }
     const tokens = (low.match(/[a-záéíóúñü0-9]{2,}/g) || []).join(' ');
     // 规范化：去空格/连字符/下划线（"B B V A" / "BB-VA" → "bbva"）
     const norm = (s) => String(s || '').toLowerCase().replace(/[\s\-_./]/g, '');
     const normLow = norm(low);
     // 编辑距离（Levenshtein）≤2 视为匹配：容忍 ASR/OCR 单字符偏差及换位（BBA→BBVA, banotre→banorte）
-    const editDist = (a, b) => {
-      if (a === b) return 0;
-      const la = a.length, lb = b.length;
-      if (Math.abs(la - lb) > 2) return 9; // 长度差>2 提前排除
-      const m = a.length + 1, n = b.length + 1;
-      const d = new Array(m);
-      for (let i = 0; i < m; i++) { d[i] = new Array(n); d[i][0] = i; }
-      for (let j = 0; j < n; j++) d[0][j] = j;
-      for (let i = 1; i < m; i++) {
-        for (let j = 1; j < n; j++) {
-          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-          d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
-        }
-      }
-      return d[la][lb];
-    };
+    const editDist = (a, b) => editDistLocal(a, b);
     for (const acc of accounts || []) {
       const name = String(acc || '').trim();
       if (!name || name === '未填' || name === '未填写') continue;
@@ -539,6 +546,22 @@
       }
     }
     return null;
+  }
+  // 局部编辑距离（避免与 RecognitionCore 的异步 resolve 耦合）
+  function editDistLocal(a, b) {
+    if (a === b) return 0;
+    const la = a.length, lb = b.length;
+    if (Math.abs(la - lb) > 2) return 9;
+    const d = [];
+    for (let i = 0; i <= la; i++) d[i] = [i];
+    for (let j = 0; j <= lb; j++) d[0][j] = j;
+    for (let i = 1; i <= la; i++) {
+      for (let j = 1; j <= lb; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      }
+    }
+    return d[la][lb];
   }
 
   // ================================================================

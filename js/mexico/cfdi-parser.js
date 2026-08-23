@@ -85,15 +85,40 @@
     if (receptor) doc.receptor = receptor;
 
     // ---- 金额 ----
-    doc.subtotal = parseMoneyField(words, fullText, /^subtotal$/i, /\bsubtotal\b/i);
-    doc.descuento = parseMoneyField(words, fullText, /^descuento$/i, /\bdescuento\b/i);
-    doc.iva = parseMoneyField(words, fullText, /^iva$/i, /\biva\b/i);
-    doc.ieps = parseMoneyField(words, fullText, /^ieps$/i, /\bieps\b/i);
-    doc.totalImpuestos = parseMoneyField(words, fullText, /^total\s*impuestos$/i, /total\s*impuestos/i);
-    doc.total = parseMoneyField(words, fullText, /^total$/i, /\btotal\b/i);
+    doc.subtotal = parseMoneyField(words, fullText, /^subtotal[:：]?$/i, /\bsubtotal\b/i);
+    doc.descuento = parseMoneyField(words, fullText, /^descuento[:：]?$/i, /\bdescuento\b/i);
+    doc.iva = parseMoneyField(words, fullText, /^iva[:：]?$/i, /\biva\b/i);
+    doc.ieps = parseMoneyField(words, fullText, /^ieps[:：]?$/i, /\bieps\b/i);
+    doc.totalImpuestos = parseMoneyField(words, fullText, /^total\s*impuestos[:：]?$/i, /total\s*impuestos/i);
+    doc.total = parseMoneyField(words, fullText, /^total[:：]?$/i, /\btotal\b/i);
 
     // ---- Conceptos（表格行） ----
     doc.conceptos = parseConceptos(words, fullText);
+
+    // ---- §三六 数学一致性检查：subtotal + iva - descuento ≈ total（容差 1 比索） ----
+    if (doc.subtotal != null && doc.total != null) {
+      const expected = (Number(doc.subtotal) || 0) + (Number(doc.iva) || 0) - (Number(doc.descuento) || 0);
+      const diff = Math.abs(expected - Number(doc.total));
+      doc.consistency = { checked: true, expected, diff: Math.round(diff * 100) / 100, ok: diff <= 1 };
+      if (!doc.consistency.ok) doc.consistency.reason = 'subtotal+iva-descuento 与 total 不一致';
+    }
+
+    // ---- §十六/§二四 QR 融合：若识别层已提供 QR 结构化数据（QR > OCR） ----
+    if (result && result.qr && typeof result.qr === 'object' && result.qr.uuid) {
+      const q = result.qr;
+      if (q.uuid) doc.uuid = doc.uuid || q.uuid;
+      if (q.rfc_emisor) {
+        if (!doc.emisor) doc.emisor = {};
+        if (!doc.emisor.rfc) doc.emisor.rfc = q.rfc_emisor;
+      }
+      if (q.rfc_receptor) {
+        if (!doc.receptor) doc.receptor = {};
+        if (!doc.receptor.rfc) doc.receptor.rfc = q.rfc_receptor;
+      }
+      if (q.total != null && doc.total == null) doc.total = q.total;
+      doc.qrUsed = true;
+      doc.qrFused = { uuid: !!q.uuid, emisorRfc: !!q.rfc_emisor, receptorRfc: !!q.rfc_receptor, total: q.total != null };
+    }
 
     return doc;
   }

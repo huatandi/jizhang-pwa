@@ -1377,11 +1377,30 @@ async function wbLocalOcrV2(img) {
   const isMx = gcfg ? gcfg.isMexicoRegion() : false;
   let docType = result.documentType || null;
   let structured = null;
+  // 2.1 QR 检测（§十六）：CFDI 等含二维码 → 解码结构化数据，供 CFDI 解析融合
+  if (isMx && window.RecognitionCore && window.RecognitionCore.qrEngine && img) {
+    try {
+      const qrs = await window.RecognitionCore.qrEngine.detect(img);
+      if (qrs && qrs.length) {
+        for (const q of qrs) {
+          const cfdiQr = window.RecognitionCore.qrEngine.parseCfdiQr(q.text);
+          if (cfdiQr) { result.qr = cfdiQr; break; }
+        }
+        if (!result.qr && qrs.length) {
+          // 非 CFDI 二维码：记录原始文本（可能含结构化数据，留给其他解析）
+          result.qrRaw = qrs[0].text;
+        }
+      }
+    } catch (e) { console.warn('[ocr] QR 检测失败（不影响 OCR）:', e); }
+  }
   if (isMx && window.MexicoParser && window.MexicoParser.parse && words.length) {
     try {
       const parsed = window.MexicoParser.parse(result);
       docType = parsed.type || docType;
       structured = parsed.document || {};
+      // QR 数学一致性/字段融合结果透出（CFDI consistency / qrUsed）
+      if (structured && structured.consistency) result.consistency = structured.consistency;
+      if (structured && structured.qrUsed) result.qrUsed = structured.qrUsed;
     } catch (e) { console.warn('[ocr] MexicoParser 解析失败:', e); }
   }
   // 3. 通用兜底提取（任何地区都执行；MexicoParser 结构化字段缺失时补位）
