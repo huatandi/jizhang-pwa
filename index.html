@@ -702,6 +702,14 @@
               <button class="preset-btn" data-scene="family" onclick="applyScenePreset('family', this)">🏠 家庭记账</button>
             </div>
             <div class="preset-hint" id="sceneHint"></div>
+
+            <!-- 当地国家：选中国家自动更新语言/货币/银行 -->
+            <div class="settings-title" style="margin-top:14px">🌍 当地国家 <span class="settings-sub">选择后自动设置语言、默认货币、当地银行列表</span></div>
+            <div class="country-row">
+              <select id="countrySelect" class="country-select"></select>
+              <button class="btn-primary" onclick="applyCountrySetting()">✅ 应用</button>
+            </div>
+            <div class="country-hint" id="countryHint"></div>
           </div>
 
           <!-- 功能模块 -->
@@ -1209,7 +1217,7 @@
   <script src="js/offline-backend.js?v=43"></script>
   <script src="js/voice-engine.js?v=38"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
-  <script src="js/ai/global-config.js?v=38"></script>
+  <script src="js/ai/global-config.js?v=39"></script>
   <script src="js/offline-ocr.js?v=38"></script>
   <!-- AI 引擎层（OcrKit / MexicoParser / ValidateKit / AsrKit / VoiceKit） -->
   <script src="js/validation/validators.js?v=38"></script>
@@ -1260,7 +1268,7 @@
   <script src="js/exchange-rate/frankfurter-provider.js?v=38"></script>
   <script src="js/exchange-rate/rate-calculator.js?v=38"></script>
   <script src="js/exchange-rate/exchange-rate-engine.js?v=38"></script>
-  <script src="js/exchange-rate/fx-tool.js?v=42"></script>
+  <script src="js/exchange-rate/fx-tool.js?v=43"></script>
   <script src="js/boot.js?v=53"></script>
 </body>
 </html>

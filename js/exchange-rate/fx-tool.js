@@ -427,13 +427,30 @@
   }
 
   function pick(side, code) {
-    if (side === 'from') state.from = code;
-    else state.to = code;
+    if (side === 'from') {
+      state.from = code;
+      // 联动：修改前货币后，后货币跟随改变（避免同币种，优先常用对币）
+      if (state.to === code) {
+        // 后货币与前货币相同 → 自动换成该前货币的首选对币
+        const favs = Registry.favoritesFor(code).filter((c) => c !== code);
+        state.to = favs.length ? favs[0] : (code === 'USD' ? 'EUR' : 'USD');
+      } else if (!state.rates[state.to] && state.to !== state.base) {
+        // 当前 to 不在已加载汇率中 → 跟随 from 的常用对币
+        const favs = Registry.favoritesFor(code).filter((c) => c !== code);
+        if (favs.length) state.to = favs[0];
+      }
+    } else {
+      state.to = code;
+    }
     closeModal('fxPickerModal');
     const m = el('fxPickerModal');
     if (m) m.remove();
     renderPair();
     renderFavGrid();
+    // 若 to 是新币种且未加载 → 刷新汇率
+    if (!state.rates[state.to] && state.to !== state.base) {
+      loadRates(true).catch(() => {});
+    }
   }
 
   // ---- 刷新 ----

@@ -16,43 +16,60 @@
 
   /* ================== 地区 → 语言/货币 映射 ================== */
 
-  // 国家/地区 → { lang(BCP-47), ocr(Tesseract lang), asr(Whisper hint), currency }
+  // 国家/地区 → { lang(BCP-47), ocr(Tesseract lang), asr(Whisper hint), currency, banks[5] }
+  // banks：当地知名银行（前5），用于账户下拉/识别词库
   const REGION_PROFILE = {
-    MX:  { lang: 'es-MX', ocr: 'spa+eng', asr: 'es', currency: 'MXN' },   // 墨西哥
-    US:  { lang: 'en-US', ocr: 'eng',     asr: 'en', currency: 'USD' },
-    CA:  { lang: 'en-CA', ocr: 'eng+fra', asr: 'en', currency: 'CAD' },
-    GB:  { lang: 'en-GB', ocr: 'eng',     asr: 'en', currency: 'GBP' },
-    AU:  { lang: 'en-AU', ocr: 'eng',     asr: 'en', currency: 'AUD' },
-    CN:  { lang: 'zh-CN', ocr: 'chi_sim', asr: 'zh', currency: 'CNY' },
-    TW:  { lang: 'zh-TW', ocr: 'chi_tra', asr: 'zh', currency: 'TWD' },
-    HK:  { lang: 'zh-HK', ocr: 'chi_tra', asr: 'zh', currency: 'HKD' },
-    JP:  { lang: 'ja-JP', ocr: 'jpn',     asr: 'ja', currency: 'JPY' },
-    KR:  { lang: 'ko-KR', ocr: 'kor',     asr: 'ko', currency: 'KRW' },
-    DE:  { lang: 'de-DE', ocr: 'deu',     asr: 'de', currency: 'EUR' },
-    FR:  { lang: 'fr-FR', ocr: 'fra',     asr: 'fr', currency: 'EUR' },
-    ES:  { lang: 'es-ES', ocr: 'spa',     asr: 'es', currency: 'EUR' },
-    IT:  { lang: 'it-IT', ocr: 'ita',     asr: 'it', currency: 'EUR' },
-    PT:  { lang: 'pt-PT', ocr: 'por',     asr: 'pt', currency: 'EUR' },
-    BR:  { lang: 'pt-BR', ocr: 'por',     asr: 'pt', currency: 'BRL' },
-    NL:  { lang: 'nl-NL', ocr: 'nld',     asr: 'nl', currency: 'EUR' },
-    PL:  { lang: 'pl-PL', ocr: 'pol',     asr: 'pl', currency: 'PLN' },
-    SE:  { lang: 'sv-SE', ocr: 'swe',     asr: 'sv', currency: 'SEK' },
-    NO:  { lang: 'nb-NO', ocr: 'nor',     asr: 'no', currency: 'NOK' },
-    DK:  { lang: 'da-DK', ocr: 'dan',     asr: 'da', currency: 'DKK' },
-    FI:  { lang: 'fi-FI', ocr: 'fin',     asr: 'fi', currency: 'EUR' },
-    RU:  { lang: 'ru-RU', ocr: 'rus',     asr: 'ru', currency: 'RUB' },
-    TR:  { lang: 'tr-TR', ocr: 'tur',     asr: 'tr', currency: 'TRY' },
-    AR:  { lang: 'es-AR', ocr: 'spa',     asr: 'es', currency: 'ARS' },
-    CL:  { lang: 'es-CL', ocr: 'spa',     asr: 'es', currency: 'CLP' },
-    CO:  { lang: 'es-CO', ocr: 'spa',     asr: 'es', currency: 'COP' },
-    PE:  { lang: 'es-PE', ocr: 'spa',     asr: 'es', currency: 'PEN' },
-    IN:  { lang: 'en-IN', ocr: 'eng',     asr: 'en', currency: 'INR' },
-    ID:  { lang: 'id-ID', ocr: 'ind',     asr: 'id', currency: 'IDR' },
-    TH:  { lang: 'th-TH', ocr: 'tha',     asr: 'th', currency: 'THB' },
-    VN:  { lang: 'vi-VN', ocr: 'vie',     asr: 'vi', currency: 'VND' },
-    SG:  { lang: 'en-SG', ocr: 'eng',     asr: 'en', currency: 'SGD' },
-    MY:  { lang: 'ms-MY', ocr: 'msa',     asr: 'ms', currency: 'MYR' },
-    PH:  { lang: 'en-PH', ocr: 'eng',     asr: 'en', currency: 'PHP' },
+    MX:  { lang: 'es-MX', ocr: 'spa+eng', asr: 'es', currency: 'MXN', banks: ['BBVA', 'Banorte', 'Santander', 'Banamex', 'HSBC'] },
+    US:  { lang: 'en-US', ocr: 'eng',     asr: 'en', currency: 'USD', banks: ['Chase', 'Bank of America', 'Wells Fargo', 'Citi', 'Capital One'] },
+    CA:  { lang: 'en-CA', ocr: 'eng+fra', asr: 'en', currency: 'CAD', banks: ['RBC', 'TD', 'Scotiabank', 'BMO', 'CIBC'] },
+    GB:  { lang: 'en-GB', ocr: 'eng',     asr: 'en', currency: 'GBP', banks: ['HSBC', 'Barclays', 'Lloyds', 'NatWest', 'Santander UK'] },
+    AU:  { lang: 'en-AU', ocr: 'eng',     asr: 'en', currency: 'AUD', banks: ['Commonwealth Bank', 'Westpac', 'ANZ', 'NAB', 'ING'] },
+    CN:  { lang: 'zh-CN', ocr: 'chi_sim', asr: 'zh', currency: 'CNY', banks: ['工商银行', '建设银行', '农业银行', '中国银行', '招商银行'] },
+    TW:  { lang: 'zh-TW', ocr: 'chi_tra', asr: 'zh', currency: 'TWD', banks: ['台湾银行', '中国信托', '国泰世华', '玉山银行', '台北富邦'] },
+    HK:  { lang: 'zh-HK', ocr: 'chi_tra', asr: 'zh', currency: 'HKD', banks: ['HSBC', '中银香港', '渣打银行', '恒生银行', '东亚银行'] },
+    JP:  { lang: 'ja-JP', ocr: 'jpn',     asr: 'ja', currency: 'JPY', banks: ['三菱UFJ', '三井住友', '瑞穗银行', 'みずほ', '乐天银行'] },
+    KR:  { lang: 'ko-KR', ocr: 'kor',     asr: 'ko', currency: 'KRW', banks: ['KB国民银行', '新韩银行', '友利银行', '韩亚银行', 'IBK企业银行'] },
+    DE:  { lang: 'de-DE', ocr: 'deu',     asr: 'de', currency: 'EUR', banks: ['Deutsche Bank', 'Commerzbank', 'DKB', 'N26', 'Sparkasse'] },
+    FR:  { lang: 'fr-FR', ocr: 'fra',     asr: 'fr', currency: 'EUR', banks: ['BNP Paribas', 'Crédit Agricole', 'Société Générale', 'LCL', 'Boursorama'] },
+    ES:  { lang: 'es-ES', ocr: 'spa',     asr: 'es', currency: 'EUR', banks: ['Santander', 'BBVA', 'CaixaBank', 'Banco Sabadell', 'Bankinter'] },
+    IT:  { lang: 'it-IT', ocr: 'ita',     asr: 'it', currency: 'EUR', banks: ['Intesa Sanpaolo', 'UniCredit', 'Banco BPM', 'Monte dei Paschi', 'Fineco'] },
+    PT:  { lang: 'pt-PT', ocr: 'por',     asr: 'pt', currency: 'EUR', banks: ['Millennium BCP', 'Caixa Geral', 'Novo Banco', 'Santander Portugal', 'BPI'] },
+    BR:  { lang: 'pt-BR', ocr: 'por',     asr: 'pt', currency: 'BRL', banks: ['Itaú', 'Bradesco', 'Santander Brasil', 'Banco do Brasil', 'Caixa'] },
+    NL:  { lang: 'nl-NL', ocr: 'nld',     asr: 'nl', currency: 'EUR', banks: ['ING', 'ABN AMRO', 'Rabobank', 'SNS', 'bunq'] },
+    PL:  { lang: 'pl-PL', ocr: 'pol',     asr: 'pl', currency: 'PLN', banks: ['PKO BP', 'Pekao', 'Santander Bank Polska', 'mBank', 'ING Bank Śląski'] },
+    SE:  { lang: 'sv-SE', ocr: 'swe',     asr: 'sv', currency: 'SEK', banks: ['SEB', 'Handelsbanken', 'Nordea', 'Swedbank', 'ICA Banken'] },
+    NO:  { lang: 'nb-NO', ocr: 'nor',     asr: 'no', currency: 'NOK', banks: ['DNB', 'Nordea', 'SpareBank 1', 'Handelsbanken', 'Sbanken'] },
+    DK:  { lang: 'da-DK', ocr: 'dan',     asr: 'da', currency: 'DKK', banks: ['Danske Bank', 'Nordea', 'Jyske Bank', 'Sydbank', 'Spar Nord'] },
+    FI:  { lang: 'fi-FI', ocr: 'fin',     asr: 'fi', currency: 'EUR', banks: ['Nordea', 'OP', 'Danske Bank', 'Aktia', 'S-Pankki'] },
+    RU:  { lang: 'ru-RU', ocr: 'rus',     asr: 'ru', currency: 'RUB', banks: ['Сбербанк', 'ВТБ', 'Газпромбанк', 'Альфа-банк', 'Тинькофф'] },
+    TR:  { lang: 'tr-TR', ocr: 'tur',     asr: 'tr', currency: 'TRY', banks: ['Ziraat', 'İş Bankası', 'Garanti BBVA', 'Yapı Kredi', 'Akbank'] },
+    AR:  { lang: 'es-AR', ocr: 'spa',     asr: 'es', currency: 'ARS', banks: ['Banco Nación', 'Banco Provincia', 'Galicia', 'BBVA Argentina', 'Santander Río'] },
+    CL:  { lang: 'es-CL', ocr: 'spa',     asr: 'es', currency: 'CLP', banks: ['Banco de Chile', 'Banco Estado', 'Santander Chile', 'BCI', 'Banco BICE'] },
+    CO:  { lang: 'es-CO', ocr: 'spa',     asr: 'es', currency: 'COP', banks: ['Bancolombia', 'Banco de Bogotá', 'BBVA Colombia', 'Davivienda', 'Banco Popular'] },
+    PE:  { lang: 'es-PE', ocr: 'spa',     asr: 'es', currency: 'PEN', banks: ['BCP', 'BBVA Continental', 'Interbank', 'Scotiabank', 'Banco de la Nación'] },
+    IN:  { lang: 'en-IN', ocr: 'eng',     asr: 'en', currency: 'INR', banks: ['SBI', 'HDFC Bank', 'ICICI Bank', 'Axis Bank', 'Punjab National Bank'] },
+    ID:  { lang: 'id-ID', ocr: 'ind',     asr: 'id', currency: 'IDR', banks: ['BCA', 'Mandiri', 'BRI', 'BNI', 'CIMB Niaga'] },
+    TH:  { lang: 'th-TH', ocr: 'tha',     asr: 'th', currency: 'THB', banks: ['Bangkok Bank', 'Krungthai', 'Kasikorn', 'SCB', 'Krungsri'] },
+    VN:  { lang: 'vi-VN', ocr: 'vie',     asr: 'vi', currency: 'VND', banks: ['Vietcombank', 'VietinBank', 'BIDV', 'Agribank', 'Techcombank'] },
+    SG:  { lang: 'en-SG', ocr: 'eng',     asr: 'en', currency: 'SGD', banks: ['DBS', 'OCBC', 'UOB', 'Standard Chartered', 'Citi'] },
+    MY:  { lang: 'ms-MY', ocr: 'msa',     asr: 'ms', currency: 'MYR', banks: ['Maybank', 'CIMB', 'Public Bank', 'RHB', 'Hong Leong'] },
+    PH:  { lang: 'en-PH', ocr: 'eng',     asr: 'en', currency: 'PHP', banks: ['BDO', 'BPI', 'Metrobank', 'RCBC', 'PNB'] },
+  };
+
+  // 国家/地区显示名（中文）与国旗（设置页选择器用）
+  const REGION_DISPLAY = {
+    MX:  { name: '墨西哥', flag: '🇲🇽' }, US: { name: '美国', flag: '🇺🇸' }, CA: { name: '加拿大', flag: '🇨🇦' },
+    GB:  { name: '英国', flag: '🇬🇧' }, AU: { name: '澳大利亚', flag: '🇦🇺' }, CN: { name: '中国', flag: '🇨🇳' },
+    TW:  { name: '中国台湾', flag: '🇹🇼' }, HK: { name: '中国香港', flag: '🇭🇰' }, JP: { name: '日本', flag: '🇯🇵' },
+    KR:  { name: '韩国', flag: '🇰🇷' }, DE: { name: '德国', flag: '🇩🇪' }, FR: { name: '法国', flag: '🇫🇷' },
+    ES:  { name: '西班牙', flag: '🇪🇸' }, IT: { name: '意大利', flag: '🇮🇹' }, PT: { name: '葡萄牙', flag: '🇵🇹' },
+    BR:  { name: '巴西', flag: '🇧🇷' }, NL: { name: '荷兰', flag: '🇳🇱' }, PL: { name: '波兰', flag: '🇵🇱' },
+    SE:  { name: '瑞典', flag: '🇸🇪' }, NO: { name: '挪威', flag: '🇳🇴' }, DK: { name: '丹麦', flag: '🇩🇰' },
+    FI:  { name: '芬兰', flag: '🇫🇮' }, RU: { name: '俄罗斯', flag: '🇷🇺' }, TR: { name: '土耳其', flag: '🇹🇷' },
+    AR:  { name: '阿根廷', flag: '🇦🇷' }, CL: { name: '智利', flag: '🇨🇱' }, CO: { name: '哥伦比亚', flag: '🇨🇴' },
+    PE:  { name: '秘鲁', flag: '🇵🇪' }, IN: { name: '印度', flag: '🇮🇳' }, ID: { name: '印尼', flag: '🇮🇩' },
+    TH:  { name: '泰国', flag: '🇹🇭' }, VN: { name: '越南', flag: '🇻🇳' }, SG: { name: '新加坡', flag: '🇸🇬' },
+    MY:  { name: '马来西亚', flag: '🇲🇾' }, PH: { name: '菲律宾', flag: '🇵🇭' },
   };
 
   // 语言 → Tesseract 语言包（兜底）
@@ -273,8 +290,54 @@
     return type === 'CFDI' || type === 'SPEI' || type === 'OXXO';
   }
 
+  /* ================== 当地国家：语言 / 货币 / 银行 应用 ================== */
+
+  /** 国家列表（设置页选择器用）：[{ code, name, flag, lang, currency, banks }] */
+  function countryList() {
+    return Object.keys(REGION_PROFILE).map((code) => {
+      const p = REGION_PROFILE[code];
+      const d = REGION_DISPLAY[code] || {};
+      return {
+        code, name: d.name || code, flag: d.flag || '🌍',
+        lang: p.lang, currency: p.currency, banks: p.banks || [],
+      };
+    });
+  }
+
+  /** 应用当地国家：返回 { lang, currency, banks, region }（更新语言/货币/银行） */
+  function applyCountry(regionCode, opts) {
+    const code = String(regionCode || '').toUpperCase();
+    const p = REGION_PROFILE[code];
+    if (!p) return null;
+    return {
+      region: code,
+      lang: p.lang,
+      currency: p.currency,
+      banks: p.banks || [],
+      ocr: p.ocr || '',
+      asr: p.asr || '',
+    };
+  }
+
+  /** 国家 → 银行列表（当地知名 5 个） */
+  function banksFor(regionCode) {
+    const code = String(regionCode || '').toUpperCase();
+    const p = REGION_PROFILE[code];
+    return (p && p.banks) || [];
+  }
+
+  /** 货币 → 国家（供反查：本币 → 默认国家） */
+  function regionForCurrency(currency) {
+    const c = String(currency || '').toUpperCase();
+    for (const [code, p] of Object.entries(REGION_PROFILE)) {
+      if (p.currency === c) return code;
+    }
+    return '';
+  }
+
   Object.assign(CFG, {
     REGION_PROFILE,
+    REGION_DISPLAY,
     detectRegion,
     detectLang,
     resolveOcrLang,
@@ -286,6 +349,10 @@
     isMexicoDocType,
     homeCurrency,
     browserLang,
+    countryList,
+    applyCountry,
+    banksFor,
+    regionForCurrency,
   });
 
   global.AIKit = global.AIKit || {};

@@ -1465,6 +1465,92 @@ function refreshSettingUI() {
   syncAlarmCustomToneUI();
   // 数据范围设置回填（设置页）
   fillDataRangeUI();
+  // 当地国家选择器回填（国家 → 语言/货币/银行）
+  fillCountrySelect();
+}
+
+/* ================== 当地国家：语言 / 货币 / 银行 ================== */
+// 国家 → 货币/银行映射来自 AIKit.globalConfig（global-config.js 的 REGION_PROFILE）
+function _regionCfg() {
+  return (window.AIKit && window.AIKit.globalConfig) || null;
+}
+function currentRegionCode() {
+  try {
+    const cfg = _regionCfg();
+    if (!cfg) return '';
+    // 优先 settings 中显式保存的国家；否则按 base_currency 反查
+    if (settings && settings.country) return String(settings.country).toUpperCase();
+    const cur = BASE_CURRENCY();
+    return cfg.regionForCurrency ? cfg.regionForCurrency(cur) : '';
+  } catch (e) { return ''; }
+}
+function fillCountrySelect() {
+  const sel = document.getElementById('countrySelect');
+  if (!sel) return;
+  const cfg = _regionCfg();
+  if (!cfg || typeof cfg.countryList !== 'function') return;
+  try {
+    const list = cfg.countryList();
+    const current = currentRegionCode();
+    sel.innerHTML = '<option value="">🌍 自动（按货币/语言推断）</option>' +
+      list.map((c) => `<option value="${c.code}" ${c.code === current ? 'selected' : ''}>${c.flag} ${c.name}（${c.currency}）</option>`).join('');
+    // 显示当前国家提示
+    const hint = document.getElementById('countryHint');
+    if (hint) {
+      const p = list.find((c) => c.code === current);
+      if (p) hint.innerHTML = `当前：${p.flag} ${p.name} · 货币 ${p.currency} · 银行：${(p.banks || []).join(' / ')}`;
+      else hint.innerHTML = '未设置，将按默认货币自动推断';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// 应用当地国家：更新语言/货币/银行（含 base_currency + accounts）
+async function applyCountrySetting() {
+  const sel = document.getElementById('countrySelect');
+  if (!sel) return showToast('国家选择器未找到', 'error');
+  const code = sel.value;
+  const cfg = _regionCfg();
+  if (!cfg || typeof cfg.applyCountry !== 'function') return showToast('区域配置未加载', 'error');
+  const applied = cfg.applyCountry(code);
+  if (!applied) return showToast('未识别该国家代码', 'error');
+
+  try {
+    // 1) 更新基准货币 + 保留现有汇率（走 /settings/rates 专用接口）
+    const auth = currentAuth();
+    const rates = (typeof RATES === 'function') ? RATES() : {};
+    const res = await fetch('/api/settings/rates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (auth && auth.token || '') },
+      body: JSON.stringify({ rates, base_currency: applied.currency }),
+    });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || '保存货币失败'); }
+    // 2) 更新账户列表为当地银行（前5）+ 现金/其他
+    const banks = (applied.banks || []).filter(Boolean);
+    const newAccounts = ['现金', ...banks, '其他'];
+    await api('/options/accounts', 'PUT', { list: newAccounts });
+    // 3) 保存国家到 settings（供刷新回填）
+    settings.country = code;
+    settings.base_currency = applied.currency;
+    // 4) 重新加载选项并应用
+    options = await api('/options');
+    if (window.VoiceEngine) {
+      window.VoiceEngine.setOptions({ expense_categories: options.expense_categories, departments: options.departments, accounts: options.accounts });
+    }
+    // 5) 保存 settings（含 country）
+    try { settings = await api('/settings', 'POST', settings); } catch (e) { /* settings 保存失败不影响 */ }
+    applySettings();
+    fillCurrencySelects();
+    renderRateList();
+    renderAccountMetaList();
+    fillCountrySelect();
+    // 汇率工具若存在则刷新
+    if (window.FxTool && typeof window.FxTool.init === 'function') { try { window.FxTool.init(); } catch (e) {} }
+    const hint = document.getElementById('countryHint');
+    if (hint) hint.innerHTML = `✅ 已应用：${applied.region} · 货币 ${applied.currency} · 银行 ${(applied.banks || []).join(' / ')}`;
+    showToast('已更新为 ' + applied.region + ' 国家设置 ✅');
+  } catch (e) {
+    showToast('应用失败: ' + e.message, 'error');
+  }
 }
 
 // 设置页数据范围回填：显示当前数据范围 + 提示文字
