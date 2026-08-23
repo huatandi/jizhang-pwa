@@ -115,14 +115,31 @@
       throw err;
     }
 
-    /** 开始连续识别（VAD + Whisper） */
+    /** 开始连续识别（VAD + Whisper / WebSpeech 伪连续） */
     async start() {
-      if (this.active) return;
+      // ⚠️ 竞态修复：start() 必须串行化。
+      // 旧实现 `if (this.active) return;` 会吞掉"上一轮 stop 尚未完成时的新 start"，
+      // 导致 iOS 单次识别 end→restart 时识别器实际未启动（用户只能说一句）。
+      // 现在：启动中→复用同一 Promise；已在监听→先完整 stop 再 start。
+      if (this.starting) return this.startPromise;
+      if (this.active) { await this.stop(); }
+      this.starting = true;
+      this.startPromise = this._startInternal();
+      try {
+        await this.startPromise;
+      } finally {
+        this.starting = false;
+        this.startPromise = null;
+      }
+    }
+
+    async _startInternal() {
       this.active = true;
       try {
         this.engine = await this._selectEngine();
+        if (!this.active) return; // 启动期间被 stop → 放弃（stop() 已清理资源）
 
-        // 在线模式：直接走 WebSpeech 事件流
+        // 在线模式：直接走 WebSpeech 事件流（引擎内部自动续听，end 只在用户停止时上报）
         if (this.mode === 'online') {
           this.engine.setCallback((ev) => {
             if (ev.interim) this._emit('onInterim', ev.interim);
@@ -131,6 +148,7 @@
             if (ev.end && !ev.auto) this._emit('onEnd');
           });
           await this.engine.start({ lang: this.lang });
+          if (!this.active) { try { await this.engine.stop(); } catch (e2) {} return; }
           this._emit('onState', 'listening');
           return;
         }
@@ -153,6 +171,7 @@
               if (ev.end && !ev.auto) this._emit('onEnd');
             });
             await this.engine.start({ lang: this.lang });
+            if (!this.active) { try { await this.engine.stop(); } catch (e2) {} return; }
             this._emit('onState', 'listening');
             return;
           }
@@ -160,6 +179,7 @@
           err.cause = e;
           throw err;
         }
+        if (!this.active) return;
 
         // AudioCapture + VAD
         this.capture = new global.AsrKit.audio.AudioCapture();
@@ -173,6 +193,7 @@
           this.vad.push(chunk);
         };
         await this.capture.start();
+        if (!this.active) { try { await this.capture.stop(); } catch (e2) {} this.capture = null; return; }
         this._emit('onState', 'listening');
       } catch (e) {
         this.active = false;
@@ -200,7 +221,7 @@
           if (triedDowngrade) continue;
           if (this.active) {
             this._emit('onError', (e && e.message) || ERR.ASR_FAILED);
-            this._emit('onEnd');
+            // stop() 内部在 wasActive 时会 emit onEnd，无需重复触发
             await this.stop();
             return;
           }
@@ -243,8 +264,19 @@
       }
     }
 
-    /** 用户主动停止 */
+    /** 用户主动停止（幂等：并发调用共享同一 Promise，杜绝 stop 之间互相打架） */
     async stop() {
+      if (this.stopping) return this.stopPromise;
+      this.stopping = true;
+      this.stopPromise = this._stopInternal().finally(() => {
+        this.stopping = false;
+        this.stopPromise = null;
+      });
+      return this.stopPromise;
+    }
+
+    async _stopInternal() {
+      const wasActive = this.active;
       const hadPending = this._hasPendingUtterance;
       this.active = false;
       if (this.vad && hadPending) {
@@ -262,7 +294,7 @@
       this._speaking = false;
       this._hasPendingUtterance = false;
       this.audioQueue = [];
-      this._emit('onEnd');
+      if (wasActive) this._emit('onEnd');
     }
 
     async dispose() {

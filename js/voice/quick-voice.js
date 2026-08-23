@@ -340,8 +340,10 @@ function voiceHandleResult(r) {
     const tip = document.getElementById('voiceTip');
     if (tip) tip.textContent = (voiceLang === 'es-MX' ? '🔴 Escuchando… ' : voiceLang === 'en-US' ? '🔴 Listening… ' : '🔴 正在聆听… ') + r.interim;
   } else if (r.final) {
-    // 持续识别：把每句累积起来整体解析，自动填充对应字段
-    voiceBuffer += (voiceBuffer ? ' ' : '') + r.final;
+    // 持续识别：把每句累积起来整体解析，自动填充对应字段。
+    // V4：mergeTranscript 去重合并（iOS 单次识别每轮重开可能重复返回同一句 final，
+    // 或相邻轮次重叠如"明天上午十点"+"上午十点去银行"→"明天上午十点去银行"）
+    voiceBuffer = (window.VoiceSR && VoiceSR.mergeTranscript) ? VoiceSR.mergeTranscript(voiceBuffer, r.final) : (voiceBuffer + (voiceBuffer ? ' ' : '') + r.final);
     resetVoiceIdleTimer(); // 有识别内容 → 重置超时
     applyVoiceText(voiceBuffer);
   } else if (r.error) {
@@ -390,12 +392,18 @@ function voiceHandleResult(r) {
     }
   } else if (r.end) {
     if (voiceSessionActive) {
-      // 自动重启，保持"一直说话"状态
+      // 自动重启，保持"一直说话"状态（iOS 单次识别：end→重启→继续听）
+      // 防抖 + 强制 stop 旧实例，避免 end/start 竞态风暴导致"说一句就停"
+      if (voiceRestartTimer) clearTimeout(voiceRestartTimer);
       voiceRestartTimer = setTimeout(() => {
-        if (voiceSessionActive && !VoiceSR.isListening()) {
-          VoiceSR.listen({ lang: voiceLang, continuous: true }, voiceHandleResult);
-        }
-      }, 350);
+        if (!voiceSessionActive) return;
+        VoiceSR.stop(); // 彻底停旧实例，确保下次 start 干净
+        if (VoiceSR.isListening()) return; // 仍在听则不再重启
+        voiceSessionActive = true;
+        setVoiceBtnState('listening');
+        VoiceSR.listen({ lang: voiceLang, continuous: true }, voiceHandleResult);
+        resetVoiceIdleTimer();
+      }, 600);
     } else {
       setVoiceBtnState('idle');
     }
@@ -1132,7 +1140,7 @@ async function saveQuick() {
       return;
     }
     if (r.final) {
-      incomeVoiceBuffer += (incomeVoiceBuffer ? ' ' : '') + r.final;
+      incomeVoiceBuffer = (window.VoiceSR && VoiceSR.mergeTranscript) ? VoiceSR.mergeTranscript(incomeVoiceBuffer, r.final) : (incomeVoiceBuffer + (incomeVoiceBuffer ? ' ' : '') + r.final);
       applyIncomeVoiceText(incomeVoiceBuffer);
       return;
     }

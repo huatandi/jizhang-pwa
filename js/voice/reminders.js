@@ -619,7 +619,8 @@ function reminderVoiceHandleResult(r) {
   }
   if (r.final) {
     resetReminderIdleTimer(); // 有识别内容 → 重置超时
-    reminderVoiceBuffer = (reminderVoiceBuffer + ' ' + r.final).trim();
+    // V4：mergeTranscript 去重合并（iOS 单次识别每轮重开可能重复返回同一句 final）
+    reminderVoiceBuffer = (window.VoiceSR && VoiceSR.mergeTranscript) ? VoiceSR.mergeTranscript(reminderVoiceBuffer, r.final) : (reminderVoiceBuffer + ' ' + r.final).trim();
     applyReminderVoiceText(reminderVoiceBuffer);
     // 语音命令：检测整个累积 buffer（而非单段 final），宽松模式容忍 ASR 偏差：
     //   说"保存" → 停止录音后自动保存；说"完毕/结束/完成/好了"等 → 仅终止录音（事情已说完）
@@ -641,11 +642,17 @@ function reminderVoiceHandleResult(r) {
     applyReminderVoiceText(reminderVoiceBuffer + ' ' + r.interim);
   }
   if (r.end && reminderVoiceSessionActive) {
-    // 浏览器中断后自动续听
+    // 浏览器中断后自动续听（静默重启，不重播"请说"——避免连续识别时提示音吞话）
     if (reminderVoiceTimer) clearTimeout(reminderVoiceTimer);
     reminderVoiceTimer = setTimeout(() => {
-      if (reminderVoiceSessionActive && !VoiceSR.isListening()) startReminderVoice();
-    }, 800);
+      if (!reminderVoiceSessionActive) return;
+      VoiceSR.stop(); // 彻底停旧实例（序列化竞态修复）
+      if (VoiceSR.isListening()) return;
+      reminderVoiceSessionActive = true;
+      setReminderVoiceBtnState('listening');
+      resetReminderIdleTimer();
+      VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+    }, 600);
   }
 }
 // 应用语音解析结果到提醒表单
