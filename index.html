@@ -1085,7 +1085,7 @@
     <div class="modal remind-notify-modal">
       <div class="modal-header">
         <h3>⏰ 提醒时间到</h3>
-        <button class="modal-close" onclick="closeModal('reminderNotifyModal')">×</button>
+        <button class="modal-close" onclick="dismissReminderNotify()">×</button>
       </div>
       <div class="modal-body">
         <div class="remind-notify-msg" id="remindNotifyMsg"></div>
@@ -1094,7 +1094,7 @@
         <button class="btn-secondary" onclick="snoozeReminder(10)" title="10 分钟后再次提醒">😴 10分钟后</button>
         <button class="btn-secondary" onclick="snoozeReminder(60)" title="1 小时后再次提醒">⏳ 1小时后</button>
         <button class="btn-secondary" onclick="snoozeReminder(1440)" title="明天同一时间再次提醒">🌅 明天</button>
-        <button class="btn-secondary" onclick="closeModal('reminderNotifyModal')">知道了</button>
+        <button class="btn-secondary" onclick="dismissReminderNotify()">知道了</button>
         <button class="btn-primary" onclick="markReminderDone()">✔ 已完成</button>
       </div>
     </div>
@@ -1227,7 +1227,7 @@
 
   <script src="js/offline-db.js?v=43"></script>
   <script src="js/offline-backend.js?v=43"></script>
-  <script src="js/voice-engine.js?v=39"></script>
+  <script src="js/voice-engine.js?v=40"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
   <script src="js/ai/global-config.js?v=39"></script>
   <script src="js/offline-ocr.js?v=38"></script>
@@ -1264,8 +1264,8 @@
        顺序说明：静态脚本先于 boot.js 动态加载的 app.js 执行。
        reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
-  <script src="js/voice/reminders.js?v=57"></script>
-  <script src="js/voice/quick-voice.js?v=58"></script>
+  <script src="js/voice/reminders.js?v=58"></script>
+  <script src="js/voice/quick-voice.js?v=59"></script>
   <script src="js/ledger-crud.js?v=38"></script>
   <script src="js/ai/ai-workbench.js?v=59"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->

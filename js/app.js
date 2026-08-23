@@ -7,7 +7,7 @@ let settings = {
   scene: 'business',
   modules: { dashboard: true, income: true, purchase: true, expense: true, monthly: true, scan: true },
   budget: { monthly: 0 },
-  alarm: { tone: 'classic', volume: 0.9 }
+  alarm: { tone: 'urgent', volume: 1.0 }
 };
 let charts = {};
 let currentSummary = null;

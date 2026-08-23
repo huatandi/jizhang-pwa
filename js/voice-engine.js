@@ -491,14 +491,44 @@
     const t = String(text || '');
     const low = t.toLowerCase();
     const tokens = (low.match(/[a-záéíóúñü0-9]{2,}/g) || []).join(' ');
+    // 规范化：去空格/连字符/下划线（"B B V A" / "BB-VA" → "bbva"）
+    const norm = (s) => String(s || '').toLowerCase().replace(/[\s\-_./]/g, '');
+    const normLow = norm(low);
+    // 编辑距离（Levenshtein）≤2 视为匹配：容忍 ASR/OCR 单字符偏差及换位（BBA→BBVA, banotre→banorte）
+    const editDist = (a, b) => {
+      if (a === b) return 0;
+      const la = a.length, lb = b.length;
+      if (Math.abs(la - lb) > 2) return 9; // 长度差>2 提前排除
+      const m = a.length + 1, n = b.length + 1;
+      const d = new Array(m);
+      for (let i = 0; i < m; i++) { d[i] = new Array(n); d[i][0] = i; }
+      for (let j = 0; j < n; j++) d[0][j] = j;
+      for (let i = 1; i < m; i++) {
+        for (let j = 1; j < n; j++) {
+          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+          d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+        }
+      }
+      return d[la][lb];
+    };
     for (const acc of accounts || []) {
       const name = String(acc || '').trim();
       if (!name || name === '未填' || name === '未填写') continue;
+      // 1) 精确/包含
       if (low.includes(name.toLowerCase())) return name;
-      const nameWords = name.toLowerCase().match(/[a-záéíóúñü0-9]{3,}/g);
-      if (nameWords) {
-        for (const w of nameWords) {
-          if (tokens.includes(w)) return name;
+      const nameNorm = norm(name);
+      // 2) 去空格后包含（"b b v a" 或 "BB-VA" 匹配 "bbva"）
+      if (nameNorm && normLow.includes(nameNorm)) return name;
+      // 3) 编辑距离 ≤1 的短账户名（ASR 偏差容错）
+      const nameWords = nameNorm.match(/[a-záéíóúñü0-9]{2,}/g) || [];
+      for (const w of nameWords) {
+        if (w.length >= 3 && tokens.includes(w)) return name;
+      }
+      if (nameNorm.length >= 3) {
+        for (const tok of (normLow.match(/[a-záéíóúñü0-9]{2,}/g) || [])) {
+          if (tok.length >= 3 && tok.length <= nameNorm.length + 2 && editDist(tok, nameNorm) <= 2) {
+            return name;
+          }
         }
       }
     }

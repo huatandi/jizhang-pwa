@@ -388,14 +388,14 @@ let alarmVibrateTimer = null;  // 震动循环（Android；iOS 不支持 vibrate
 let alarmRetryTimers = [];     // 10/20/30 分钟重试定时器
 let alarmCustomBuffer = null;  // 自定义音乐片段（AudioBuffer，IndexedDB 读取后解码缓存）
 
-// 闹铃设置默认值：铃声 classic / 音量 0.9（默认拉高，避免听不到）；用户可在设置页调整
+// 闹铃设置默认值：铃声 urgent / 音量 1.0（满音量，用户要求"音量必须足够大"）；用户可在设置页调整
 // 说明：Web 无法读写系统「闹钟音量」通道（iOS/Android 均不开放），
-//       输出音量跟随系统媒体音量。为最大限度保证可闻：默认高音量 + TTS 播报 + 震动三管齐下。
+//       输出音量跟随系统媒体音量。为最大限度保证可闻：默认满音量 + 双音更响铃声 + TTS 播报 + 震动四管齐下。
 function getAlarmSettings() {
   const a = (typeof settings !== 'undefined' && settings.alarm) || {};
   return {
-    tone: a.tone || 'classic',
-    volume: typeof a.volume === 'number' ? a.volume : 0.9,
+    tone: a.tone || 'urgent',
+    volume: typeof a.volume === 'number' ? a.volume : 1.0,
   };
 }
 
@@ -488,8 +488,9 @@ async function removeCustomTone() {
   alarmCustomBuffer = null;
 }
 
-// 开始响铃（durationMs 毫秒后自动停止；默认 1 分钟）
-function startAlarm(durationMs = 60000) {
+// 开始响铃（默认持续响直到 stopAlarm 被调用；用户要求"跟手机一样，不关闭永远闹响"）
+// 注意：请勿传短时长——持续响铃由关闭卡片时的 stopAlarm() 停止
+function startAlarm(durationMs = 0) {
   stopAlarm();
   const cfg = getAlarmSettings();
   const vol = Math.min(1, Math.max(0, cfg.volume));
@@ -516,7 +517,7 @@ function startAlarm(durationMs = 60000) {
         }).catch((e) => console.warn('[alarm] 读取自定义铃声失败:', e));
         // 兜底：自定义读取失败时退化为 classic 蜂鸣
         alarmBeepTimer = setInterval(() => { try { beep('classic'); } catch (e) {} }, 2000);
-        alarmStopTimer = setTimeout(stopAlarm, durationMs);
+        if (durationMs > 0) alarmStopTimer = setTimeout(stopAlarm, durationMs);
         return;
       }
 
@@ -629,8 +630,10 @@ function startAlarm(durationMs = 60000) {
       alarmVibrateTimer = setInterval(() => { try { navigator.vibrate([1000, 500, 1000]); } catch (e) {} }, 3000);
     }
   } catch (e) { console.warn('[alarm]', e); }
-  // 响铃满 1 分钟自动停止
-  alarmStopTimer = setTimeout(stopAlarm, durationMs);
+  // 仅在显式传入时长时自动停止；默认(durationMs<=0)持续响铃直到 stopAlarm（用户关闭卡片）
+  if (durationMs > 0) {
+    alarmStopTimer = setTimeout(stopAlarm, durationMs);
+  }
 }
 
 // 自定义音乐循环播放（不重叠：前一段播完再播下一段）
@@ -658,7 +661,7 @@ function stopAlarm() {
   alarmRetryTimers = [];
 }
 
-// 渐进式重复：若弹窗仍开着（用户未处理），10/20/30 分钟后各再响 1 分钟
+// 渐进式重复：若弹窗仍开着（用户未处理），10/20/30 分钟后重新持续响铃（直到关闭）
 function scheduleAlarmRetries() {
   alarmRetryTimers.forEach(t => clearTimeout(t));
   alarmRetryTimers = [];
@@ -666,7 +669,7 @@ function scheduleAlarmRetries() {
     const t = setTimeout(() => {
       const ov = document.getElementById('reminderNotifyModal');
       if (ov && ov.classList.contains('active') && currentNotifyReminder) {
-        startAlarm(60000);
+        startAlarm();
       }
     }, min * 60000);
     alarmRetryTimers.push(t);
@@ -841,7 +844,11 @@ function applyVoiceText(buffer) {
         setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
         return;
       }
+      showToast('⚠️ 账户「' + acc + '」不在列表中，请到设置添加', 'error');
+      return;
     }
+    showToast('未识别到账户名称，请说账户名（如 BBVA、现金）', 'error');
+    return;
   }
 
   // 2) 常规填充
@@ -859,7 +866,14 @@ function applyVoiceText(buffer) {
   }
   if (parsed.account) {
     const sel = document.getElementById('qAccount');
-    if (sel && [...sel.options].some(o => o.value === parsed.account)) sel.value = parsed.account;
+    if (sel && [...sel.options].some(o => o.value === parsed.account)) {
+      sel.value = parsed.account;
+      filled = true;
+      speak(voiceLang === 'es-MX' ? ('Cuenta: ' + parsed.account) : voiceLang === 'en-US' ? ('Account: ' + parsed.account) : '账户 ' + parsed.account);
+    } else {
+      // 下拉中无此账户 → 提示，避免"识别成功却未选中"的困惑
+      showToast('⚠️ 账户「' + parsed.account + '」不在列表中，请到设置添加', 'error');
+    }
   }
   if (parsed.remark) document.getElementById('qRemark').value = parsed.remark;
 

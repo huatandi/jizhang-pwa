@@ -421,6 +421,12 @@ async function deleteReminder(id) {
   renderReminders();
 }
 
+// 关闭提醒卡片并停止闹铃（"知道了" / × / 点外围）
+function dismissReminderNotify() {
+  stopAlarm();
+  closeModal('reminderNotifyModal');
+}
+
 // 标记完成（功能补充 P3：关联账务提醒完成时跳转到记账页）
 async function markReminderDone(id) {
   const target = id || currentNotifyReminder;
@@ -500,6 +506,7 @@ function toggleReminderVoice() {
 function startReminderVoice() {
   // 先停掉快速记账的语音会话，避免两个识别器冲突
   if (window.getVoiceSessionActive && window.getVoiceSessionActive()) stopVoiceSession();
+  window.__reminderVoiceRetryCount = 0;
   reminderVoiceBuffer = '';
   setReminderVoiceBtnState('listening');
   reminderVoiceSessionActive = true;
@@ -559,18 +566,19 @@ function reminderVoiceHandleResult(r) {
       // 没听到声音：保持监听状态即可
       if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening');
     } else if (r.error === 'aborted' || r.error === 'unsupported') {
-      // 引擎启动失败/浏览器不支持：先自动重试一次（模型可能正在下载/临时失败），再失败才提示
+      // 引擎启动失败/浏览器不支持：自动重试最多 3 次（Whisper 模型可能正在下载/临时失败），
+      // 仍失败则明确提示可手动填写保存（避免"语音识别失败→无法保存"的断链）
       const wasActive = reminderVoiceSessionActive;
       reminderVoiceSessionActive = false;
       setReminderVoiceBtnState('error');
-      if (r.error === 'aborted' && wasActive && !window.__reminderVoiceRetryOnce) {
-        window.__reminderVoiceRetryOnce = true;
-        showToast('语音引擎启动失败，正在重试…', 'error');
+      if (r.error === 'aborted' && wasActive && (window.__reminderVoiceRetryCount || 0) < 3) {
+        window.__reminderVoiceRetryCount = (window.__reminderVoiceRetryCount || 0) + 1;
+        showToast(`语音引擎启动失败，第 ${window.__reminderVoiceRetryCount} 次重试…`, 'error');
         setTimeout(() => { if (!reminderVoiceSessionActive) startReminderVoice(); }, 1500);
         return;
       }
-      window.__reminderVoiceRetryOnce = false;
-      showToast(r.error === 'unsupported' ? '当前浏览器不支持语音识别' : '语音引擎启动失败，请重试', 'error');
+      window.__reminderVoiceRetryCount = 0;
+      showToast(r.error === 'unsupported' ? '当前浏览器不支持语音识别，可手动填写后保存' : '语音引擎启动失败，可手动填写后保存', 'error');
     } else if (reminderVoiceSessionActive) {
       if (reminderVoiceTimer) clearTimeout(reminderVoiceTimer);
       reminderVoiceTimer = setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1200);
@@ -700,8 +708,8 @@ async function checkRemindersDue() {
         `;
       }
       openModal('reminderNotifyModal');
-      // 闹铃：响 1 分钟；未处理则 10/20/30 分钟后重复响 1 分钟
-      startAlarm(60000);
+      // 闹铃：持续响铃直到用户关闭（"跟手机一样，不关闭永远闹响"）；stopAlarm 在关闭/完成/稍后提醒时调用
+      startAlarm();
       scheduleAlarmRetries();
       // 其余到期提醒：toast 提示，避免静默丢失
       if (data.reminders.length > 1) {
@@ -747,7 +755,7 @@ function startReminderChecker() {
   Object.assign(global, {
     ReminderParser,
     renderReminders, syncRepeatDayUI, openReminderModal, editReminder, saveReminder, deleteReminder,
-    markReminderDone, snoozeReminder, switchReminderVoiceLang, syncReminderVoiceLangUI, getReminderVoiceLangMeta,
+    markReminderDone, snoozeReminder, dismissReminderNotify, switchReminderVoiceLang, syncReminderVoiceLangUI, getReminderVoiceLangMeta,
     toggleReminderVoice, startReminderVoice, stopReminderVoice, setReminderVoiceBtnState, reminderVoiceHandleResult,
     applyReminderVoiceText, autoSaveReminderByVoice, renderReminderVoicePreview, checkRemindersDue, startReminderChecker,
     // 只读状态访问器（quick-voice 需判断提醒语音会话是否活跃，避免双识别器冲突）
