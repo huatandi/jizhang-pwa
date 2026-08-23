@@ -193,6 +193,24 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
   display: none !important;
 }
 
+/* 工作台低置信字段警示（§三十四：低置信不静默入账） */
+.wb-low-conf {
+  border-color: #f87171 !important;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.25) !important;
+  animation: wbLowConfPulse 0.8s ease 3;
+}
+@keyframes wbLowConfPulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.25); }
+  50% { box-shadow: 0 0 0 6px rgba(248, 113, 113, 0.15); }
+}
+
+/* 字段锁：用户手动修改过的字段 → 锁定标记（AI 不再覆盖） */
+.workbench-body .wb-locked {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25) !important;
+  background-image: linear-gradient(135deg, rgba(56, 189, 248, 0.08), transparent 60%) !important;
+}
+
 /* ============ 主内容区 ============ */
 .main { flex: 1; margin-left: 240px; padding: 28px 32px; min-width: 0; max-width: 100%; }
 

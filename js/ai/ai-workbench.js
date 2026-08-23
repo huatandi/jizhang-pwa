@@ -170,7 +170,8 @@ function openWorkbenchForFile(file) {
       };
       img.src = url;
     } else { resolve(); }
-    // 清空字段
+    // 清空字段 + 重置字段锁（新图片 → 解锁全部）
+    wbResetFieldLocks();
     for (const id of ['wbDate', 'wbAmount', 'wbMerchant', 'wbCompany', 'wbBankPayer', 'wbBankReceiver', 'wbTail', 'wbTax', 'wbReference', 'wbTracking', 'wbRemark']) {
       const el = document.getElementById(id);
       if (el) el.value = '';
@@ -185,10 +186,74 @@ function openWorkbenchForFile(file) {
   });
 }
 
-// 把本地识别字段填入工作台（有值才填）
+// ===== 字段锁机制（§四十五/四十六）：用户修改 > Confirmed AI > AI > Fallback =====
+let wbLockedFields = new Set();   // 用户手动改过的字段 id
+let wbAiValues = {};              // AI 识别原值（供纠错学习对比：aiValue vs userValue）
+const WB_FIELD_IDS = ['wbDate', 'wbAmount', 'wbMerchant', 'wbCompany', 'wbBankPayer', 'wbBankReceiver', 'wbTail', 'wbTax', 'wbReference', 'wbTracking', 'wbType', 'wbCategory', 'wbRemark'];
+
+// 监听工作台字段的用户手动修改 → 锁定
+function wbBindFieldLocks() {
+  for (const id of WB_FIELD_IDS) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const lock = () => {
+      wbLockedFields.add(id);
+      el.classList.add('wb-locked');
+    };
+    el.addEventListener('input', lock);
+    el.addEventListener('change', lock);
+  }
+}
+// 解锁单个字段（用户点"重新使用识别结果"）
+function wbUnlockField(id) {
+  wbLockedFields.delete(id);
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('wb-locked');
+}
+// 恢复 AI 识别值：解锁全部字段并重填 AI 原值（用户点"恢复识别值"）
+function wbReapplyAi() {
+  wbLockedFields = new Set();
+  for (const [id, val] of Object.entries(wbAiValues)) {
+    if (id === '__amountConfidence' || id === '__amountSource') continue;
+    const el = document.getElementById(id);
+    if (el && val != null) {
+      el.value = val;
+      el.classList.remove('wb-locked');
+    }
+  }
+  // 分类下拉需选项存在
+  const cat = wbAiValues.wbCategory;
+  if (cat) {
+    const sel = document.getElementById('wbCategory');
+    if (sel && [...sel.options].some(o => o.value === cat)) sel.value = cat;
+  }
+  showToast('↺ 已恢复 AI 识别值（可再手动修改）');
+}
+// 重置锁与 AI 原值（打开新图时）
+function wbResetFieldLocks() {
+  wbLockedFields = new Set();
+  wbAiValues = {};
+  for (const id of WB_FIELD_IDS) {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('wb-locked');
+  }
+}
+
+// 把本地识别字段填入工作台（有值才填；跳过用户已锁定的字段——用户修改优先）
 function fillWbFields(f) {
   if (!f) return;
-  const set = (id, val) => { if (val != null && val !== '') { const el = document.getElementById(id); if (el) el.value = val; } };
+  // 透传金额来源/置信度（§二十六 低置信拦截用）
+  if (f.amountConfidence != null) wbAiValues.__amountConfidence = f.amountConfidence;
+  if (f.amountSource != null) wbAiValues.__amountSource = f.amountSource;
+  const set = (id, val) => {
+    if (val == null || val === '') return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    wbAiValues[id] = val; // 记录 AI 原值（纠错学习用）
+    if (wbLockedFields.has(id)) return; // 用户已修改 → 不覆盖
+    el.value = val;
+    el.classList.remove('wb-locked');
+  };
   set('wbDate', f.date);
   set('wbAmount', f.amount);
   set('wbMerchant', f.merchant);
@@ -198,10 +263,13 @@ function fillWbFields(f) {
   set('wbTail', f.account_tail ? '*' + f.account_tail : '');
   set('wbTax', f.tax);
   set('wbRemark', f.remark);
-  if (f.transaction_type === 'income') { const t = document.getElementById('wbType'); if (t) t.value = 'income'; }
+  if (f.transaction_type === 'income') { const t = document.getElementById('wbType'); if (t && !wbLockedFields.has('wbType')) t.value = 'income'; }
   if (f.category) {
     const sel = document.getElementById('wbCategory');
-    if (sel && [...sel.options].some(o => o.value === f.category)) sel.value = f.category;
+    if (sel && [...sel.options].some(o => o.value === f.category)) {
+      wbAiValues.wbCategory = f.category;
+      if (!wbLockedFields.has('wbCategory')) sel.value = f.category;
+    }
   }
 }
 
@@ -657,6 +725,7 @@ async function aiDeleteDoc(id) {
 async function aiOpenWorkbench(id) {
   wbDocId = id;
   wbOcrText = '';
+  wbResetFieldLocks(); // 新单据 → 解锁全部字段
   // 图片预览
   const img = document.getElementById('wbImg');
   img.src = '/api/ai/documents/' + id + '/image';
@@ -1301,9 +1370,16 @@ function extractCommonFields(fullText, words) {
   }
   // 金额：优先 TOTAL / total a pagar / 合计 / IMPORTE / AMOUNT 标签（容忍 FECHA/数字粘连；排除 SUBTOTAL/IMPORTE TOTAL）
   // ⚠️ 墨西哥小票常有 EFECTIVO(现金支付)/CAMBIO(找零) 行，其金额必须排除，总额只能取 TOTAL
+  // 置信度分层（§二十六）：TOTAL 标签 0.90 → IMPORTE 0.80 → 最大金额猜测 0.45
   const CASH_LABEL_RE = /\b(?:EFECTIVO|CAMBIO|VUELTO|CASH|CHANGE|ENTREGADO|RECIBIDO|PAGADO)\b/i;
+  f.amountSource = null;
+  f.amountConfidence = 0;
   m = t.match(/(?:\bTOTAL\b(?!\s*SUB)|total a pagar|gran total|合计|总计|金额|AMOUNT)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
-  if (!m) m = t.match(/(?:IMPORTE|Monto|MONTO)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
+  if (m) { f.amountSource = 'label'; f.amountConfidence = 0.90; }
+  if (!m) {
+    m = t.match(/(?:IMPORTE|Monto|MONTO)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
+    if (m) { f.amountSource = 'importe'; f.amountConfidence = 0.80; }
+  }
   if (!m) {
     // 兜底：剔除现金/找零标签及其金额后，取剩余最大金额（排除 EFECTIVO/CAMBIO 行）
     let cleaned = t.replace(new RegExp(CASH_LABEL_RE.source + '\\s*[=:]?\\s*[$¥€£￥₩]?\\s*[\\d][\\d,]*\\.?\\d*', 'gi'), ' ');
@@ -1313,7 +1389,7 @@ function extractCommonFields(fullText, words) {
       cleaned = t.replace(CASH_LABEL_RE, ' ');
       all = cleaned.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
     }
-    if (all && all.length) { const best = Math.max(...all.map(x => Number(x.replace(/,/g, '')))); f.amount = String(best); }
+    if (all && all.length) { const best = Math.max(...all.map(x => Number(x.replace(/,/g, '')))); f.amount = String(best); f.amountSource = 'max'; f.amountConfidence = 0.45; }
   } else {
     f.amount = String(Number(m[1].replace(/,/g, '')));
   }
@@ -1428,6 +1504,9 @@ async function wbLocalOcrV2(img) {
     remark: docType ? `票据类型：${docType}` + (fullText ? ' · ' + fullText.slice(0, 120) : '') : (fullText || null),
     transaction_type: (docType === 'CFDI' && amountVal != null && amountVal < 0) ? 'expense' : (docType ? 'expense' : null),
     category: null,
+    // 金额置信度/来源（§二十六）：结构化 total 视为标签高置信；否则用 common 分层(0.90/0.80/0.45)
+    amountConfidence: structured && structured.total != null ? 0.90 : (common.amountConfidence || (common.amountSource === 'importe' ? 0.80 : 0)),
+    amountSource: structured && structured.total != null ? 'label' : (common.amountSource || null),
   };
   // 用 ValidateKit 规范化金额
   if (V.parseMoney && fields.amount != null) fields.amount = String(V.parseMoney(fields.amount));
@@ -1766,9 +1845,55 @@ function wbCollectFields() {
   };
 }
 
+// ===== 纠错学习（§三十一）：用户修正 AI 识别 → 记入本地知识库 =====
+function wbLearnCorrections(fields) {
+  try {
+    const rc = window.RecognitionCore && window.RecognitionCore.knowledgeBase;
+    if (!rc || !rc.learnCorrection) return;
+    // 字段 → 实体类型映射
+    const typeMap = { wbMerchant: 'merchant', wbCompany: 'merchant', wbBankPayer: 'bank', wbBankReceiver: 'bank', wbCategory: 'category', wbRemark: 'remark' };
+    const learn = (fieldId, aiVal, userVal, type) => {
+      const ai = String(aiVal || '').trim();
+      const user = String(userVal || '').trim();
+      // 用户修正了 AI 识别值，且差异足够大 → 记录 alias
+      if (ai && user && ai !== user && user.length >= 2 && ai.length >= 2) {
+        // 简单归一化判断是否"同一实体不同写法"（忽略大小写/空格/常见后缀）
+        const n = (s) => s.toLowerCase().replace(/[\s\-_./银行号#]/g, '');
+        if (n(ai) !== n(user)) {
+          rc.learnCorrection(ai, user, type).then((ok) => {
+            if (ok) console.log('[kb] 纠错学习: "' + ai + '" → "' + user + '" (' + type + ')');
+          }).catch(() => {});
+        }
+      }
+    };
+    for (const [fieldId, type] of Object.entries(typeMap)) {
+      const el = document.getElementById(fieldId);
+      if (!el || !el.value) continue;
+      const aiVal = wbAiValues[fieldId];
+      learn(fieldId, aiVal, el.value, type);
+    }
+    // 金额/日期若用户修正也记录（低置信学习）
+    const amtEl = document.getElementById('wbAmount');
+    if (amtEl && amtEl.value && wbAiValues.wbAmount && String(wbAiValues.wbAmount) !== String(amtEl.value).trim()) {
+      rc.learnCorrection(String(wbAiValues.wbAmount), amtEl.value.trim(), 'amount').catch(() => {});
+    }
+  } catch (e) { /* 纠错学习失败不影响保存 */ }
+}
+
 // 「保存」：对号入座 —— 把工作台识别字段填入记账表单(支出/收入弹窗)，用户核对后点弹窗保存入账
 async function wbSave() {
   const fields = wbCollectFields();
+  wbLearnCorrections(fields); // 纠错学习：用户修正 → 知识库
+  // 金额置信度分层（§二十六）：最大猜测(0.45)低置信 → 不静默入账，提示核对
+  const amtEl = document.getElementById('wbAmount');
+  const aiConf = wbAiValues && wbAiValues.__amountConfidence;
+  if (fields.amount && amtEl && !wbLockedFields.has('wbAmount') && aiConf != null && aiConf < 0.60) {
+    // 金额是低置信猜测：保留工作台，提示用户核对/重新识别（不自动对号入座）
+    showToast('⚠️ 金额识别置信度较低（最大金额猜测），请核对金额或点「🔄 重新识别」', 'error');
+    amtEl.classList.add('wb-low-conf');
+    setTimeout(() => amtEl.classList.remove('wb-low-conf'), 3000);
+    return;
+  }
   if (!fields.date && !fields.amount) {
     return showToast('请至少填写日期或金额', 'error');
   }
@@ -2096,6 +2221,7 @@ function initAiPanel() {
     if (reject) aiReject(reject.dataset.reject);
   });
   initAiPanelCollapse();
+  wbBindFieldLocks(); // 绑定工作台字段锁（用户手动修改 → 锁定，AI 不覆盖）
   aiRefreshAll();
   // 每 3 秒刷新队列/待确认（仅服务器版 AI 接口可用时；PWA 离线版走本地识别，无需轮询）
   if (aiQueueTimer) clearInterval(aiQueueTimer);
@@ -2115,6 +2241,7 @@ function initAiPanel() {
     wbExtract, wbLocalOcr, imgToDataUrl, getOcrManager, wbLocalOcrV2, wbSmartRecognize,
     wbApplyCoreFields, wbToggleCandPop, wbPickCandidate, wbHighlightBbox, wbClearBbox, wbAppendConfBadge,
     wbSaveTemplate, wbSave, wbCollectFields, wbRetry, aiTogglePanel, initAiPanelCollapse, initAiPanel,
+    wbUnlockField, wbResetFieldLocks, wbBindFieldLocks, wbReapplyAi, wbLearnCorrections,
     checkServerAi, aiUploadLocal, fillWbFields, openWorkbenchForFile, extractCommonFields,
     preloadOcr,
   });

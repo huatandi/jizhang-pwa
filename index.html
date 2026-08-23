@@ -1164,11 +1164,12 @@
             <label data-cand-field="expense_category">支出分类 <select id="wbCategory"></select></label>
             <label class="full">备注 <input type="text" id="wbRemark" placeholder="备注"></label>
           </div>
-          <div class="wb-hint">💡 可点字段旁的候选词快速填入</div>
+          <div class="wb-hint">💡 手动改过的字段不会被新识别覆盖；点「恢复识别值」可重新采用 AI 结果</div>
         </div>
       </div>
       <div class="modal-footer workbench-footer">
         <button class="btn-secondary" onclick="closeModal('aiWorkbenchModal')">取消</button>
+        <button class="btn-secondary" id="wbReapplyBtn" onclick="wbReapplyAi()" title="解锁手动修改的字段并重新采用 AI 识别结果">↺ 恢复识别值</button>
         <button class="btn-secondary" id="wbSaveTemplateBtn" onclick="wbSaveTemplate()" title="记住此单据版式，下次同类单据自动套用并生成待确认">🧠 保存为模板</button>
         <button class="btn-primary" id="wbSaveBtn" onclick="wbSave()">💾 保存</button>
       </div>
