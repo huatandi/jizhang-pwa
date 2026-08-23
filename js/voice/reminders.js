@@ -515,6 +515,7 @@ function startReminderVoice() {
   if (window.getVoiceSessionActive && window.getVoiceSessionActive()) stopVoiceSession();
   window.__reminderVoiceRetryCount = 0;
   reminderVoiceBuffer = '';
+  reminderFieldHistory = []; // 新会话：清空字段历史（撤销栈）
   setReminderVoiceBtnState('listening');
   reminderVoiceSessionActive = true;
   resetReminderIdleTimer(); // 60 秒无有效语音自动停止
@@ -657,16 +658,67 @@ function reminderVoiceHandleResult(r) {
 }
 // 应用语音解析结果到提醒表单
 function applyReminderVoiceText(buffer) {
+  // 0) 说错改口（V3 Correction Engine）："不是明天是后天" / "不是办公室是银行" / "撤销"
+  if (window.CorrectionEngine) {
+    const corr = CorrectionEngine.parse(buffer);
+    if (corr && corr.matched) {
+      if (corr.action === 'undo') {
+        if (reminderFieldHistory.length) {
+          const last = reminderFieldHistory.pop();
+          restoreReminderField(last.field, last.oldValue);
+          renderReminderVoicePreview();
+          showToast('已撤销' + reminderFieldLabel(last.field) + ' ↩️');
+        } else {
+          showToast('没有可撤销的字段', 'error');
+        }
+        setReminderVoiceBtnState('done');
+        setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
+        return;
+      }
+      if (corr.action === 'ask') {
+        const f = corr.field;
+        showToast('请说' + reminderFieldLabel(f)); speak('请说' + reminderFieldLabel(f));
+        setReminderVoiceBtnState('done');
+        setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
+        return;
+      }
+      // update：覆盖字段（日期/时间/地点/事项/备注）
+      const label = reminderFieldLabel(corr.field);
+      let ok = false;
+      if (corr.field === 'time' || corr.field === 'date' || corr.field === 'advance') {
+        // 时间/日期/提前：交给 ReminderParser 从"新值"解析
+        const sub = ReminderParser.parse(corr.value);
+        if (corr.field === 'time' && sub.datetime) { writeReminderField('rAt', sub.datetime); ok = true; }
+        else if (corr.field === 'date' && sub.datetime) { writeReminderField('rAt', sub.datetime); ok = true; }
+        else if (corr.field === 'advance' && sub.advance_minutes) { writeReminderField('rAdvance', String(sub.advance_minutes)); ok = true; }
+        else { writeReminderField(corr.field === 'time' ? 'rAt' : corr.field === 'advance' ? 'rAdvance' : 'rAt', corr.value); ok = true; }
+      } else if (corr.field === 'location') {
+        writeReminderField('rLocation', corr.value); ok = true;
+      } else if (corr.field === 'content') {
+        writeReminderField('rContent', corr.value); ok = true;
+      } else if (corr.field === 'note') {
+        writeReminderField('rNote', corr.value); ok = true;
+      }
+      renderReminderVoicePreview();
+      showToast(ok ? ('✔ ' + label + '已改为 ' + corr.value) : label + '未识别', ok ? undefined : 'error');
+      if (ok) speak(label + '改为' + corr.value);
+      setReminderVoiceBtnState('done');
+      reminderVoiceBuffer = ''; // 改口后不再整体重解析
+      setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
+      return;
+    }
+  }
+
   // 语音终结词（保存/完毕/完成/结束/好了/搞定 等）表示"说完了"，不进入任何字段
   const FINAL_RE = /(?:保存|完毕|完成|结束|好了|搞定|可以了|就这样|保存提醒|确定|存好|submit|save|finish|done|listo|guardar)\s*[:：]?/gi;
   const clean = String(buffer || '').replace(FINAL_RE, ' ').replace(/\s+/g, ' ').trim();
   const parsed = ReminderParser.parse(clean);
   const filled = [];
-  if (parsed.datetime) { document.getElementById('rAt').value = parsed.datetime; filled.push('时间'); }
-  if (parsed.location) { document.getElementById('rLocation').value = parsed.location; filled.push('地点'); }
-  if (parsed.content) { document.getElementById('rContent').value = parsed.content; filled.push('事项'); }
-  if (parsed.advance_minutes) { document.getElementById('rAdvance').value = String(parsed.advance_minutes); filled.push('提前'); }
-  if (parsed.note) { document.getElementById('rNote').value = parsed.note; filled.push('备注'); }
+  if (parsed.datetime) { writeReminderField('rAt', parsed.datetime); filled.push('时间'); }
+  if (parsed.location) { writeReminderField('rLocation', parsed.location); filled.push('地点'); }
+  if (parsed.content) { writeReminderField('rContent', parsed.content); filled.push('事项'); }
+  if (parsed.advance_minutes) { writeReminderField('rAdvance', String(parsed.advance_minutes)); filled.push('提前'); }
+  if (parsed.note) { writeReminderField('rNote', parsed.note); filled.push('备注'); }
   if (parsed.repeat && parsed.repeat !== 'none') {
     const rp = document.getElementById('rRepeat');
     if (rp && [...rp.options].some(o => o.value === parsed.repeat)) { rp.value = parsed.repeat; filled.push('重复'); }
@@ -679,6 +731,27 @@ function applyReminderVoiceText(buffer) {
   else if (reminderVoiceLang === 'en-US') showToast(filled.length ? '✔ Recognized: ' + filled.join(', ') : 'Text recognized, say the time');
   else showToast(filled.length ? '✔ 已识别：' + filled.join('、') : '已识别文本，请说时间');
   setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
+}
+
+// 提醒字段历史（说错改口"撤销"用）
+let reminderFieldHistory = [];
+function reminderFieldLabel(field) {
+  const map = { time: '时间', date: '日期', location: '地点', content: '事项', advance: '提前', note: '备注', repeat: '重复' };
+  return map[field] || field;
+}
+function readReminderField(id) { const el = document.getElementById(id); return el ? el.value : ''; }
+function writeReminderField(id, value, pushHistory) {
+  if (pushHistory !== false) {
+    const fieldName = id === 'rAt' ? 'time' : id === 'rLocation' ? 'location' : id === 'rContent' ? 'content' : id === 'rAdvance' ? 'advance' : id === 'rNote' ? 'note' : id;
+    reminderFieldHistory.push({ field: fieldName, oldValue: readReminderField(id) });
+    if (reminderFieldHistory.length > 10) reminderFieldHistory.shift();
+  }
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
+function restoreReminderField(field, oldValue) {
+  const id = field === 'time' || field === 'date' ? 'rAt' : field === 'location' ? 'rLocation' : field === 'content' ? 'rContent' : field === 'advance' ? 'rAdvance' : field === 'note' ? 'rNote' : null;
+  if (id) writeReminderField(id, oldValue, false);
 }
 
 // 语音"保存"命令触发自动保存：内容/时间齐全直接保存；时间缺失自动兜底当前+1小时；内容缺失才引导补充

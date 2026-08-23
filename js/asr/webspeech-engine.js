@@ -47,6 +47,8 @@
       this.restarting = false;   // 防重入：一次只允许一个重启流程
       this.restartTimer = null;
       this.restartDelay = 250;   // onend → 自动重新 start 的间隔（毫秒）
+      this.failCount = 0;        // 连续启动失败次数（指数退避；≥MAX 停止自动重启，上报上层）
+      this.maxFail = 5;          // 连续失败上限：超过后停止自动续听
     }
 
     async initialize() {
@@ -61,7 +63,16 @@
       this.userStopped = false;
       this.running = true;
       this.restarting = false;
+      this.failCount = 0;
       this._startRecognition();
+    }
+
+    /**
+     * 实际监听状态（供 watchdog 死会话检测）：
+     * 正在运行 && 未被用户停止 &&（有活跃识别器 || 正在创建 || 有待执行重启）
+     */
+    isActuallyListening() {
+      return this.running && !this.userStopped && (!!this.rec || this.restarting || !!this.restartTimer);
     }
 
     /** 创建并启动一轮识别；每轮结束后若仍在会话中则自动续接下一轮 */
@@ -115,8 +126,10 @@
           this.cb && this.cb({ end: true, auto: false });
           return;
         }
-        // 非用户停止（iOS 单次识别一轮自然结束 / 桌面异常结束）→ 自动续接下一轮
+        // 非用户停止（iOS 单次识别一轮自然结束 / 桌面异常结束）→ 自动续接下一轮。
+        // 自然结束不算失败：重置失败计数，正常重启。
         if (!this.running) return;
+        this.failCount = 0;
         if (this.restartTimer) clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
           this.restartTimer = null;
@@ -128,17 +141,26 @@
       try {
         rec.start();
         this.restarting = false;
+        this.failCount = 0; // 启动成功：清零失败计数
       } catch (e) {
-        // start() 抛错（如连续模式不支持等）：重置 restarting，稍后自动重试
+        // start() 抛错（如连续模式不支持/麦克风被占用等）：指数退避重试；
+        // 连续失败 ≥ maxFail → 停止自动续听并上报（避免无限 restart）
         this.restarting = false;
+        this.rec = null;
         if (this.userStopped || !this.running) return;
+        this.failCount++;
+        if (this.failCount >= this.maxFail) {
+          this._fail(new Error('ASR_FAILED'));
+          return;
+        }
+        const delay = Math.min(2000, this.restartDelay * Math.pow(2, this.failCount - 1));
         if (this.restartTimer) clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
           this.restartTimer = null;
           if (!this.userStopped && this.running && !this.restarting) {
             this._startRecognition();
           }
-        }, this.restartDelay);
+        }, delay);
       }
     }
 

@@ -268,6 +268,7 @@ function startVoiceSession() {
   window.__voiceRetryCount = 0;
   voiceBuffer = '';
   voiceMultiEntries = [];
+  voiceFieldHistory = []; // 新会话：清空字段历史（撤销栈）
   voiceSessionActive = true;
   setVoiceBtnState('listening');
   renderVoicePreview();
@@ -834,7 +835,108 @@ function renderVoicePreview() {
 }
 
 // 把识别文本自动填入金额 / 日期 / 账户 / 分类 / 备注
+// 说错改口支持：字段历史栈（撤销用）+ 字段覆盖/恢复/标签
+let voiceFieldHistory = [];
+function fieldLabel(field) {
+  const map = { amount: '金额', account: '账户', category: '分类', date: '日期', remark: '备注', merchant: '商户', location: '地点', time: '时间', content: '事项', note: '备注', advance: '提前' };
+  return map[field] || field;
+}
+function readVoiceField(field) {
+  if (field === 'amount') return document.getElementById('qAmount').value;
+  if (field === 'account') return document.getElementById('qAccount').value;
+  if (field === 'category') return quickCategory || document.getElementById('qCategory').value;
+  if (field === 'date') return document.getElementById('qDate').value;
+  if (field === 'remark' || field === 'note') return document.getElementById('qRemark').value;
+  return '';
+}
+function writeVoiceField(field, value, pushHistory) {
+  if (pushHistory !== false) {
+    voiceFieldHistory.push({ field, oldValue: readVoiceField(field) });
+    if (voiceFieldHistory.length > 10) voiceFieldHistory.shift();
+  }
+  if (field === 'amount') document.getElementById('qAmount').value = value;
+  else if (field === 'account') {
+    const sel = document.getElementById('qAccount');
+    if (sel && [...sel.options].some(o => o.value === value)) sel.value = value;
+  } else if (field === 'category') {
+    const sel = document.getElementById('qCategory');
+    if (sel && [...sel.options].some(o => o.value === value)) { quickCategory = value; sel.value = value; }
+  } else if (field === 'date') document.getElementById('qDate').value = value;
+  else if (field === 'remark' || field === 'note') document.getElementById('qRemark').value = value;
+}
+function restoreVoiceField(field, oldValue) { writeVoiceField(field, oldValue, false); }
+// 改口覆盖：金额转数字；账户/分类需命中下拉（否则提示）；返回是否成功
+function applyVoiceFieldOverride(field, value) {
+  if (field === 'amount') {
+    const n = Number(value);
+    if (isNaN(n) || n <= 0) return false;
+    writeVoiceField('amount', n);
+    return true;
+  }
+  if (field === 'account' || field === 'category') {
+    const sel = document.getElementById(field === 'account' ? 'qAccount' : 'qCategory');
+    if (sel && [...sel.options].some(o => o.value === value)) { writeVoiceField(field, value); return true; }
+    showToast('⚠️ 「' + value + '」不在列表中，请到设置添加', 'error');
+    return false;
+  }
+  if (field === 'date') {
+    // 日期改口：交给 VoiceParser 解析自然语言（"后天"→ YYYY-MM-DD）
+    const d = window.VoiceParser && VoiceParser.parseDate ? VoiceParser.parseDate(value) : null;
+    writeVoiceField('date', d || value);
+    return true;
+  }
+  if (field === 'remark' || field === 'note' || field === 'merchant') { writeVoiceField('remark', value); return true; }
+  return false;
+}
+
 function applyVoiceText(buffer) {
+  // 0) 说错改口（V3 Correction Engine）：
+  //    "不对是50" / "不是现金是BBVA" / "金额改成80" / "撤销" → 字段覆盖/撤销，不叠加
+  if (window.CorrectionEngine) {
+    const corr = CorrectionEngine.parse(buffer);
+    if (corr && corr.matched) {
+      if (corr.action === 'undo') {
+        // 撤销上一字段变更
+        if (voiceFieldHistory.length) {
+          const last = voiceFieldHistory.pop();
+          restoreVoiceField(last.field, last.oldValue);
+          renderVoicePreview();
+          const undoMsg = voiceLang === 'es-MX' ? ('Deshecho: ' + fieldLabel(last.field)) : voiceLang === 'en-US' ? ('Undid ' + fieldLabel(last.field)) : '已撤销' + fieldLabel(last.field);
+          showToast(undoMsg + ' ↩️'); speak(undoMsg);
+        } else {
+          showToast(voiceLang === 'es-MX' ? 'Nada que deshacer' : voiceLang === 'en-US' ? 'Nothing to undo' : '没有可撤销的字段', 'error');
+        }
+        setVoiceBtnState('done');
+        setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
+        return;
+      }
+      if (corr.action === 'ask') {
+        const f = corr.field;
+        const askMsg = voiceLang === 'es-MX'
+          ? (fieldLabel(f) === '金额' ? 'Di el monto' : 'Di ' + fieldLabel(f))
+          : voiceLang === 'en-US'
+            ? ('Say the ' + fieldLabel(f))
+            : '请说' + fieldLabel(f);
+        showToast(askMsg); speak(askMsg);
+        setVoiceBtnState('done');
+        setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
+        return;
+      }
+      // update：覆盖对应字段
+      const ok = applyVoiceFieldOverride(corr.field, corr.value);
+      renderVoicePreview();
+      const label = fieldLabel(corr.field);
+      const doneMsg = voiceLang === 'es-MX' ? (label + ': ' + corr.value) : voiceLang === 'en-US' ? (label + ': ' + corr.value) : (label + '已改为 ' + corr.value);
+      showToast(ok ? ('✔ ' + doneMsg) : doneMsg, ok ? undefined : 'error');
+      if (ok) speak(voiceLang === 'es-MX' ? (label + ' ' + corr.value) : voiceLang === 'en-US' ? (label + ' ' + corr.value) : (label + '改为' + corr.value));
+      setVoiceBtnState('done');
+      // 清除改口残留（改口后的 buffer 不再整体重解析）
+      voiceBuffer = '';
+      setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
+      return;
+    }
+  }
+
   const kind = quickType;
   const multi = VoiceParser.splitEntries(buffer, kind);
 
@@ -945,16 +1047,15 @@ function applyVoiceText(buffer) {
     return;
   }
 
-  // 2) 常规填充
+  // 2) 常规填充（经 writeVoiceField 记录历史 → 支持"撤销"）
   if (parsed.amount != null) {
-    document.getElementById('qAmount').value = parsed.amount;
+    writeVoiceField('amount', parsed.amount);
     filled = true;
   }
   if (parsed.category) {
-    quickCategory = parsed.category;
     const sel = document.getElementById('qCategory');
     if (sel && [...sel.options].some(o => o.value === parsed.category)) {
-      sel.value = parsed.category;
+      writeVoiceField('category', parsed.category);
       filled = true;
       speak(voiceLang === 'es-MX' ? ('Categoría: ' + parsed.category) : voiceLang === 'en-US' ? ('Category: ' + parsed.category) : '分类 ' + parsed.category);
     } else {
@@ -962,12 +1063,12 @@ function applyVoiceText(buffer) {
     }
   }
   if (parsed.date) {
-    document.getElementById('qDate').value = parsed.date;
+    writeVoiceField('date', parsed.date);
   }
   if (parsed.account) {
     const sel = document.getElementById('qAccount');
     if (sel && [...sel.options].some(o => o.value === parsed.account)) {
-      sel.value = parsed.account;
+      writeVoiceField('account', parsed.account);
       filled = true;
       speak(voiceLang === 'es-MX' ? ('Cuenta: ' + parsed.account) : voiceLang === 'en-US' ? ('Account: ' + parsed.account) : '账户 ' + parsed.account);
     } else {
@@ -975,7 +1076,7 @@ function applyVoiceText(buffer) {
       showToast('⚠️ 账户「' + parsed.account + '」不在列表中，请到设置添加', 'error');
     }
   }
-  if (parsed.remark) document.getElementById('qRemark').value = parsed.remark;
+  if (parsed.remark) writeVoiceField('remark', parsed.remark);
 
   renderVoicePreview();
   setVoiceBtnState('done');

@@ -46,6 +46,56 @@
 
   let _listenChain = Promise.resolve(); // 序列化 listen/stop，避免 start/stop 竞态
 
+  // ---- 死会话 watchdog（V3 第34节）----
+  // UI 显示"正在聆听"但引擎/识别器实际已死（Safari 静默失败、restart 未执行等）。
+  // 每 2 秒检查四层一致性（Session→Manager→Engine→Recognition），发现死会话自动恢复；
+  // 连续恢复失败则上报 error，由业务层提示用户重新点击。
+  let watchdogTimer = null;
+  let watchdogRecoveries = 0;
+  const WATCHDOG_INTERVAL = 2000;
+  const WATCHDOG_MAX_RECOVERIES = 3;
+
+  function startWatchdog() {
+    stopWatchdog();
+    watchdogTimer = setInterval(() => {
+      if (!listening || !manager) return;
+      const mgr = manager;
+      const eng = mgr.engine;
+      // 四层一致性：Manager 声称 active 且引擎声称在监听
+      // （WebSpeech 提供 isActuallyListening；Whisper/VAD 无此方法时只查 Manager）
+      const alive = mgr.active && (!eng || typeof eng.isActuallyListening !== 'function' || eng.isActuallyListening());
+      if (alive) { watchdogRecoveries = 0; return; }
+      // 死会话：自动恢复一次（静默 stop→start），仍失败则累计
+      watchdogRecoveries++;
+      console.warn('[VoiceSR] watchdog: 死会话检测，自动恢复 #' + watchdogRecoveries);
+      if (watchdogRecoveries > WATCHDOG_MAX_RECOVERIES) {
+        // 连续恢复失败 → 停止会话并上报（业务层提示用户重新点击）
+        stopWatchdog();
+        listening = false;
+        const cb = activeCb;
+        activeCb = null;
+        mgr.stop().catch(() => {});
+        if (cb) cb({ error: 'aborted' });
+        return;
+      }
+      // 静默恢复：stop 期间断开 cb，避免 onEnd 泄漏 → 业务层误以为会话结束（listening 保持 true）
+      const prevCb = mgr.cb;
+      mgr.cb = null;
+      mgr.stop().catch(() => {}).then(() => {
+        if (!listening || !activeCb) { mgr.cb = prevCb; return; }
+        return mgr.start().then(() => { mgr.cb = prevCb; }).catch((e) => {
+          mgr.cb = prevCb;
+          if (activeCb) activeCb({ error: mapLegacyCode((e && e.message) || 'ASR_FAILED') });
+        });
+      });
+    }, WATCHDOG_INTERVAL);
+  }
+
+  function stopWatchdog() {
+    if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
+    watchdogRecoveries = 0;
+  }
+
   function listen(opts, cb) {
     if (!global.AsrKit || !global.AsrKit.AsrManager) { cb && cb({ error: 'unsupported' }); return; }
     const sid = ++sessionId;
@@ -54,6 +104,7 @@
     _listenChain = _listenChain
       .then(() => _doListen(opts, cb, sid))
       .catch((e) => { console.warn('[VoiceSR] listen chain error:', e && e.message); });
+    startWatchdog(); // 会话启动 → 开启死会话监控
     return _listenChain;
   }
 
@@ -116,6 +167,7 @@
     listening = false;
     activeCb = null;
     _listenChain = Promise.resolve(); // 丢弃排队中的 listen
+    stopWatchdog();         // 会话结束 → 停止死会话监控
     if (manager) { manager.stop().catch(() => {}); }
   }
 

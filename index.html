@@ -1240,11 +1240,11 @@
   <script src="js/asr/audio-capture.js?v=39"></script>
   <script src="js/asr/vad.js?v=39"></script>
   <script src="js/asr/whisper-engine.js?v=55"></script>
-  <script src="js/asr/webspeech-engine.js?v=41"></script>
+  <script src="js/asr/webspeech-engine.js?v=42"></script>
   <script src="js/asr/model-manager.js?v=55"></script>
   <script src="js/asr/asr-manager.js?v=57"></script>
   <script src="js/voice/voice-parser.js?v=39"></script>
-  <script src="js/voice/voice-sr.js?v=56"></script>
+  <script src="js/voice/voice-sr.js?v=57"></script>
   <script src="js/voice/voice-qa.js?v=40"></script>
   <script src="js/ai/engine-manager.js?v=38"></script>
   <script src="js/ai/multimodal.js?v=38"></script>
@@ -1252,8 +1252,9 @@
        顺序说明：静态脚本先于 boot.js 动态加载的 app.js 执行。
        reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
-  <script src="js/voice/reminders.js?v=66"></script>
-  <script src="js/voice/quick-voice.js?v=64"></script>
+  <script src="js/voice/reminders.js?v=67"></script>
+  <script src="js/voice/correction-engine.js?v=1"></script>
+  <script src="js/voice/quick-voice.js?v=65"></script>
   <script src="js/ledger-crud.js?v=38"></script>
   <script src="js/ai/ai-workbench.js?v=61"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
