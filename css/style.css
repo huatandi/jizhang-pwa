@@ -2782,21 +2782,25 @@ select option {
   flex-wrap: wrap;
 }
 .quick-page-actions .voice-btn {
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #f59e0b, #f97316);
+  /* 与「保存」按钮(.btn-primary.btn-lg)同规格：圆角矩形 + 同渐变 + 同内边距 + 横排图标文字 */
+  width: auto;
+  height: auto;
+  padding: 12px 28px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ffb020, #f59e0b);
   border: none;
   color: #fff;
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(245, 158, 11, .3);
+  box-shadow: 0 4px 14px rgba(255, 176, 32, 0.25);
   transition: transform .2s, box-shadow .2s;
   flex: 0 0 auto;
+  font-size: 15px;
+  font-weight: 700;
 }
 .quick-page-actions .voice-btn:hover { transform: scale(1.05); }
 .quick-page-actions .voice-btn.listening {
@@ -2806,8 +2810,8 @@ select option {
 }
 .quick-page-actions .voice-btn.done { background: linear-gradient(135deg, #22c55e, #16a34a); }
 .quick-page-actions .voice-btn.error { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.quick-page-actions .voice-btn .voice-btn-icon { font-size: 34px; line-height: 1; }
-.quick-page-actions .voice-btn .voice-btn-text { font-size: 13px; font-weight: 700; color: #fff; line-height: 1; }
+.quick-page-actions .voice-btn .voice-btn-icon { font-size: 18px; line-height: 1; }
+.quick-page-actions .voice-btn .voice-btn-text { font-size: 15px; font-weight: 700; color: #fff; line-height: 1; }
 @keyframes qv-pulse {
   0%, 100% { box-shadow: 0 0 0 6px rgba(239, 68, 68, .22), 0 6px 18px rgba(239, 68, 68, .3); }
   50% { box-shadow: 0 0 0 16px rgba(239, 68, 68, .08), 0 6px 18px rgba(239, 68, 68, .3); }
