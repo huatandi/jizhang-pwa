@@ -374,24 +374,59 @@ function voiceHandleResult(r) {
 }
 
 // TTS 语音播报（浏览器合成，离线可用）
-function speak(text) {
+function speak(text, onend) {
   try {
-    if (!('speechSynthesis' in window)) return;
+    if (!('speechSynthesis' in window)) { if (onend) setTimeout(onend, 300); return; }
     const u = new SpeechSynthesisUtterance(text);
     u.lang = voiceLang === 'es-MX' ? 'es-MX' : voiceLang === 'en-US' ? 'en-US' : 'zh-CN';
     u.rate = 1;
+    if (typeof onend === 'function') {
+      let fired = false;
+      const fire = () => { if (!fired) { fired = true; try { onend(); } catch (e) {} } };
+      u.onend = fire;
+      // 兜底：某些 iOS 版本不触发 onend → 1.5 秒后无论如何执行
+      setTimeout(fire, 1500);
+    }
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
-  } catch (e) { /* ignore */ }
+  } catch (e) { if (onend) setTimeout(onend, 300); }
 }
 
-// ===== 提醒闹铃（模拟系统闹铃：响铃1分钟；未处理则10/20/30分钟后重复响1分钟） =====
+// ===== 提醒闹铃（模拟系统闹铃） =====
 let alarmCtx = null;           // Web Audio 上下文
 let alarmBeepTimer = null;     // 蜂鸣循环定时器
 let alarmStopTimer = null;     // 1分钟自动停止
 let alarmVibrateTimer = null;  // 震动循环（Android；iOS 不支持 vibrate 无害）
 let alarmRetryTimers = [];     // 10/20/30 分钟重试定时器
 let alarmCustomBuffer = null;  // 自定义音乐片段（AudioBuffer，IndexedDB 读取后解码缓存）
+let __alarmUnlockedCtx = null; // 已解锁的常驻 AudioContext（iOS：须用户手势后 resume 才能出声）
+
+// iOS Safari 关键：AudioContext 必须由用户手势解锁（resume 成功）后，定时器触发的闹铃才能出声。
+// 首次点击/触摸时创建常驻 context 并 resume；startAlarm 复用该已解锁 context。
+(function unlockAudioOnFirstGesture() {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  const tryUnlock = () => {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!__alarmUnlockedCtx) {
+        const ctx = new AC();
+        if (ctx.state === 'suspended' && ctx.resume) {
+          ctx.resume().then(() => {
+            if (ctx.state === 'running') __alarmUnlockedCtx = ctx;
+          }).catch(() => {});
+        } else {
+          __alarmUnlockedCtx = ctx;
+        }
+      } else if (__alarmUnlockedCtx.state === 'suspended' && __alarmUnlockedCtx.resume) {
+        __alarmUnlockedCtx.resume().catch(() => {});
+      }
+    } catch (e) { /* ignore */ }
+  };
+  document.addEventListener('pointerdown', tryUnlock, { passive: true });
+  document.addEventListener('touchstart', tryUnlock, { passive: true });
+  document.addEventListener('click', tryUnlock, { passive: true });
+})();
 
 // 闹铃设置默认值：铃声 urgent / 音量 1.0（满音量，用户要求"音量必须足够大"）；用户可在设置页调整
 // 说明：Web 无法读写系统「闹钟音量」通道（iOS/Android 均不开放），
@@ -502,13 +537,22 @@ function startAlarm(durationMs = 0) {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (AC && cfg.tone !== 'silent') {
-      alarmCtx = new AC();
-      // iOS Safari：非用户手势触发的 AudioContext 默认 suspended，需显式 resume
-      if (alarmCtx.state === 'suspended' && alarmCtx.resume) {
-        try { alarmCtx.resume(); } catch (e) { /* ignore */ }
+      // 复用已解锁的常驻 context（iOS：用户手势解锁后才能出声）
+      if (__alarmUnlockedCtx && __alarmUnlockedCtx.state === 'running') {
+        alarmCtx = __alarmUnlockedCtx;
+      } else {
+        alarmCtx = new AC();
+        if (alarmCtx.state === 'suspended' && alarmCtx.resume) {
+          try { alarmCtx.resume(); } catch (e) { /* ignore */ }
+        }
+        // 当前仍 suspended（非手势触发）→ 用已解锁的 context 兜底（若有）
+        if (alarmCtx.state !== 'running' && __alarmUnlockedCtx && __alarmUnlockedCtx.state === 'running') {
+          try { alarmCtx.close(); } catch (e) {}
+          alarmCtx = __alarmUnlockedCtx;
+        }
       }
       const master = alarmCtx.createGain();
-      master.gain.value = vol; // 音量跟随设置（默认 0.9）
+      master.gain.value = vol; // 音量跟随设置（默认 1.0）
       master.connect(alarmCtx.destination);
 
       if (cfg.tone === 'custom') {

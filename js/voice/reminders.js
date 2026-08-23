@@ -717,8 +717,7 @@ async function checkRemindersDue() {
         `;
       }
       openModal('reminderNotifyModal');
-      // 闹铃：持续响铃直到用户关闭（"跟手机一样，不关闭永远闹响"）；stopAlarm 在关闭/完成/稍后提醒时调用
-      startAlarm();
+      // 先语音播报，播报完成后启动持续闹铃（用户要求：语音提示完成后必须有铃声，持续直到手动取消/确认）
       scheduleAlarmRetries();
       // 其余到期提醒：toast 提示，避免静默丢失
       if (data.reminders.length > 1) {
@@ -735,9 +734,15 @@ async function checkRemindersDue() {
           n.onclick = () => { window.focus(); closeModal('reminderNotifyModal'); };
         }
       } catch (e) { /* 通知失败不影响 */ }
-      // TTS 语音播报
+      // TTS 语音播报：播完（约数秒）后启动持续闹铃
       const ttsText = `${r.content}${r.location ? '，地点' + r.location : ''}，时间到了`;
-      speak(ttsText);
+      speak(ttsText, () => {
+        // 语音播报完成 → 启动持续响铃（若用户已处理则不响）
+        const ov = document.getElementById('reminderNotifyModal');
+        if (ov && ov.classList.contains('active') && currentNotifyReminder) {
+          startAlarm();
+        }
+      });
     }
   } catch (e) { /* 静默失败，不影响其他功能 */ }
 }
