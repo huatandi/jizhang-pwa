@@ -169,6 +169,12 @@
       const val = Number(m[1]);
       if (val >= 100 || /\.\d/.test(m[1])) return { value: val, consumed: m[0], weight: 1 };
     }
+    // e2) 金额动词后的纯数字（"花了/买了/付了/付/共/合计" + 50）：口语常省略单位，金额语境明确
+    m = t.match(/(?:花了|买了|付了|支付了|付|共花了|共|合计|金额|为)\s*[:：]?\s*(?:¥|￥|\$)?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2})(?![\d.])/);
+    if (m) {
+      const val = Number(m[1].replace(/,/g, ''));
+      if (val > 0 && val < 10000000) return { value: val, consumed: m[0], weight: 2 };
+    }
     // f) 英文/西语数字单词（仅匹配以数字单词开头、后跟币种或独立数字表达的段）
     //    防止 "bought groceries for fifty dollars" 整段被吞
     const wordNumRe = /(?:^|[\s，,、])((?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|quinientos|quinientas|mil|millon|un|una)(?:\s+(?:y|and)?\s*(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|quinientos|quinientas|mil|millon|un|una)*)?)\s*(?:pesos?|dólares?|dolares?|dollars?|usd|mxn)?/i;
@@ -663,9 +669,13 @@
         // consumed 只包含"标签词 + 截断后的值"，不吞并后续标签
         const labelWord = m[0].replace(m[1], '');
         const consumed = labelWord + val;
-        // 金额标签再解析数值
+        // 金额标签再解析数值：标签语境("金额50")下纯数字直接接受（无"50斤"歧义）
         if (f === 'amount') {
-          const amt = extractAmount(val);
+          let amt = extractAmount(val);
+          if (!amt && /^\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?$/.test(val.trim())) {
+            const n = Number(val.replace(/,/g, ''));
+            if (n > 0) amt = { value: n, consumed, weight: 4 };
+          }
           if (amt) labels.amount = { value: amt.value, consumed };
         } else if (f === 'date') {
           const d = parseDate(val);

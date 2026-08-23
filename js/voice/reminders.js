@@ -155,7 +155,7 @@ const ReminderParser = {
   // 解析提醒整体：返回 { date, time, datetime, location, content, advance_minutes, method, note }
   parse(text) {
     const t = String(text || '').trim();
-    if (!t) return { content: '', location: '', datetime: '', date: '', time: '', advance_minutes: 0, method: 'voice', note: '' };
+    if (!t) return { content: '', location: '', datetime: '', date: '', time: '', advance_minutes: 0, method: 'voice', note: '', repeat: 'none' };
     const date = VoiceParser.parseDate(t) || '';
     const time = ReminderParser.parseTime(t) || '';
     // 只有时间没有日期 → 默认今天
@@ -166,6 +166,12 @@ const ReminderParser = {
 
     // 提前提醒节点
     const advance_minutes = ReminderParser.parseAdvance(t);
+    // 重复提醒：每天/每日/每周/每星期/每月 → repeat 字段（none/daily/weekly/monthly）
+    let repeat = 'none';
+    const rptLow = t.toLowerCase();
+    if (/(?:每天|每日|天天|每日重复|每天重复|daily|todos los días|todos los dias|cada día|cada dia)/.test(rptLow)) repeat = 'daily';
+    else if (/(?:每周|每星期|每周重复|weekly|cada semana|cada semana)/.test(rptLow)) repeat = 'weekly';
+    else if (/(?:每月|每个月|每月重复|monthly|cada mes)/.test(rptLow)) repeat = 'monthly';
     // 提醒方式：默认语音（语音添加场景）；明确说"手动"才切换为手动
     const method = /(?:提醒方式|方式)?\s*(?:是)?\s*手动(?:提醒)?|manual|manually/i.test(t) ? 'manual' : 'voice';
     // 备注：备注/附注 + 内容
@@ -173,38 +179,42 @@ const ReminderParser = {
     const nm = t.match(/(?:备注|附注|备注信息|remark|note|nota)\s*[:：]?\s*([^，。,.!！?？]{1,50})/i);
     if (nm) note = nm[1].trim();
 
-    // 地点：在/去/前往/地点/位置（中文）、at the/at、in（英文）、en/lugar/ubicación（西语）
-    // 修复：真实口语常无空格（"在办公室开会"），需在动词处截断；英文需排除时间（at 9am）
-    let location = '';
-    // 已知地点词（含多字词）：出现时优先保留完整地点（避免"办公室"被动词"办"截断）
-    const LOC_PLACES = ['会议室', '办公室', '批发市场', '菜市场', '税务局', '银行', '工厂', '仓库', '公司', '店铺', '商店', '市场', '超市', '商场', '车站', '机场', '医院', '学校', '餐厅', '饭店', '车间', '工地', 'OXXO', 'WALMART', 'BANORTE', 'BBVA'];
-    // 动词（动作）标记：地点在动词处截断
-    const LOC_ACTIONS = ['开会提醒', '见客户', '开会', '见面', '盘点', '培训', '学习', '上课', '吃饭', '聚会', '办', '买', '去', '见', '拿', '取', '交', '付', '签', '验', '谈'];
-    const cutAtAction = (s) => {
-      // 1) 地点词最长匹配：保留到地点词末尾（"市中心办公室见客户" → "市中心办公室"）
+    // 地点：智能识别（不依赖写死地点词表）
+    // 介词引导（在/去/前往/到/地点：/位置：/位于）+ 语义截断（动词/连接词/下个字段标签/标点）
+    // 截断词：动作动词（开会/见客户/办/买/见/交/付/签/验/谈/拿/取/学习/上课/吃饭/聚会/盘点/培训）、
+    //         连接词（和/与/及/然后/接着）、字段标签（提前/重复/备注/提醒方式/时间/日期）
+    const LOC_CUT_LONG = /(?:开会|见客户|见面|盘点|培训|学习|上课|吃饭|聚会|前往|然后|接着|提前|提早|重复|每天|每周|每月|备注|提醒方式|方式|提醒|闹钟|时间|日期|大后天|明天|后天|今天|早上|下午|晚上|上午|中午|凌晨)/;
+    const LOC_CUT_SHORT = /(?:买|见|拿|取|交|付|签|验|谈|去|到|和|与|及|点|号|日|月|办(?!公室))/;
+    const LOC_KEEP_LIST = ['办公室', '办事处', '办公大楼', '批发市场', '百货大楼', '购物中心', '工厂', '仓库', '公司', '商店', '超市', '商场', '餐厅', '饭店', '酒店', '学校', '医院', '银行', '车站', '机场', '菜市场', '税务局'];
+    const cutLoc = (raw) => {
+      const s = String(raw || '').trim();
+      if (!s) return '';
+      // 1) 长词截断（明确字段/动作词）：任何位置
+      let m = s.match(LOC_CUT_LONG);
+      if (m && m.index > 0) return s.slice(0, m.index).trim();
+      // 1.5) 明确地点名词最长匹配保留（"市中心办公室"→ 保留到"办公室"末尾；"新开的咖啡馆"无匹配则跳过）
       let bestEnd = -1;
-      for (const p of LOC_PLACES) {
+      for (const p of LOC_KEEP_LIST) {
         const i = s.indexOf(p);
         if (i >= 0 && i + p.length > bestEnd) bestEnd = i + p.length;
       }
       if (bestEnd > 0) return s.slice(0, bestEnd).trim();
-      // 2) 无地点词：在动词处截断
-      for (const a of LOC_ACTIONS) {
-        const i = s.indexOf(a);
-        if (i > 0) return s.slice(0, i).trim();
-      }
-      // 3) 连接词截断
-      return s.split(/和|与|及/)[0].trim();
+      // 2) 单字动词/连接词截断：仅当 index>0 且前面有内容（避免"办公室"的"办"在 index=0 误截）
+      m = s.match(LOC_CUT_SHORT);
+      if (m && m.index > 0) return s.slice(0, m.index).trim();
+      // 3) 无截断词：原样（可能整段都是地点，如"市中心办公室"）
+      return s;
     };
-    // 中文：在/去/前往 + 地点（允许空格，动词处截断）
-    let lm = t.match(/(?:在|去|前往)\s*[:：]?\s*([^，。,.!！?？]{1,24})/);
-    if (lm) location = cutAtAction(lm[1]);
-    // 中文显式标签：地点：X / 位置：X / 位于 X
+    let location = '';
+    // 中文：在/去/前往/到/位于 + 地点（允许空格，动词处截断）
+    let lm = t.match(/(?:在|去|前往|到|位于)\s*[:：]?\s*([^，。,.!！?？]{1,24})/);
+    if (lm) location = cutLoc(lm[1]);
+    // 中文显式标签：地点：X / 位置：X
     if (!location) {
-      lm = t.match(/(?:地点|位置|位于)\s*[:：]?\s*([^，。,.!！?？]{1,24})/);
-      if (lm) location = cutAtAction(lm[1]);
+      lm = t.match(/(?:地点|位置)\s*[:：]?\s*([^，。,.!！?？]{1,24})/);
+      if (lm) location = cutLoc(lm[1]);
     }
-    // 英文：优先 at the / in the（确定是地点），再 at/in + 非数字（排除 at 9am 时间）
+    // 英文：优先 at the / in the，再 at/in + 非数字（排除 at 9am 时间）
     if (!location) {
       lm = t.match(/\b(?:at the|in the)\s+([A-Za-zÁÉÍÓÚÑüÜ][A-Za-zÁÉÍÓÚÑüÜ0-9&.'-]{1,23})/i) ||
            t.match(/\b(?:at|in)\s+([A-Za-zÁÉÍÓÚÑüÜ][A-Za-zÁÉÍÓÚÑüÜ0-9&.'-]{1,23})/i);
@@ -216,15 +226,8 @@ const ReminderParser = {
            t.match(/\b(?:en|a)\s+(?!\d|las?\s*\d|el\s*\d|un[ao]?\s*\d)(?:la|el|una|un)?\s*([A-Za-zÁÉÍÓÚÑüÜ]{2,24})/i);
       if (lm) location = lm[1].trim();
     }
-    // 兜底：常见地点词表（无介词场景："办公室开会" / "去银行"）
-    if (!location) {
-      const locWords = ['办公室', '银行', '工厂', '仓库', '公司', '店铺', '商店', '市场', '超市', '商场', '车站', '机场', '医院', '学校', '餐厅', '饭店', '家里', '会议室', '车间', '工地', '税务局', '批发市场', '菜市场', 'OXXO', 'WALMART', 'BANORTE', 'BBVA'];
-      for (const kw of locWords) {
-        const i = t.indexOf(kw);
-        if (i >= 0) { location = kw; break; }
-      }
-    }
-    if (location) location = cutAtAction(location);
+    // 显式"地点：X"标签已覆盖；无介词时若文本含"地点/位置"标签词后的内容则已取到
+    if (location) location = cutLoc(location);
 
     // 事项 = 去掉引导词、日期、时间（含"前/后/左右"）、提前提醒、提醒方式、备注、地点表达后的剩余内容
     let content = t
@@ -247,17 +250,21 @@ const ReminderParser = {
       .replace(/(?:闹钟|闹铃)\s*(?:提醒|方式)?/gi, ' ')
       // 备注表达
       .replace(/(?:备注|附注|备注信息|remark|note|nota)\s*[:：]?\s*[^，。,.!！?？]{1,50}/gi, ' ')
-      // 地点表达：精确删除已识别的地点（含中/英/西语引导词），避免吞掉动词
+      // 重复提醒表达
+      .replace(/(?:每天|每日|天天|每周|每星期|每月|每个月)(?:重复)?/gi, ' ')
+      .replace(/(?:daily|weekly|monthly|cada día|cada dia|cada semana|cada mes)/gi, ' ')
+      // 地点表达：先精确删除已识别的地点词（含中/英/西语引导词），再删孤立标签词，不吞后续动词
       .replace(location ? new RegExp('(?:在|去|前往|at the|in the|at|in|en la|en el|en|a las|a la|a)\\s*' + location.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi') : /$^/, ' ')
       .replace(location ? new RegExp(location.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi') : /$^/, ' ')
-      .replace(/(?:在|去|前往|地点|位置|位于)\s*[:：]?\s*[^，。,.!！?？]{1,24}/gi, ' ')
+      .replace(/(?:地点|位置|位于)\s*[:：]?\s*/gi, ' ')
+      .replace(/(?:在|去|前往)\s*[:：]?\s*/gi, ' ')
       .replace(/(?:at the|at|in the|in)\s+[A-Za-zÁÉÍÓÚÑüÜ0-9&. -]{1,24}/gi, ' ')
       .replace(/(?:lugar|ubicación|ubicacion|en)\s+(?:la|el|una|un)?\s*[A-Za-zÁÉÍÓÚÑüÜ0-9&. ]{1,24}|a\s+(?:la|el|una|un)\s+[A-Za-zÁÉÍÓÚÑüÜ0-9&. ]{1,24}/gi, ' ')
       .replace(/提醒\s*$/i, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     if (!content && t) content = t; // 解析失败时保留原文
-    return { content, location, datetime, date, time, advance_minutes, method, note };
+    return { content, location, datetime, date, time, advance_minutes, method, note, repeat };
   }
 };
 
@@ -637,6 +644,11 @@ function applyReminderVoiceText(buffer) {
   if (parsed.content) { document.getElementById('rContent').value = parsed.content; filled.push('事项'); }
   if (parsed.advance_minutes) { document.getElementById('rAdvance').value = String(parsed.advance_minutes); filled.push('提前'); }
   if (parsed.note) { document.getElementById('rNote').value = parsed.note; filled.push('备注'); }
+  if (parsed.repeat && parsed.repeat !== 'none') {
+    const rp = document.getElementById('rRepeat');
+    if (rp && [...rp.options].some(o => o.value === parsed.repeat)) { rp.value = parsed.repeat; filled.push('重复'); }
+    if (typeof syncRepeatDayUI === 'function') syncRepeatDayUI();
+  }
   document.getElementById('rMethod').value = parsed.method || 'voice';
   renderReminderVoicePreview();
   setReminderVoiceBtnState('done');
