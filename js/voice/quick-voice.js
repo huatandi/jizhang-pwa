@@ -824,6 +824,14 @@ function applyVoiceText(buffer) {
   let filled = false;
 
   // 1) 处理命令：保存 / 清空 / 切换收支 / 改日期 / 改账户
+  if (parsed.cmd === 'done') {
+    // 说"完毕/结束/完事"→ 仅停止录音，字段已保留供检查（不自动保存）
+    if (voiceSessionActive) stopVoiceSession();
+    setVoiceBtnState('idle');
+    renderVoicePreview();
+    showToast('✔ 已停止录音，核对后点「保存」入账');
+    return;
+  }
   if (parsed.cmd === 'save') {
     // PWA 修复：说"保存"→ 进入确认状态（不直接入账），让用户检查/编辑表单后点「保存」按钮
     if (voiceSessionActive) stopVoiceSession();

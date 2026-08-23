@@ -594,9 +594,18 @@
     const t = String(text || '').trim();
     if (!t) return { cmd: null, text: t };
     const low = t.toLowerCase();
-    const saveRe = /(?:^(保存|记好|记好了|好了|完成|确认记账|guardar|save|ok|done|listo|confirm)|(?:帮我|请|麻烦|麻烦你|可以)?(?:保存|记好|记好了|guardar|save|done|listo|确认保存|保存一下|确认记账|全部保存)(?:吧|啦|了|好|完成)?$|保存完成)/i;
+    // 结束命令（仅停止录音，不保存）：完毕/结束/完事/说完了（用户明确要求）
+    const doneRe = /(?:完\s*毕|完毕|结\s*束|结束|完事|说完了|finish|terminar|terminado)/i;
+    if (doneRe.test(low)) {
+      const text2 = t.replace(/(?:完\s*毕|完毕|结\s*束|结束|完事|说完了|finish|terminar|terminado)/ig, ' ').replace(/\s+/g, ' ').trim();
+      return { cmd: 'done', text: text2 };
+    }
+    // 保存命令：句中任意位置出现"保存/记好/存好/好了/完成"等即触发（容忍 ASR 识别偏差与词序）
+    const saveRe = /(?:保\s*存|保存|记好|记好了|存好|存一下|确认保存|保存一下|全部保存|保存完成|好了|完成|guardar|guarda|save|confirma|confirmar|listo|done)(?:\s*(?:吧|啦|了|好|完成|一下|全部))?/i;
     if (saveRe.test(low)) {
-      const text2 = t.replace(/(?:帮我|请|麻烦|麻烦你|可以)?\s*(?:保存一下|记好了|确认保存|全部保存|保存|记好|guardar|save|done|listo|确认记账)\s*(?:吧|啦|了|好|完成|一下)?/ig, ' ').replace(/\s+/g, ' ').trim();
+      const text2 = t
+        .replace(/(?:帮我|请|麻烦|麻烦你|可以)?\s*(?:保存一下|记好了|确认保存|全部保存|保存完成|保存|记好|存好|存一下|好了|完成|guardar|guarda|save|done|listo|confirma|confirmar)\s*(?:吧|啦|了|好|完成|一下|全部)?/ig, ' ')
+        .replace(/\s+/g, ' ').trim();
       return { cmd: 'save', text: text2 };
     }
     if (/^(清空|清除|重新来|重新|重来|撤销|取消|清理|borrar|limpiar|borra|undo|clear|reset|start over)/.test(low)) {
@@ -696,12 +705,12 @@
 
     // 0) 指令
     const cmdR = parseCommand(t);
-    if (cmdR.cmd && cmdR.cmd !== 'save' && cmdR.cmd !== 'clear') {
+    if (cmdR.cmd && cmdR.cmd !== 'save' && cmdR.cmd !== 'clear' && cmdR.cmd !== 'done') {
       out.cmd = cmdR.cmd;
       if (cmdR.cmd === 'income' || cmdR.cmd === 'expense') out.kind = cmdR.cmd;
     }
-    let body = (cmdR.cmd && cmdR.cmd !== 'save' && cmdR.cmd !== 'clear') ? cmdR.text : t;
-    if (cmdR.cmd === 'save' || cmdR.cmd === 'clear') out.cmd = cmdR.cmd;
+    let body = (cmdR.cmd && cmdR.cmd !== 'save' && cmdR.cmd !== 'clear' && cmdR.cmd !== 'done') ? cmdR.text : t;
+    if (cmdR.cmd === 'save' || cmdR.cmd === 'clear' || cmdR.cmd === 'done') out.cmd = cmdR.cmd;
 
     // 1) 显式标签
     const { labels, rest: restAfterLabels } = extractLabels(body);

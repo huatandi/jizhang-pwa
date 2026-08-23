@@ -598,12 +598,19 @@ function reminderVoiceHandleResult(r) {
   if (r.final) {
     reminderVoiceBuffer = (reminderVoiceBuffer + ' ' + r.final).trim();
     applyReminderVoiceText(reminderVoiceBuffer);
-    // 语音命令：说"保存" → 停止录音后自动保存；说"完毕/结束/完成"等 → 仅终止录音（事情已说完）
-    if (/(?:保存|保存提醒|确定|存好|确认|submit|save|guardar|guarda|guárdalo|confirma)/i.test(r.final)) {
+    // 语音命令：检测整个累积 buffer（而非单段 final），宽松模式容忍 ASR 偏差：
+    //   说"保存" → 停止录音后自动保存；说"完毕/结束/完成/好了"等 → 仅终止录音（事情已说完）
+    const buf = reminderVoiceBuffer;
+    const SAVE_RE = /(?:保\s*存|保存|存好|确定|确认|记好|存下|submit|save|guardar|guarda|guárdalo|confirma)/i;
+    const DONE_RE = /(?:完\s*毕|完\s*成|结\s*束|完毕|完成|结束|好了|搞定|可以了|就这样|完事|说完了|listo|finish|done|terminado|terminar)/i;
+    // 用最后一段 final 与累积 buffer 都检测：单字终结词（"好了"/"行"）可能被识别成单独一段
+    const hitSave = SAVE_RE.test(buf) || SAVE_RE.test(r.final);
+    const hitDone = DONE_RE.test(buf) || DONE_RE.test(r.final);
+    if (hitSave) {
       stopReminderVoice();
       // 延迟让最后一段 final 先写入表单再校验保存
       setTimeout(() => autoSaveReminderByVoice(), 600);
-    } else if (/(?:完毕|结束|完成|好了|搞定|可以了|就这样|finish|done|listo|terminado|terminar)/i.test(r.final)) {
+    } else if (hitDone) {
       stopReminderVoice();
       showToast('✔ 已停止录音，检查后点「保存提醒」即可');
     }
