@@ -14,8 +14,20 @@
  * modelManager 按设备档位解析。语言 hint：用户指定语言，不依赖自动检测。
  */
 (function (global) {
+  // 本地自托管 transformers.js（ESM，内置 onnxruntime）。优先本地 vendor，失败回退 CDN。
+  function defaultLocalModuleUrl() {
+    try {
+      // 相对页面根（GitHub Pages 子路径部署也适用）
+      return new URL('vendor/transformers/transformers.min.js', global.location && global.location.href).href;
+    } catch (e) {
+      return 'vendor/transformers/transformers.min.js';
+    }
+  }
   const DEFAULT_CONFIG = {
-    cdnBase: 'https://esm.run/@huggingface/transformers', // 或 @xenova/transformers（老版本 API 相同）
+    // null → _loadModule 自动解析：本地 vendor 优先，失败回退 CDN
+    cdnBase: null,
+    localModuleUrl: null, // 显式本地 ESM URL；默认 defaultLocalModuleUrl()
+    cdnFallbackBase: 'https://esm.run/@huggingface/transformers',
     // 模型仓库（HuggingFace 默认）。ModelManager 按档位解析为具体模型名。
     modelRepo: 'Xenova/whisper-tiny',
     device: 'auto',        // 'webgpu' | 'wasm' | 'auto'
@@ -48,9 +60,24 @@
       return 'en';
     }
 
+    /** 加载 transformers.js：本地 vendor 优先，失败回退 CDN */
     async _loadModule() {
       if (module) return module;
-      const mod = await import(/* @vite-ignore */ this.config.cdnBase);
+      // 1) 本地自托管
+      if (!this.config.cdnBase) {
+        const local = this.config.localModuleUrl || defaultLocalModuleUrl();
+        try {
+          const m = await import(/* @vite-ignore */ local);
+          module = m;
+          console.log('[asr] 使用本地 transformers.js:', local);
+          return module;
+        } catch (e) {
+          console.warn('[asr] 本地 transformers 加载失败，回退 CDN:', e);
+        }
+      }
+      // 2) CDN 回退
+      const cdn = this.config.cdnBase || this.config.cdnFallbackBase;
+      const mod = await import(/* @vite-ignore */ cdn);
       module = mod;
       return module;
     }
@@ -95,7 +122,12 @@
 
           // wasm 路径与单线程（Pages 无 COOP/COEP）
           if (env && env.backends && env.backends.onnx) {
-            env.backends.onnx.wasm.wasmPaths = this.config.wasmPaths || 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+            // 本地 vendor/onnx 优先；未配置时回退 jsdelivr CDN
+            const localWasm = (() => {
+              try { return new URL('vendor/onnx/', global.location && global.location.href).href; }
+              catch (e) { return 'vendor/onnx/'; }
+            })();
+            env.backends.onnx.wasm.wasmPaths = this.config.wasmPaths || localWasm;
             env.backends.onnx.wasm.numThreads = 1;   // 关键：Pages 无 COEP，强制单线程
             // proxy=true：ONNX 推理在后台 Worker 执行。若在主线程跑，whisper 单次推理
             // 阻塞 UI 数秒 → 浏览器判定"页面无响应"→ 手机端直接提示"页面出现问题"。

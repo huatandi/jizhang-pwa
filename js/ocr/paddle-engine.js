@@ -9,14 +9,22 @@
  * 输出统一为 OcrResult（词级 bbox + confidence），经 OcrKit.normalizeResult 适配。
  */
 (function (global) {
+  // 本地自托管 paddleocr SDK 与 onnx wasm（ESM）。优先本地 vendor，失败回退 CDN。
+  function localUrl(rel) {
+    try { return new URL(rel, global.location && global.location.href).href; }
+    catch (e) { return rel; }
+  }
   const DEFAULT_CONFIG = {
-    // CDN 入口（无构建）：esm.run 提供 ESM。注意：CDN 首载需联网，之后走 SW 缓存
-    cdnBase: 'https://esm.run/@paddleocr/paddleocr-js',
+    // 本地 vendor 优先；未配置/加载失败回退 CDN（esm.run）
+    cdnBase: null,
+    localModuleUrl: null,   // 显式本地 ESM URL；默认 vendor/paddleocr/index.mjs
+    cdnFallbackBase: 'https://esm.run/@paddleocr/paddleocr-js',
     // 语言：默认按用户地区/浏览器语言解析（global-config），墨西哥/西语区用 'ch'（SDK latin 兼容项）
     lang: null,          // null → 由 globalConfig.resolvePaddleLang() 动态解析
     ocrVersion: 'PP-OCRv5',
-    // ONNX Runtime wasm 资源路径（覆盖默认 CDN）
-    wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/',
+    // ONNX Runtime wasm 资源路径：本地 vendor/onnx 优先
+    wasmPaths: null,     // null → 自动解析 vendor/onnx/
+    localWasmPath: null, // 显式；默认 vendor/onnx/
     numThreads: 2,
     simd: true,
     worker: false,       // 官方 SDK 默认 true（CDN Worker 跨域受限）；GitHub Pages/本地无 COEP 时 false 更稳
@@ -41,11 +49,24 @@
       return 'en';
     }
 
-    /** 加载 SDK（动态 import，幂等） */
+    /** 加载 SDK（本地 vendor 优先，CDN 回退） */
     async _loadSdk() {
       if (PaddleOCR) return PaddleOCR;
-      const mod = await import(/* @vite-ignore */ this.config.cdnBase);
-      PaddleOCR = mod.PaddleOCR || mod.default?.PaddleOCR;
+      let mod = null;
+      if (!this.config.cdnBase) {
+        const local = this.config.localModuleUrl || localUrl('vendor/paddleocr/index.mjs');
+        try {
+          mod = await import(/* @vite-ignore */ local);
+          console.log('[ocr] 使用本地 paddleocr SDK:', local);
+        } catch (e) {
+          console.warn('[ocr] 本地 paddleocr 加载失败，回退 CDN:', e);
+        }
+      }
+      if (!mod) {
+        const cdn = this.config.cdnBase || this.config.cdnFallbackBase;
+        mod = await import(/* @vite-ignore */ cdn);
+      }
+      PaddleOCR = mod.PaddleOCR || (mod.default && mod.default.PaddleOCR);
       if (!PaddleOCR) throw new Error('PaddleOCR SDK 加载失败：导出结构不兼容');
       return PaddleOCR;
     }
@@ -56,6 +77,10 @@
       initPromise = (async () => {
         try {
           const P = await this._loadSdk();
+          // wasmPaths：本地 vendor/onnx 优先，未配置/不可用时回退 CDN
+          const wasm = this.config.wasmPaths
+            || this.config.localWasmPath
+            || localUrl('vendor/onnx/');
           ocr = await P.create({
             lang: this._resolveLang(),
             ocrVersion: this.config.ocrVersion,
@@ -64,7 +89,7 @@
             worker: this.config.worker,
             ortOptions: {
               backend: 'auto',           // WebGPU 优先，WASM 兜底
-              wasmPaths: this.config.wasmPaths,
+              wasmPaths: wasm,
               numThreads: this.config.numThreads,
               simd: this.config.simd,
             },

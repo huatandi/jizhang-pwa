@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v56';
+const CACHE_NAME = 'jizhang-pwa-v57';
 const APP_SHELL = [
   './',
   './index.html',
@@ -63,9 +63,22 @@ const APP_SHELL = [
   './vendor/echarts/echarts.min.js',
   './vendor/tesseract/tesseract.min.js',
   './vendor/tesseract/worker.min.js',
+  './vendor/tesseract/tesseract-core-simd-lstm.wasm.js',
+  './vendor/tesseract/tesseract-core-simd-lstm.wasm',
+  './vendor/tesseract/tesseract-core-lstm.wasm.js',
+  './vendor/tesseract/tesseract-core-lstm.wasm',
   './vendor/tesseract/spa.traineddata.gz',
   './vendor/tesseract/eng.traineddata.gz',
   './vendor/tesseract/chi_sim.traineddata.gz',
+  // 高级引擎本地自托管（Whisper ASR / PaddleOCR / ONNX Runtime）
+  './vendor/transformers/transformers.min.js',
+  './vendor/transformers/transformers.js',
+  './vendor/transformers/transformers.web.min.js',
+  './vendor/onnx/ort.all.min.mjs',
+  './vendor/onnx/ort-wasm-simd-threaded.wasm',
+  './vendor/onnx/ort-wasm-simd-threaded.mjs',
+  './vendor/paddleocr/index.mjs',
+  './vendor/paddleocr/assets/worker-entry-C9UNuyOJ.js',
   './vendor/sqljs/sql-wasm.js',
   './vendor/sqljs/sql-wasm.wasm',
   './icons/icon-192.png',
