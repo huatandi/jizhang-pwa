@@ -813,20 +813,38 @@ function wbZoomToggle() {
   if (!lb || !src || !src.src) return;
   if (lb.classList.contains('open')) { wbZoomClose(); return; }
   const img = document.getElementById('wbLightboxImg');
-  img.src = src.src;
-  // 图片加载后计算适配比例
-  wbZoomScale = 1; wbZoomX = 0; wbZoomY = 0;
-  img.onload = () => {
+  wbZoomScale = 1; wbZoomX = 0; wbZoomY = 0; wbZoomFit = 1;
+  // 工作台图片 blob URL 可能已被 revoke（openWorkbenchForFile 在 onload 后撤销），
+  // 直接复用 src 会导致 lightbox 空白 → 从已解码的 wbImg 绘制到 canvas 生成 dataURL 保证可预览
+  let previewUrl = src.src;
+  try {
+    const nw = src.naturalWidth || src.width, nh = src.naturalHeight || src.height;
+    if (nw > 0 && nh > 0) {
+      const cv = document.createElement('canvas');
+      cv.width = nw; cv.height = nh;
+      cv.getContext('2d').drawImage(src, 0, 0, nw, nh);
+      const dUrl = cv.toDataURL('image/jpeg', 0.92);
+      if (dUrl && dUrl.startsWith('data:image/')) previewUrl = dUrl;
+    }
+  } catch (e) { console.warn('[ai] 预览图转换失败，回退原 src:', e); }
+  // 先显示 lightbox，再设图片 src：确保 stage 尺寸就绪，避免缓存命中时 onload 提前触发导致 fit=0
+  lb.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  const calcFit = () => {
     const stage = document.getElementById('wbLightboxStage');
-    const sw = stage.clientWidth, sh = stage.clientHeight;
+    const sw = stage ? stage.clientWidth : 0, sh = stage ? stage.clientHeight : 0;
     const iw = img.naturalWidth || sw, ih = img.naturalHeight || sh;
-    wbZoomFit = Math.min(sw / iw, sh / ih, 1);
+    wbZoomFit = (sw > 0 && iw > 0 && ih > 0) ? Math.min(sw / iw, sh / ih, 1) : 1;
     if (!wbZoomFit || wbZoomFit <= 0) wbZoomFit = 1;
     wbZoomApply();
   };
+  img.onload = calcFit;
   img.onerror = () => { wbZoomFit = 1; wbZoomApply(); };
-  lb.classList.add('open');
-  document.body.style.overflow = 'hidden';
+  img.src = previewUrl;
+  // 缓存命中时 onload 可能已同步触发但尺寸未就绪 → 延迟再校正一次
+  setTimeout(calcFit, 60);
+  // decode() 确保解码完成后精确计算（可选，失败不影响）
+  if (typeof img.decode === 'function') { img.decode().then(calcFit).catch(() => {}); }
 }
 function wbZoomClose() {
   const lb = document.getElementById('wbLightbox');
@@ -835,13 +853,13 @@ function wbZoomClose() {
   document.body.style.overflow = '';
   wbDrag = null; wbPinch = null;
 }
-// 以视口某点为中心缩放（所见即所得：缩放后该点保持原位）
+// 以视口某点为中心缩放（所见即所得：缩放后该点保持原位；可从适配状态缩小到 50%）
 function wbZoomAt(cx, cy, factor) {
   const stage = document.getElementById('wbLightboxStage');
   if (!stage) return;
   const rect = stage.getBoundingClientRect();
   const px = cx - rect.left, py = cy - rect.top;
-  const newScale = Math.min(5, Math.max(1, wbZoomScale * factor));
+  const newScale = Math.min(6, Math.max(0.5, wbZoomScale * factor));
   if (newScale === wbZoomScale) return;
   // 保持焦点：偏移随缩放比例变化
   wbZoomX = px - (px - wbZoomX) * (newScale / wbZoomScale);
@@ -905,7 +923,7 @@ function wbStageTouchMove(e) {
     const t1 = e.touches[0], t2 = e.touches[1];
     const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
     const factor = dist / wbPinch.dist;
-    const newScale = Math.min(5, Math.max(1, wbPinch.scale * factor));
+    const newScale = Math.min(6, Math.max(0.5, wbPinch.scale * factor));
     // 以两指中点缩放
     const stage = document.getElementById('wbLightboxStage');
     if (stage) {

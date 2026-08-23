@@ -52,17 +52,19 @@
 
   function el(id) { return document.getElementById(id); }
 
-  // 获取本币：继承记账系统 base_currency（默认 USD，全球通用）
+  // 获取本币：优先记忆用户上次在汇率工具里选择的本币（刷新不丢），其次记账系统 base_currency
   function homeCurrency() {
-    try {
-      if (typeof options !== 'undefined' && options.base_currency) return String(options.base_currency).toUpperCase();
-    } catch (e) { /* ignore */ }
+    // 1) 汇率工具记忆（用户手动改过 from → 刷新后保持）
     try {
       const saved = localStorage.getItem('fx_prefs');
       if (saved) {
         const p = JSON.parse(saved);
-        if (p.home) return String(p.home).toUpperCase();
+        if (p.home && /^[A-Za-z]{3}$/.test(String(p.home))) return String(p.home).toUpperCase();
       }
+    } catch (e) { /* ignore */ }
+    // 2) 记账系统本币
+    try {
+      if (typeof options !== 'undefined' && options.base_currency) return String(options.base_currency).toUpperCase();
     } catch (e) { /* ignore */ }
     return 'USD';
   }
@@ -389,8 +391,10 @@
     const t = state.from;
     state.from = state.to;
     state.to = t;
+    state.base = state.from; // 互换后前货币即本币，刷新记忆生效
     renderPair();
     renderFavGrid();
+    loadRates(true).catch(() => {});
   }
 
   function setTo(code) {
@@ -441,6 +445,7 @@
   function pick(side, code) {
     if (side === 'from') {
       state.from = code;
+      state.base = code; // 前货币即本币：同步基准，刷新后记忆生效（savePrefs 保存 home）
       // 联动：修改前货币后，后货币跟随改变（避免同币种，优先常用对币）
       if (state.to === code) {
         // 后货币与前货币相同 → 自动换成该前货币的首选对币
