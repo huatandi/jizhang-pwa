@@ -1217,7 +1217,7 @@ select option {
 }
 .wb-zoom-btn:hover { background: rgba(30,41,59,0.9); }
 
-/* 放大查看 lightbox */
+/* 放大查看 lightbox（所见即所得：缩放 + 拖拽平移） */
 .wb-lightbox {
   position: fixed;
   inset: 0;
@@ -1230,22 +1230,28 @@ select option {
 }
 .wb-lightbox.open { display: flex; }
 .wb-lightbox-stage {
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 60px 24px 24px;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
   cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
+.wb-lightbox-stage.dragging { cursor: grabbing; }
 .wb-lightbox-stage img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   max-width: none;
   max-height: none;
-  transform-origin: center top;
+  transform: translate(-50%, -50%) scale(1);
+  transform-origin: center center;
   transition: transform 0.12s ease;
   user-select: none;
+  -webkit-user-select: none;
   -webkit-user-drag: none;
+  will-change: transform;
 }
 .wb-lightbox-close {
   position: absolute;

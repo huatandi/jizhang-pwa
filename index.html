@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=54">
+  <link rel="stylesheet" href="css/style.css?v=55">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -1189,7 +1189,8 @@
       </div>
       <div class="modal-footer workbench-footer">
         <button class="btn-secondary" onclick="closeModal('aiWorkbenchModal')">取消</button>
-        <button class="btn-primary" id="wbSaveTemplateBtn" onclick="wbSaveTemplate()">🧠 保存为模板并生成待确认</button>
+        <button class="btn-secondary" id="wbSaveTemplateBtn" onclick="wbSaveTemplate()" title="记住此单据版式，下次同类单据自动套用并生成待确认">🧠 保存为模板</button>
+        <button class="btn-primary" id="wbSaveBtn" onclick="wbSave()">💾 保存</button>
       </div>
     </div>
   </div>
@@ -1210,16 +1211,16 @@
     <button type="button" data-field="wbRemark">📝 备注</button>
   </div>
 
-  <!-- ======== 单据放大查看（lightbox） ======== -->
-  <div class="wb-lightbox" id="wbLightbox" onclick="wbZoomClose()">
+  <!-- ======== 单据放大查看（lightbox，所见即所得：缩放+拖拽平移） ======== -->
+  <div class="wb-lightbox" id="wbLightbox">
     <button type="button" class="wb-lightbox-close" onclick="wbZoomClose()" title="关闭">✕</button>
     <div class="wb-lightbox-toolbar">
-      <button type="button" onclick="wbZoomStep(-0.25)">➖ 缩小</button>
+      <button type="button" onclick="wbZoomStep(-1)" title="缩小">➖ 缩小</button>
       <span id="wbZoomPct">100%</span>
-      <button type="button" onclick="wbZoomStep(0.25)">➕ 放大</button>
+      <button type="button" onclick="wbZoomStep(1)" title="放大">➕ 放大</button>
       <button type="button" onclick="wbZoomReset()">⟲ 还原</button>
     </div>
-    <div class="wb-lightbox-stage" id="wbLightboxStage">
+    <div class="wb-lightbox-stage" id="wbLightboxStage" title="拖拽移动 · 滚轮/双指缩放 · 双击放大 · 点击空白关闭">
       <img id="wbLightboxImg" alt="单据放大查看">
     </div>
   </div>
@@ -1266,7 +1267,7 @@
   <script src="js/voice/reminders.js?v=57"></script>
   <script src="js/voice/quick-voice.js?v=58"></script>
   <script src="js/ledger-crud.js?v=38"></script>
-  <script src="js/ai/ai-workbench.js?v=55"></script>
+  <script src="js/ai/ai-workbench.js?v=56"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=38"></script>
   <!-- ===== 参考汇率工具（Exchange Rate Engine V1.0）=====

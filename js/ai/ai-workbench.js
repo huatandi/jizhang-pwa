@@ -790,15 +790,41 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') wbCtxHide();
 });
 
-// ===== 工作台图片放大查看（lightbox） =====
+// ===== 工作台图片放大查看（lightbox，所见即所得：缩放+拖拽平移） =====
 let wbZoomScale = 1;
+let wbZoomX = 0; // 平移偏移（视口坐标系，px）
+let wbZoomY = 0;
+let wbZoomFit = 1; // 初始适配比例（图片完整显示在视口内的缩放）
+let wbDrag = null; // { startX, startY, origX, origY, moved }
+let wbPinch = null; // 双指捏合 { dist, scale, cx, cy }
+
+function wbZoomApply() {
+  const img = document.getElementById('wbLightboxImg');
+  if (!img) return;
+  // 缩放相对 fit 基准：scale=1 即适配视口
+  const s = wbZoomFit * wbZoomScale;
+  img.style.transform = `translate(calc(-50% + ${wbZoomX}px), calc(-50% + ${wbZoomY}px)) scale(${s})`;
+  const pct = document.getElementById('wbZoomPct');
+  if (pct) pct.textContent = Math.round(wbZoomScale * 100) + '%';
+}
 function wbZoomToggle() {
   const lb = document.getElementById('wbLightbox');
   const src = document.getElementById('wbImg');
   if (!lb || !src || !src.src) return;
   if (lb.classList.contains('open')) { wbZoomClose(); return; }
-  document.getElementById('wbLightboxImg').src = src.src;
-  wbZoomReset();
+  const img = document.getElementById('wbLightboxImg');
+  img.src = src.src;
+  // 图片加载后计算适配比例
+  wbZoomScale = 1; wbZoomX = 0; wbZoomY = 0;
+  img.onload = () => {
+    const stage = document.getElementById('wbLightboxStage');
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    const iw = img.naturalWidth || sw, ih = img.naturalHeight || sh;
+    wbZoomFit = Math.min(sw / iw, sh / ih, 1);
+    if (!wbZoomFit || wbZoomFit <= 0) wbZoomFit = 1;
+    wbZoomApply();
+  };
+  img.onerror = () => { wbZoomFit = 1; wbZoomApply(); };
   lb.classList.add('open');
   document.body.style.overflow = 'hidden';
 }
@@ -807,30 +833,121 @@ function wbZoomClose() {
   if (!lb) return;
   lb.classList.remove('open');
   document.body.style.overflow = '';
+  wbDrag = null; wbPinch = null;
+}
+// 以视口某点为中心缩放（所见即所得：缩放后该点保持原位）
+function wbZoomAt(cx, cy, factor) {
+  const stage = document.getElementById('wbLightboxStage');
+  if (!stage) return;
+  const rect = stage.getBoundingClientRect();
+  const px = cx - rect.left, py = cy - rect.top;
+  const newScale = Math.min(5, Math.max(1, wbZoomScale * factor));
+  if (newScale === wbZoomScale) return;
+  // 保持焦点：偏移随缩放比例变化
+  wbZoomX = px - (px - wbZoomX) * (newScale / wbZoomScale);
+  wbZoomY = py - (py - wbZoomY) * (newScale / wbZoomScale);
+  wbZoomScale = newScale;
+  wbZoomApply();
 }
 function wbZoomStep(delta) {
-  wbZoomScale = Math.min(5, Math.max(0.5, wbZoomScale + delta));
-  const img = document.getElementById('wbLightboxImg');
-  if (img) img.style.transform = `scale(${wbZoomScale})`;
-  const pct = document.getElementById('wbZoomPct');
-  if (pct) pct.textContent = Math.round(wbZoomScale * 100) + '%';
+  const stage = document.getElementById('wbLightboxStage');
+  if (!stage) return;
+  const rect = stage.getBoundingClientRect();
+  wbZoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, delta > 0 ? 1.25 : 0.8);
 }
 function wbZoomReset() {
-  wbZoomScale = 1;
-  const img = document.getElementById('wbLightboxImg');
-  if (img) img.style.transform = 'scale(1)';
-  const pct = document.getElementById('wbZoomPct');
-  if (pct) pct.textContent = '100%';
+  wbZoomScale = 1; wbZoomX = 0; wbZoomY = 0;
+  wbZoomApply();
 }
-// 滚轮缩放
+
+// 拖拽平移（鼠标 + 触摸）
+function wbStagePointerDown(e) {
+  const stage = document.getElementById('wbLightboxStage');
+  if (!stage) return;
+  const pt = (e.touches && e.touches[0]) || e;
+  wbDrag = { startX: pt.clientX, startY: pt.clientY, origX: wbZoomX, origY: wbZoomY, moved: false };
+  stage.classList.add('dragging');
+  e.preventDefault();
+}
+function wbStagePointerMove(e) {
+  const stage = document.getElementById('wbLightboxStage');
+  if (!wbDrag || !stage) return;
+  const pt = (e.touches && e.touches[0]) || e;
+  const dx = pt.clientX - wbDrag.startX, dy = pt.clientY - wbDrag.startY;
+  if (!wbDrag.moved && Math.hypot(dx, dy) > 4) wbDrag.moved = true;
+  wbZoomX = wbDrag.origX + dx;
+  wbZoomY = wbDrag.origY + dy;
+  wbZoomApply();
+  e.preventDefault();
+}
+function wbStagePointerUp() {
+  const stage = document.getElementById('wbLightboxStage');
+  if (wbDrag && !wbDrag.moved) {
+    // 未拖动 → 视为点击空白处关闭
+    if (stage) { wbZoomClose(); return; }
+  }
+  wbDrag = null;
+  if (stage) stage.classList.remove('dragging');
+}
+// 双指捏合缩放（移动端）
+function wbStageTouchStart(e) {
+  if (e.touches && e.touches.length === 2) {
+    wbDrag = null;
+    const t1 = e.touches[0], t2 = e.touches[1];
+    wbPinch = { dist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY), scale: wbZoomScale, cx: (t1.clientX + t2.clientX) / 2, cy: (t1.clientY + t2.clientY) / 2 };
+  } else if (e.touches && e.touches.length === 1) {
+    wbStagePointerDown(e);
+  }
+}
+function wbStageTouchMove(e) {
+  if (wbPinch && e.touches && e.touches.length === 2) {
+    e.preventDefault();
+    const t1 = e.touches[0], t2 = e.touches[1];
+    const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    const factor = dist / wbPinch.dist;
+    const newScale = Math.min(5, Math.max(1, wbPinch.scale * factor));
+    // 以两指中点缩放
+    const stage = document.getElementById('wbLightboxStage');
+    if (stage) {
+      const rect = stage.getBoundingClientRect();
+      const px = wbPinch.cx - rect.left, py = wbPinch.cy - rect.top;
+      const k = newScale / wbZoomScale;
+      wbZoomX = px - (px - wbZoomX) * k;
+      wbZoomY = py - (py - wbZoomY) * k;
+      wbZoomScale = newScale;
+      wbZoomApply();
+    }
+    return;
+  }
+  if (wbDrag) wbStagePointerMove(e);
+}
+function wbStageTouchEnd() {
+  wbPinch = null;
+  wbStagePointerUp();
+}
+
+// 滚轮缩放（以鼠标位置为中心）
 document.addEventListener('wheel', (e) => {
   const lb = document.getElementById('wbLightbox');
   if (!lb || !lb.classList.contains('open')) return;
   e.preventDefault();
-  wbZoomStep(e.deltaY < 0 ? 0.1 : -0.1);
+  wbZoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.25 : 0.8);
 }, { passive: false });
-// 双击图片放大一级
-document.getElementById('wbLightbox')?.addEventListener('dblclick', () => wbZoomStep(0.5));
+// 双击放大一级（以点击位置为中心）
+document.getElementById('wbLightboxStage')?.addEventListener('dblclick', (e) => {
+  wbZoomAt(e.clientX, e.clientY, 1.6);
+});
+// 拖拽/捏合事件绑定
+const wbStageEl = document.getElementById('wbLightboxStage');
+if (wbStageEl) {
+  wbStageEl.addEventListener('mousedown', wbStagePointerDown);
+  document.addEventListener('mousemove', wbStagePointerMove);
+  document.addEventListener('mouseup', wbStagePointerUp);
+  wbStageEl.addEventListener('touchstart', wbStageTouchStart, { passive: false });
+  wbStageEl.addEventListener('touchmove', wbStageTouchMove, { passive: false });
+  wbStageEl.addEventListener('touchend', wbStageTouchEnd);
+  wbStageEl.addEventListener('touchcancel', wbStageTouchEnd);
+}
 
 // 提取文字（单张，立即）
 // force: true = 强制重新识别（用户点「重新识别」时传）；false = 复用已有识别结果（秒回，§三十三）
@@ -1591,8 +1708,9 @@ function wbAppendConfBadge(label, conf, isMiss, isMissing) {
 }
 
 
-async function wbSaveTemplate() {
-  const fields = {
+// 收集工作台字段（共用）
+function wbCollectFields() {
+  return {
     date: document.getElementById('wbDate').value,
     amount: document.getElementById('wbAmount').value,
     merchant: document.getElementById('wbMerchant').value,
@@ -1607,12 +1725,16 @@ async function wbSaveTemplate() {
     category: document.getElementById('wbCategory').value,
     remark: document.getElementById('wbRemark').value,
   };
+}
+
+// 「保存」：仅把工作台字段作为一条账务保存，不学习模板
+async function wbSave() {
+  const fields = wbCollectFields();
   if (!fields.date && !fields.amount) {
     return showToast('请至少填写日期或金额', 'error');
   }
-
-  // PWA 本地路径（无 wbDocId）：直接把工作台字段作为一条账务保存（/income 或 /expense）
   if (!wbDocId) {
+    // PWA 本地路径：直接作为账务保存（/income 或 /expense）
     const amt = Number(fields.amount);
     if (!fields.amount || !Number.isFinite(amt) || amt <= 0) return showToast('请输入有效的正数金额', 'error');
     if (fields.date && !/^\d{4}-\d{2}-\d{2}$/.test(fields.date)) return showToast('日期格式无效', 'error');
@@ -1638,6 +1760,82 @@ async function wbSaveTemplate() {
       };
       await api(isIncome ? '/income' : '/expense', 'POST', body);
       showToast(isIncome ? '✅ 收入已入账' : '✅ 支出已入账');
+      closeModal('aiWorkbenchModal');
+      refreshDashboards();
+      renderIncome && renderIncome();
+      renderExpense && renderExpense();
+      return;
+    } catch (e) {
+      return showToast('保存失败: ' + e.message, 'error');
+    }
+  }
+
+  try {
+    const r = await api('/ai/manual-save', 'POST', {
+      documentId: wbDocId,
+      fields,
+      ocrText: wbOcrText,
+      languages: document.getElementById('aiOcrLang').value,
+    });
+    showToast('已保存 ✅');
+    closeModal('aiWorkbenchModal');
+    aiRefreshAll();
+  } catch (e) {
+    showToast('保存失败: ' + e.message, 'error');
+  }
+}
+
+// 「保存为模板」：入账 + 记住此单据版式（PWA 本地模板记忆 / 服务器模板学习）
+async function wbSaveTemplate() {
+  const fields = wbCollectFields();
+  if (!fields.date && !fields.amount) {
+    return showToast('请至少填写日期或金额', 'error');
+  }
+
+  // PWA 本地路径（无 wbDocId）：入账 + 本地记住模板（下次同类自动套用）
+  if (!wbDocId) {
+    const amt = Number(fields.amount);
+    if (!fields.amount || !Number.isFinite(amt) || amt <= 0) return showToast('请输入有效的正数金额', 'error');
+    if (fields.date && !/^\d{4}-\d{2}-\d{2}$/.test(fields.date)) return showToast('日期格式无效', 'error');
+    const isIncome = fields.transaction_type === 'income';
+    try {
+      const body = isIncome ? {
+        date: fields.date,
+        project: fields.company || fields.merchant || '',
+        pay_method: fields.bank_receiver || fields.bank_payer || (fields.account_tail ? '尾号' + fields.account_tail : ''),
+        account: options.accounts && options.accounts[0] || '',
+        amount: amt,
+        handler: '',
+        remark: fields.remark || fields.merchant || '',
+        currency: BASE_CURRENCY(),
+      } : {
+        date: fields.date,
+        category: fields.category || (options.expense_categories && options.expense_categories[0]) || '',
+        amount: amt,
+        account: options.accounts && options.accounts[0] || '',
+        handler: '',
+        remark: fields.remark || fields.merchant || '',
+        currency: BASE_CURRENCY(),
+      };
+      await api(isIncome ? '/income' : '/expense', 'POST', body);
+      // 本地模板记忆（无服务器时）：按"商户/银行/尾号"记住常用字段，下次识别自动补位
+      try {
+        const key = isIncome ? 'sm_wb_tpl_income' : 'sm_wb_tpl_expense';
+        const tpl = {
+          date: fields.date,
+          category: fields.category,
+          merchant: fields.merchant,
+          company: fields.company,
+          bank_payer: fields.bank_payer,
+          bank_receiver: fields.bank_receiver,
+          account_tail: fields.account_tail,
+          tax: fields.tax,
+          remark: fields.remark,
+          updatedAt: Date.now(),
+        };
+        localStorage.setItem(key, JSON.stringify(tpl));
+      } catch (e) { /* ignore */ }
+      showToast(isIncome ? '✅ 已入账并记住模板' : '✅ 已入账并记住模板');
       closeModal('aiWorkbenchModal');
       refreshDashboards();
       renderIncome && renderIncome();
@@ -1837,7 +2035,7 @@ function initAiPanel() {
     showWbOcr, wbCopyOcr, wbCtxShow, wbCtxHide, wbZoomToggle, wbZoomClose, wbZoomStep, wbZoomReset,
     wbExtract, wbLocalOcr, imgToDataUrl, getOcrManager, wbLocalOcrV2, wbSmartRecognize,
     wbApplyCoreFields, wbToggleCandPop, wbPickCandidate, wbHighlightBbox, wbClearBbox, wbAppendConfBadge,
-    wbSaveTemplate, wbRetry, aiTogglePanel, initAiPanelCollapse, initAiPanel,
+    wbSaveTemplate, wbSave, wbCollectFields, wbRetry, aiTogglePanel, initAiPanelCollapse, initAiPanel,
     checkServerAi, aiUploadLocal, fillWbFields, openWorkbenchForFile, extractCommonFields,
     preloadOcr,
   });

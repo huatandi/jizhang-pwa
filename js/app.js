@@ -221,7 +221,11 @@ function closeModal(id) {
 }
 document.querySelectorAll('.modal-overlay').forEach(ov => {
   ov.addEventListener('click', (e) => {
-    if (e.target === ov) { ov.classList.remove('active'); __unlockBodyScroll(); }
+    if (e.target === ov) {
+      // 单据识别工作台：点击外围不关闭，只能通过「取消/保存」退出（用户明确要求）
+      if (ov.id === 'aiWorkbenchModal') return;
+      ov.classList.remove('active'); __unlockBodyScroll();
+    }
   });
 });
 
