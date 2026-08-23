@@ -1727,9 +1727,14 @@ function initAiPanel() {
       if (saved && [...langSel.options].some(o => o.value === saved)) langSel.value = saved;
     } catch (e) { /* ignore */ }
   }
-  // dropzone 为 div：点击/回车直接触发隐藏 file input（iOS 视觉隐藏 input 可被 JS click 触发）
+  // dropzone 为 div，内含透明覆盖层 file input：点击直接命中 input 本体 → 浏览器原生弹选择器（iOS 可靠）
+  // 手动 click() 仅用于键盘(Enter/Space)等未命中 input 的场景
   const triggerPick = () => { try { fileInput.click(); } catch (e) { console.warn('[ai] 打开文件选择器失败:', e); showToast('无法打开文件选择器，请检查浏览器权限', 'error'); } };
-  dropzone.addEventListener('click', (e) => { e.preventDefault(); triggerPick(); });
+  dropzone.addEventListener('click', (e) => {
+    if (e.target === fileInput) return; // 覆盖层已由浏览器原生弹出选择器
+    e.preventDefault();
+    triggerPick();
+  });
   dropzone.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); triggerPick(); }
   });
@@ -1749,11 +1754,32 @@ function initAiPanel() {
     dropzone.classList.remove('drag-over');
     aiUploadFiles(e.dataTransfer.files);
   });
-  // 工作台「选择图片」：按钮触发隐藏 input（iOS 可靠路径）
+  // 覆盖层 input 会拦截 drag 事件（drag 不冒泡），需在 input 上也绑定拖拽处理
+  fileInput.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+  fileInput.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+  fileInput.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    aiUploadFiles(e.dataTransfer.files);
+  });
+  // 扫描识别「拍照」：capture 覆盖层 input 唤起相机，拍照后直接走本地识别
+  const camInput = document.getElementById('aiCamInput');
+  if (camInput) {
+    camInput.addEventListener('change', (e) => {
+      const picked = e.target && e.target.files;
+      if (picked && picked.length) {
+        const arr = Array.prototype.slice.call(picked);
+        setTimeout(() => aiUploadFiles(arr), 0);
+      }
+      try { camInput.value = ''; } catch (err) { /* ignore */ }
+    });
+  }
+  // 工作台「选择图片」：按钮内含覆盖层 file input，点击直接命中 input → 浏览器原生弹选择器
   const wbFile = document.getElementById('wbFileInput');
   const wbPickBtn = document.getElementById('wbPickBtn');
   if (wbPickBtn) {
     wbPickBtn.addEventListener('click', (e) => {
+      if (e.target === wbFile) return; // 覆盖层已原生弹出选择器
       e.preventDefault();
       try { if (wbFile) wbFile.click(); } catch (err) { console.warn('[ai] 打开文件选择器失败:', err); }
     });

@@ -792,18 +792,32 @@ select option {
   transition: var(--transition);
   color: var(--text-2);
   font-size: 14px;
+  position: relative;
+  overflow: hidden;
 }
-/* 视觉隐藏文件输入框：iOS Safari 上 display:none 的 file input 无法通过 JS .click()/label 可靠触发，
-   必须用定位 + 透明隐藏（保留可聚焦/可点击性） */
+/* 透明覆盖层文件输入框：input 铺满父容器(需 position:relative)，用户点击直接命中 input 本体，
+   由浏览器原生弹出选择器（iOS Safari 最可靠方案，避免 JS .click() 转发在 display:none/pointer-events:none 上失效） */
+.file-input-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 0;
+}
+/* 通用视觉隐藏（仅用于必须 JS click 转发的场景，如键盘可达性；不得加 pointer-events:none） */
 .file-input-hidden {
-  position: fixed;
+  position: absolute;
   left: -9999px;
   top: 0;
   width: 1px;
   height: 1px;
   opacity: 0;
   overflow: hidden;
-  pointer-events: none;
 }
 .ai-dropzone:hover, .ai-dropzone.drag-over {
   border-color: var(--primary);
@@ -1283,6 +1297,25 @@ select option {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+/* 选图/拍照 wrapper：覆盖层 file input 铺满按钮区域，点击直接命中 input 原生弹选择器 */
+.pick-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: center;
+}
+/* 工作台「选择图片」按钮 */
+.wb-pick-btn {
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* 扫描识别「拍照」按钮：capture input 覆盖层直接唤起相机 */
+.ai-cam-btn {
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .workbench-right {
   display: flex;
