@@ -188,6 +188,11 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 }
 .health-m { justify-content: space-between; }
 
+/* 扫描识别页精简：隐藏服务器版 AI 专属区块（PWA 本地识别不依赖队列/文档库/模板库） */
+.ai-upload-stats, #aiProgressWrap, #aiQueue, #aiDocPanel, #aiReviewPanel, #aiTplPanel {
+  display: none !important;
+}
+
 /* ============ 主内容区 ============ */
 .main { flex: 1; margin-left: 240px; padding: 28px 32px; min-width: 0; max-width: 100%; }
 

@@ -48,7 +48,12 @@
       this.rec.lang = o.lang || defaultWebSpeechLang();
       this.rec.interimResults = true;
       this.rec.maxAlternatives = 1;
-      this.rec.continuous = o.continuous !== false;
+      // ⚠️ iOS Safari 关键：webkitSpeechRecognition 不支持 continuous=true，
+      // 设置后 start() 抛 InvalidStateError → "语音引擎启动失败"。
+      // iOS 强制 continuous=false（单次识别，靠 onend 自动重启实现连续聆听）；
+      // 桌面 Chrome/Edge 支持 continuous=true。
+      const isIOS = /iPhone|iPad|iPod/i.test((global.navigator && global.navigator.userAgent) || '');
+      this.rec.continuous = !isIOS && o.continuous !== false;
       this.rec.onresult = (ev) => {
         let interim = '';
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -76,11 +81,14 @@
   }
 
   function mapError(err) {
+    const isIOS = /iPhone|iPad|iPod/i.test((global.navigator && global.navigator.userAgent) || '');
     switch (err) {
       case 'not-allowed': case 'service-not-allowed': return 'MICROPHONE_DENIED';
       case 'no-speech': return 'NO_SPEECH';
       case 'network': return 'NETWORK_REQUIRED';
-      case 'aborted': return 'ASR_FAILED';
+      case 'aborted':
+        // iOS 上识别器每轮结束常报 aborted（非致命，正常换轮）→ 视为 no-speech，UI 保持聆听
+        return isIOS ? 'NO_SPEECH' : 'ASR_FAILED';
       case 'audio-capture': return 'MICROPHONE_UNAVAILABLE';
       default: return 'ASR_FAILED';
     }
