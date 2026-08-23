@@ -211,6 +211,8 @@ function closeModal(id) {
   document.getElementById(id).classList.remove('active');
   // 关闭快速记账弹窗时停止语音识别，避免后台继续收音
   if (id === 'quickModal' && voiceSessionActive) stopVoiceSession();
+  // 关闭新增收入弹窗时停止收入语音
+  if (id === 'incomeModal' && window.getIncomeVoiceActive && window.getIncomeVoiceActive()) stopIncomeVoice();
   // 关闭提醒弹窗时停止提醒语音
   if (id === 'reminderModal' && reminderVoiceSessionActive) stopReminderVoice();
   // 关闭到期提醒弹窗时停止闹铃（用户点"知道了"等）

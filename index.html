@@ -96,7 +96,8 @@
       <div class="sidebar-footer">
         <button class="btn-settings" onclick="gotoPage('settings')">⚙️ 设置</button>
         <button class="btn-logout" onclick="logout()">🚪 退出登录</button>
-        <div class="date-range-box">
+        <!-- 数据范围已移至设置页管理（设置 → 数据范围），此处不再显示 -->
+        <div class="date-range-box" style="display:none">
           <label>📆 数据范围</label>
           <input type="date" id="rangeStart">
           <span>至</span>
@@ -890,8 +891,12 @@
           <label class="full">备注 <input type="text" id="iRemark" placeholder="备注信息"></label>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer quick-footer">
         <button class="btn-secondary" onclick="closeModal('incomeModal')">取消</button>
+        <button class="voice-btn quick-voice-btn" id="btnIncomeVoice" onclick="toggleIncomeVoice()" title="点击开始/结束说话记账">
+          <span class="voice-btn-icon">🎙️</span>
+          <span class="voice-btn-text" id="btnIncomeVoiceText">点击说话</span>
+        </button>
         <button class="btn-primary" id="btnSaveIncome">保存</button>
       </div>
     </div>
@@ -1253,7 +1258,7 @@
        reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
   <script src="js/voice/reminders.js?v=56"></script>
-  <script src="js/voice/quick-voice.js?v=56"></script>
+  <script src="js/voice/quick-voice.js?v=57"></script>
   <script src="js/ledger-crud.js?v=38"></script>
   <script src="js/ai/ai-workbench.js?v=53"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->

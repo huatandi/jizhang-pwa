@@ -963,6 +963,132 @@ async function saveQuick() {
   refreshDashboards();
 }
 
+  // ================== 新增收入弹窗语音（独立会话，不干扰快速记账） ==================
+  let incomeVoiceActive = false;
+  let incomeVoiceBuffer = '';
+  let incomeVoiceRestartTimer = null;
+
+  function setIncomeVoiceBtnState(state) {
+    const btn = document.getElementById('btnIncomeVoice');
+    if (!btn) return;
+    btn.classList.toggle('listening', state === 'listening');
+    btn.classList.toggle('done', state === 'done');
+    const textEl = document.getElementById('btnIncomeVoiceText');
+    if (textEl) textEl.textContent = { idle: '点击说话', listening: '点击结束', done: '已识别', error: '再试' }[state] || '点击说话';
+  }
+
+  function toggleIncomeVoice() {
+    if (!window.VoiceSR || !VoiceSR.supported) {
+      setIncomeVoiceBtnState('error');
+      return showToast('当前浏览器不支持语音识别', 'error');
+    }
+    if (incomeVoiceActive) { stopIncomeVoice(); return; }
+    // 先停掉其他语音会话，避免冲突
+    try { if (getVoiceSessionActive()) stopVoiceSession(); } catch (e) {}
+    try { if (window.isReminderVoiceActive && window.isReminderVoiceActive()) stopReminderVoice(); } catch (e) {}
+    incomeVoiceBuffer = '';
+    incomeVoiceActive = true;
+    setIncomeVoiceBtnState('listening');
+    const lang = getVoiceLangMeta ? getVoiceLangMeta().lang : 'zh-CN';
+    VoiceSR.listen({ lang, continuous: true }, incomeVoiceHandleResult);
+  }
+
+  function stopIncomeVoice() {
+    incomeVoiceActive = false;
+    if (incomeVoiceRestartTimer) { clearTimeout(incomeVoiceRestartTimer); incomeVoiceRestartTimer = null; }
+    VoiceSR.stop();
+    setIncomeVoiceBtnState('idle');
+  }
+
+  function incomeVoiceHandleResult(r) {
+    if (r.modelProgress) {
+      const pct = Math.min(100, Math.round((r.modelProgress.progress || 0) > 1 ? r.modelProgress.progress : (r.modelProgress.progress || 0) * 100));
+      const tip = document.getElementById('voiceTip');
+      if (tip) tip.textContent = `🔇 语音引擎准备中 ${pct}%…`;
+      const textEl = document.getElementById('btnIncomeVoiceText');
+      if (textEl && pct < 100) textEl.textContent = `准备 ${pct}%`;
+      return;
+    }
+    if (r.state === 'initializing' || r.state === 'processing') {
+      setIncomeVoiceBtnState('listening');
+      return;
+    }
+    if (r.interim) {
+      const tip = document.getElementById('voiceTip');
+      if (tip) tip.textContent = '🔴 正在聆听… ' + r.interim;
+      return;
+    }
+    if (r.final) {
+      incomeVoiceBuffer += (incomeVoiceBuffer ? ' ' : '') + r.final;
+      applyIncomeVoiceText(incomeVoiceBuffer);
+      return;
+    }
+    if (r.error) {
+      const fatal = r.error === 'not-allowed' || r.error === 'unsupported' || r.error === 'aborted';
+      if (incomeVoiceActive && r.error === 'no-speech') {
+        incomeVoiceRestartTimer = setTimeout(() => {
+          if (incomeVoiceActive && !VoiceSR.isListening()) {
+            const lang = getVoiceLangMeta ? getVoiceLangMeta().lang : 'zh-CN';
+            VoiceSR.listen({ lang, continuous: true }, incomeVoiceHandleResult);
+          }
+        }, 400);
+      } else if (fatal) {
+        const wasActive = incomeVoiceActive;
+        stopIncomeVoice();
+        setIncomeVoiceBtnState('error');
+        const msgMap = {
+          'not-allowed': '未获得麦克风权限，请允许麦克风',
+          'unsupported': '当前浏览器不支持语音识别',
+          'aborted': '语音引擎启动失败，已切换手动输入',
+        };
+        showToast(msgMap[r.error] || r.error, 'error');
+        if (wasActive && r.error === 'aborted') {
+          incomeVoiceRestartTimer = setTimeout(() => {
+            if (!incomeVoiceActive && window.__voiceRetryOnce) {
+              window.__voiceRetryOnce = false;
+              toggleIncomeVoice();
+            }
+          }, 1500);
+        }
+      }
+    }
+  }
+
+  // 语音识别 → 填入新增收入字段（iDate/iAmount/iProject/iPayMethod/iAccount/iRemark）
+  function applyIncomeVoiceText(buffer) {
+    const ex = window.VoiceEngine ? window.VoiceEngine.extract(buffer, { mode: 'quick', kind: 'income' }) : null;
+    if (!ex) { setIncomeVoiceBtnState('done'); return; }
+    const filled = [];
+    // 金额
+    if (ex.amount != null && ex.amount > 0) {
+      const amt = document.getElementById('iAmount');
+      if (amt) { amt.value = ex.amount; filled.push('金额'); }
+    }
+    // 日期
+    if (ex.date) {
+      const d = document.getElementById('iDate');
+      if (d) { d.value = ex.date; filled.push('日期'); }
+    }
+    // 备注（什么事情）
+    if (ex.remark) {
+      const rm = document.getElementById('iRemark');
+      if (rm) { rm.value = ex.remark; filled.push('备注'); }
+    }
+    // 分类（收入分类 = departments）
+    if (ex.category) {
+      const sel = document.getElementById('iProject');
+      if (sel && [...sel.options].some(o => o.value === ex.category)) { sel.value = ex.category; filled.push('分类'); }
+    }
+    // 账户
+    if (ex.account) {
+      const sel = document.getElementById('iAccount');
+      if (sel && [...sel.options].some(o => o.value === ex.account)) { sel.value = ex.account; filled.push('账户'); }
+    }
+    setIncomeVoiceBtnState('done');
+    showToast(filled.length ? '✔ 已识别：' + filled.join('、') + '，可继续说或保存' : '已识别，请补充金额');
+    setTimeout(() => { if (incomeVoiceActive) setIncomeVoiceBtnState('listening'); }, 1000);
+  }
+
   // ===== 显式暴露全局函数名（HTML onclick + JS 生成的 onclick 需要） =====
   Object.assign(global, {
     renderQuickCatSelect, onQuickCatChange, openQuickAddCat, closeQuickAddCat, confirmQuickAddCat,
@@ -970,6 +1096,8 @@ async function saveQuick() {
     getQuickMem, setQuickMem, toggleVoice, startVoiceSession, stopVoiceSession, voiceHandleResult,
     checkVoiceCapability,
     getVoiceSessionActive: () => voiceSessionActive,
+    toggleIncomeVoice, stopIncomeVoice, incomeVoiceHandleResult, applyIncomeVoiceText,
+    getIncomeVoiceActive: () => incomeVoiceActive,
     speak, startAlarm, stopAlarm, scheduleAlarmRetries, getAlarmSettings, previewAlarm, renderVoicePreview, applyVoiceText,
     removeVoiceEntry, saveQuick,
     ALARM_TONES, saveCustomTone, removeCustomTone, loadCustomTone,
