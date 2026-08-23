@@ -1300,14 +1300,27 @@ function extractCommonFields(fullText, words) {
     if (m) f.date = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
   }
   // 金额：优先 TOTAL / total a pagar / 合计 / IMPORTE / AMOUNT 标签（容忍 FECHA/数字粘连；排除 SUBTOTAL/IMPORTE TOTAL）
-  m = t.match(/(?:\bTOTAL\b(?!\s*SUB)|total a pagar|合计|总计|金额|AMOUNT)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
+  // ⚠️ 墨西哥小票常有 EFECTIVO(现金支付)/CAMBIO(找零) 行，其金额必须排除，总额只能取 TOTAL
+  const CASH_LABEL_RE = /\b(?:EFECTIVO|CAMBIO|VUELTO|CASH|CHANGE|ENTREGADO|RECIBIDO|PAGADO)\b/i;
+  m = t.match(/(?:\bTOTAL\b(?!\s*SUB)|total a pagar|gran total|合计|总计|金额|AMOUNT)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
   if (!m) m = t.match(/(?:IMPORTE|Monto|MONTO)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
   if (!m) {
-    // 兜底：文本中最大金额（千分位或纯数字）
-    const all = t.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
-    if (all) { const best = Math.max(...all.map(x => Number(x.replace(/,/g, '')))); f.amount = String(best); }
+    // 兜底：剔除现金/找零标签及其金额后，取剩余最大金额（排除 EFECTIVO/CAMBIO 行）
+    let cleaned = t.replace(new RegExp(CASH_LABEL_RE.source + '\\s*[=:]?\\s*[$¥€£￥₩]?\\s*[\\d][\\d,]*\\.?\\d*', 'gi'), ' ');
+    let all = cleaned.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
+    if (!all || !all.length) {
+      // 剔除失败（标签与金额分行）→ 移除标签词本身再取最大
+      cleaned = t.replace(CASH_LABEL_RE, ' ');
+      all = cleaned.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
+    }
+    if (all && all.length) { const best = Math.max(...all.map(x => Number(x.replace(/,/g, '')))); f.amount = String(best); }
   } else {
     f.amount = String(Number(m[1].replace(/,/g, '')));
+  }
+  // TOTAL 已匹配但金额恰为现金/找零（如 OCR 把 EFECTIVO 值排在 TOTAL 后）→ 显式重取 TOTAL 行
+  if (f.amount != null && CASH_LABEL_RE.test(t)) {
+    const tot = t.match(/(?:\bTOTAL\b(?!\s*SUB)|total a pagar|gran total)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
+    if (tot && tot[1]) f.amount = String(Number(tot[1].replace(/,/g, '')));
   }
   // 商户：已知标签（排除银行专属标签；支持中文；捕获组不含 / : 以免吞掉日期；在日期/金额标签前截断）
   const merchantTags = ['NOMBRE', 'RAZON SOCIAL', 'PROVEEDOR', 'MERCHANT', '商户', '公司', '销售方', '收款方', '付款方', '店名'];
@@ -1386,7 +1399,7 @@ async function wbLocalOcrV2(img) {
   const companyVal = (D.company || (D.receptor && D.receptor.name) || D.receptorName) || common.company || null;
   const fields = {
     date: dateVal && String(dateVal),
-    amount: amountVal != null ? String(amountVal) : (V.parseMoney && V.parseMoney(fullText.match(/(?:total|importe|amount)[^0-9]*\$?\s*[\d,]+\.?\d*/i)?.[0])) || null,
+    amount: amountVal != null ? String(amountVal) : (V.parseMoney && V.parseMoney((fullText.split(/\b(?:EFECTIVO|CAMBIO|VUELTO|CASH|CHANGE)\b/i)[0].match(/(?:total|importe|amount)[^0-9]*\$?\s*[\d,]+\.?\d*/i) || [''])[0])) || null,
     merchant: merchantVal,
     company: companyVal,
     bank_payer: D.payerBank || (D.emisor && D.emisor.bank) || common.bank_payer || null,

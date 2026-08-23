@@ -66,7 +66,17 @@
     const moneyRe = /[\d.,-]+\s*(?:MXN|USD|EUR|CNY|PESOS)?/i;
     doc.subtotal = money(inlineMoney(words, /^subtotal\b/i) || field(words, fullText, /^subtotal$/i, new RegExp('subtotal\\s*[:：]?\\s*\\$?\\s*(' + moneyRe.source + ')', 'i')));
     doc.iva = money(inlineMoney(words, /^iva\b/i) || field(words, fullText, /^iva$/i, new RegExp('iva\\s*[:：]?\\s*\\$?\\s*(' + moneyRe.source + ')', 'i')));
-    doc.total = money(inlineMoney(words, /^(?:total|importe\s*total|total\s*a\s*pagar|gran\s*total)\b/i) || field(words, fullText, /^(total|importe\s*total|total\s*a\s*pagar|gran\s*total)$/i, new RegExp('(?:total|importe\\s*total|total\\s*a\\s*pagar|gran\\s*total)\\s*[:：]?\\s*\\$?\\s*(' + moneyRe.source + ')', 'i')));
+    // 总额：仅 TOTAL 系列标签（排除 EFECTIVO 现金支付 / CAMBIO 找零 行的金额）
+    doc.total = money(
+      inlineMoney(words, /^(?:total|importe\s*total|total\s*a\s*pagar|gran\s*total)\b/i) ||
+      field(words, fullText, /^(total|importe\s*total|total\s*a\s*pagar|gran\s*total)$/i, new RegExp('(?:total|importe\\s*total|total\\s*a\\s*pagar|gran\\s*total)\\s*[:：]?\\s*\\$?\\s*(' + moneyRe.source + ')', 'i'))
+    );
+    // 兜底：若 total 缺失，从"TOTAL"标签所在文本段截取（绝不取 EFECTIVO/CAMBIO 行）
+    if (doc.total == null && /total/i.test(fullText)) {
+      const seg = fullText.split(/\b(?:EFECTIVO|CAMBIO|VUELTO|ENTREGADO|RECIBIDO)\b/i)[0];
+      const mt = seg.match(/\bTOTAL\b[^\d]*\$?\s*([\d.,-]+)/i);
+      if (mt && mt[1]) doc.total = money(mt[1]);
+    }
 
     return doc;
   }
