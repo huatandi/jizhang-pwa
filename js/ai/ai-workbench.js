@@ -853,17 +853,13 @@ function wbZoomClose() {
   document.body.style.overflow = '';
   wbDrag = null; wbPinch = null;
 }
-// 以视口某点为中心缩放（所见即所得：缩放后该点保持原位；可从适配状态缩小到 50%）
+// 以视口中心为锚点缩放（用户要求：放大/缩小始终置中，不跟随鼠标/手指，避免图片左右晃荡）
 function wbZoomAt(cx, cy, factor) {
   const stage = document.getElementById('wbLightboxStage');
   if (!stage) return;
-  const rect = stage.getBoundingClientRect();
-  const px = cx - rect.left, py = cy - rect.top;
   const newScale = Math.min(6, Math.max(0.5, wbZoomScale * factor));
   if (newScale === wbZoomScale) return;
-  // 保持焦点：偏移随缩放比例变化
-  wbZoomX = px - (px - wbZoomX) * (newScale / wbZoomScale);
-  wbZoomY = py - (py - wbZoomY) * (newScale / wbZoomScale);
+  // 置中缩放：保持图片在视口中心，不平移偏移（用户已拖拽查看时保持其偏移状态，不额外跳动）
   wbZoomScale = newScale;
   wbZoomApply();
 }
@@ -923,18 +919,11 @@ function wbStageTouchMove(e) {
     const t1 = e.touches[0], t2 = e.touches[1];
     const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
     const factor = dist / wbPinch.dist;
+    // 置中缩放：与按钮/滚轮一致，图片始终居中，不随两指位置偏移
     const newScale = Math.min(6, Math.max(0.5, wbPinch.scale * factor));
-    // 以两指中点缩放
-    const stage = document.getElementById('wbLightboxStage');
-    if (stage) {
-      const rect = stage.getBoundingClientRect();
-      const px = wbPinch.cx - rect.left, py = wbPinch.cy - rect.top;
-      const k = newScale / wbZoomScale;
-      wbZoomX = px - (px - wbZoomX) * k;
-      wbZoomY = py - (py - wbZoomY) * k;
-      wbZoomScale = newScale;
-      wbZoomApply();
-    }
+    if (newScale === wbZoomScale) return;
+    wbZoomScale = newScale;
+    wbZoomApply();
     return;
   }
   if (wbDrag) wbStagePointerMove(e);
