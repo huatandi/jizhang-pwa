@@ -254,21 +254,21 @@
   }
 
   function renderMeta() {
+    const metaEl = el('fxMeta');
+    if (!metaEl) return; // 简化 UI 后无 meta 区
     const fromRate = state.rates[state.to] || state.rates[state.from];
     if (!fromRate) {
-      el('fxMeta').innerHTML = '<span>📅 参考日期：--</span><span>🕐 获取时间：--</span><span>🏦 数据来源：--</span>';
+      metaEl.innerHTML = '<span>📅 参考日期：--</span><span>🕐 获取时间：--</span>';
       return;
     }
     const rateDate = fromRate.date || '--';
     const fetched = state.updatedAt
       ? `${state.updatedAt.getFullYear()}-${String(state.updatedAt.getMonth() + 1).padStart(2, '0')}-${String(state.updatedAt.getDate()).padStart(2, '0')} ${String(state.updatedAt.getHours()).padStart(2, '0')}:${String(state.updatedAt.getMinutes()).padStart(2, '0')}`
       : '--';
-    const providerName = fromRate.provider === 'BANXICO' ? 'Banco de México / BANXICO FIX' : fromRate.provider === 'FRANKFURTER_BLEND' ? 'Frankfurter (综合参考)' : (fromRate.source || '--');
     const cachedMark = fromRate.isCached ? ' · 缓存' : '';
-    el('fxMeta').innerHTML =
-      `<span>📅 参考日期：${rateDate}${cachedMark}</span>` +
-      `<span>🕐 获取时间：${fetched}</span>` +
-      `<span>🏦 数据来源：${providerName}</span>`;
+    metaEl.innerHTML =
+      `<span>📅 ${rateDate}${cachedMark}</span>` +
+      `<span>🕐 ${fetched}</span>`;
   }
 
   function renderFavGrid() {
@@ -308,7 +308,6 @@
           <span class="fx-fav-code">${code}</span>
         </div>
         <div class="fx-fav-rate">1 ${ref} ≈ ${rate} ${code}</div>
-        <div class="fx-fav-src">${provider}</div>
       </div>`;
     }).join('');
   }

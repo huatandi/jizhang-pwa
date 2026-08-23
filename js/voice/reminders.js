@@ -639,30 +639,29 @@ function applyReminderVoiceText(buffer) {
   setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
 }
 
-// 语音"保存"命令触发自动保存：校验内容/时间齐全后保存；缺失时重启语音引导补充
+// 语音"保存"命令触发自动保存：内容/时间齐全直接保存；时间缺失自动兜底当前+1小时；内容缺失才引导补充
 async function autoSaveReminderByVoice() {
   // 防重入（连续两个终结词片段）
   if (window._autoSavingReminder) return;
   window._autoSavingReminder = true;
   try {
     const content = document.getElementById('rContent').value.trim();
-    const rAt = document.getElementById('rAt').value;
-    if (!content && !rAt) {
-      showToast('未识别到提醒内容，请重新说（如：明天九点 在办公室 开会）', 'error');
-      restartReminderVoiceAfterSaveFail();
-      return;
-    }
+    let rAt = document.getElementById('rAt').value;
     if (!content) {
       showToast('请说出提醒事项（如：明天九点 在办公室 开会）', 'error');
       restartReminderVoiceAfterSaveFail();
       return;
     }
+    // 时间缺失 → 自动兜底：当前时间 +1 小时（用户说"保存"即表示现在要设提醒）
     if (!rAt) {
-      showToast('未识别到提醒时间，请说（如：明天早上九点）', 'error');
-      restartReminderVoiceAfterSaveFail();
-      return;
+      const d = new Date();
+      d.setHours(d.getHours() + 1);
+      const p = (n) => String(n).padStart(2, '0');
+      rAt = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+      document.getElementById('rAt').value = rAt;
+      showToast('未识别到时间，已设为 1 小时后（可在表单修改）');
     }
-    // 校验通过 → 保存（saveReminder 内部会关闭弹窗 + 停止语音）
+    // 保存（saveReminder 内部会关闭弹窗 + 停止语音）
     await saveReminder();
   } finally {
     setTimeout(() => { window._autoSavingReminder = false; }, 1500);

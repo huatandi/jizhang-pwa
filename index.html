@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=56">
+  <link rel="stylesheet" href="css/style.css?v=57">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -116,19 +116,18 @@
           <p class="subtitle" id="dashRangeText">全部分析基于当前日期范围</p>
         </header>
 
-        <!-- 参考汇率工具（独立于记账汇率，仅信息参考；置于 KPI 上方便于快速查看） -->
+        <!-- 参考汇率工具 -->
         <div class="chart-card wide fx-card" id="fxCard" hidden>
           <div class="fx-head">
             <div class="fx-title">
               <span class="fx-title-icon">💱</span>
               <div>
                 <div class="fx-title-main">参考汇率</div>
-                <div class="fx-title-sub" id="fxSub">记账 · 估算参考（非交易汇率）</div>
               </div>
             </div>
             <div class="fx-head-right">
               <span class="fx-status" id="fxStatus"></span>
-              <button class="btn-small" onclick="FxTool.refresh()" title="刷新参考汇率">🔄 刷新</button>
+              <button class="btn-small" onclick="FxTool.refresh()" title="刷新">🔄</button>
             </div>
           </div>
 
@@ -140,7 +139,7 @@
                 <div class="fx-side-code" id="fxFromCode">--</div>
                 <div class="fx-side-name" id="fxFromName">本币</div>
               </div>
-              <button class="fx-swap" onclick="FxTool.swap()" title="交换货币">⇅</button>
+              <button class="fx-swap" onclick="FxTool.swap()" title="交换">⇅</button>
               <div class="fx-side" id="fxToSide" data-code="USD" onclick="FxTool.openPicker('to')">
                 <div class="fx-flag" id="fxToFlag">🇺🇸</div>
                 <div class="fx-side-code" id="fxToCode">USD</div>
@@ -148,34 +147,22 @@
               </div>
             </div>
             <div class="fx-amount-row">
-              <input type="number" id="fxAmount" class="fx-amount" inputmode="decimal" placeholder="输入金额" value="100">
+              <input type="number" id="fxAmount" class="fx-amount" inputmode="decimal" placeholder="金额" value="100">
               <div class="fx-result" id="fxResult">≈ --</div>
             </div>
             <div class="fx-rate-line" id="fxRateLine">--</div>
-            <div class="fx-meta" id="fxMeta">
-              <span>📅 参考日期：--</span>
-              <span>🕐 获取时间：--</span>
-              <span>🏦 数据来源：--</span>
-            </div>
           </div>
 
           <!-- 常用货币 -->
           <div class="fx-fav">
             <div class="fx-fav-title">
-              ⭐ 常用货币
-              <span class="fx-fav-hint" id="fxFavHint">点击查看参考汇率</span>
-              <span class="fx-fav-edit" id="fxFavEditBtn" onclick="FxTool.toggleEditFav()" title="添加 / 删除常用货币">✏️ 编辑</span>
+              ⭐ 常用
+              <span class="fx-fav-edit" id="fxFavEditBtn" onclick="FxTool.toggleEditFav()" title="编辑">✏️</span>
             </div>
             <div class="fx-fav-grid" id="fxFavGrid"></div>
             <div class="fx-fav-add" id="fxFavAddRow" hidden>
-              <button class="btn-small" onclick="FxTool.openFavPicker()">＋ 添加货币</button>
+              <button class="btn-small" onclick="FxTool.openFavPicker()">＋ 添加</button>
             </div>
-          </div>
-
-          <!-- 免责声明 -->
-          <div class="fx-disclaimer">
-            <span class="fx-info-btn" onclick="FxTool.showInfo()" title="关于此汇率">ⓘ 关于此汇率</span>
-            <div class="fx-disclaimer-text">汇率仅供记账、估算及信息参考，不构成任何交易、兑换、支付或投资建议。实际银行、信用卡、兑换机构或支付服务商可能使用不同汇率，并可能包含手续费、点差或其他费用。</div>
           </div>
         </div>
 
@@ -413,7 +400,6 @@
       <section class="page" id="page-monthly">
         <header class="page-header">
           <h2>📅 月度统计</h2>
-          <p class="subtitle">逐月收支自动汇总 · 同比环比对比</p>
         </header>
         <!-- 同比环比 KPI（功能补充 P5） -->
         <div class="kpi-grid" id="monthlyCompareKpis" style="margin-bottom:16px">
@@ -470,7 +456,6 @@
       <section class="page" id="page-query">
         <header class="page-header">
           <h2>🔍 明细查询</h2>
-          <p class="subtitle">按供应商（开店）/ 事项备注（家庭）/ 支出分类 / 收入分类 / 账户，配合时间范围，一键查看汇总金额与明细</p>
         </header>
 
         <div class="query-panel">
@@ -520,20 +505,19 @@
       <section class="page" id="page-scan">
         <header class="page-header">
           <h2>📷 扫描识别</h2>
-          <p class="subtitle">本地 AI 识别：上传截图 / 银行流水 / 发票照片（支持中文及墨西哥银行 SPEI 西语凭证），自动识别并生成待确认账务</p>
         </header>
 
         <!-- AI 批量识别面板 -->
         <div class="ai-panel">
-          <div class="chart-title">🤖 本地 AI 批量识别 <span class="badge-local">🔒 本地处理 · 断网可用</span> <span id="aiEngineBadge" class="ai-engine-badge" style="font-size:11px;opacity:.8;margin-left:6px"></span></div>
+          <div class="chart-title">🤖 识别单据 <span id="aiEngineBadge" class="ai-engine-badge" style="font-size:11px;opacity:.8;margin-left:6px"></span></div>
           <div class="ai-upload-row">
             <div class="ai-dropzone" id="aiDropzone" role="button" tabindex="0" aria-label="选择或拖入单据图片">
               <input type="file" id="aiFiles" accept="image/*" multiple class="file-input-cover">
               <span class="ai-drop-icon">📤</span>
-              <span><strong>点击选择或拖入单据</strong>（可多选，支持银行转账/流水/Factura/小票）</span>
+              <span>选择 / 拖入单据</span>
             </div>
             <span class="pick-wrap">
-              <button type="button" class="btn-secondary ai-cam-btn" id="aiCamBtn" title="直接打开相机拍照识别">📷 拍照</button>
+              <button type="button" class="btn-secondary ai-cam-btn" id="aiCamBtn" title="拍照">📷 拍照</button>
               <input type="file" id="aiCamInput" accept="image/*" capture="environment" class="file-input-cover">
             </span>
             <div class="ai-upload-stats">
@@ -544,15 +528,14 @@
             </div>
           </div>
           <div class="ai-ocr-row">
-            <label class="ai-ocr-label">🌐 识别语言</label>
+            <label class="ai-ocr-label">🌐 语言</label>
             <select id="aiOcrLang" class="ai-ocr-select">
-              <option value="auto">🤖 自动（西语+英语+中文）</option>
-              <option value="spa">🇲🇽 西班牙语 Español</option>
-              <option value="eng">🇺🇸 英语 English</option>
+              <option value="auto">🤖 自动</option>
+              <option value="spa">🇲🇽 西语</option>
+              <option value="eng">🇺🇸 英语</option>
               <option value="chi_sim">🇨🇳 中文</option>
-              <option value="spa+eng">🇲🇽+🇺🇸 西语+英语</option>
+              <option value="spa+eng">🇲🇽+🇺🇸</option>
             </select>
-            <span class="ai-ocr-hint">根据单据语言选择可更快更准</span>
           </div>
           <div class="ai-progress" id="aiProgressWrap" hidden>
             <div class="ai-progress-bar"><div id="aiProgressFill"></div></div>
@@ -564,7 +547,7 @@
         <!-- 单据预览 / 识别工作台 -->
         <div class="ai-panel ai-collapsible" id="aiDocPanel">
           <div class="chart-title ai-panel-head" onclick="aiTogglePanel('aiDocPanel')">
-            🖼️ 单据预览 <span class="badge-local">点击卡片可预览图片 · 提取文字 · 手动填字段学习模板</span>
+            🖼️ 单据预览
             <span class="ai-caret" data-caret="aiDocPanel">▲</span>
           </div>
           <div class="ai-panel-body" data-body="aiDocPanel">
@@ -575,12 +558,12 @@
         <!-- 待确认账务 -->
         <div class="ai-panel ai-collapsible" id="aiReviewPanel">
           <div class="chart-title ai-panel-head" onclick="aiTogglePanel('aiReviewPanel')">
-            ✅ 待确认账务 <span class="ai-review-count" id="aiReviewCount">0</span>
+            ✅ 待确认 <span class="ai-review-count" id="aiReviewCount">0</span>
             <span class="ai-caret" data-caret="aiReviewPanel">▲</span>
           </div>
           <div class="ai-panel-body" data-body="aiReviewPanel">
             <div class="ai-review-list" id="aiReviewList">
-              <div class="ai-empty">暂无待确认账务。上传单据后，AI 识别的结果会出现在这里，核对后一键入账。</div>
+              <div class="ai-empty">暂无待确认</div>
             </div>
           </div>
         </div>
@@ -588,7 +571,7 @@
         <!-- 模板学习库 -->
         <div class="ai-panel ai-collapsible" id="aiTplPanel">
           <div class="chart-title ai-panel-head" onclick="aiTogglePanel('aiTplPanel')">
-            🧠 已学习单据模板 <span class="badge-local">见过的单据会自动记住，下次识别更快更准</span>
+            🧠 单据模板
             <span class="ai-caret" data-caret="aiTplPanel">▲</span>
           </div>
           <div class="ai-panel-body" data-body="aiTplPanel">
@@ -601,16 +584,15 @@
       <section class="page" id="page-reminder">
         <header class="page-header">
           <h2>⏰ 语音提醒</h2>
-          <p class="subtitle">用语音或手动记录重要事项，到点提醒 · 支持提前提醒</p>
         </header>
 
         <div class="reminder-toolbar">
-          <button class="btn-primary voice-reminder-btn" onclick="openReminderModal('voice')">🎙️ 语音添加提醒</button>
+          <button class="btn-primary voice-reminder-btn" onclick="openReminderModal('voice')">🎙️ 添加提醒</button>
           <span class="reminder-stats" id="reminderStats"></span>
         </div>
 
         <div class="reminder-list" id="reminderList">
-          <div class="ai-empty">还没有提醒。点击「语音添加提醒」，设置事项、时间、地点，到点自动提醒。</div>
+          <div class="ai-empty">暂无提醒</div>
         </div>
       </section>
 
@@ -618,7 +600,6 @@
       <section class="page" id="page-quick">
         <header class="page-header">
           <h2>⚡ 快速记账</h2>
-          <p class="subtitle">输入或点击 🎙️ 说话记账：金额 · 日期 · 账户 · 分类 一次搞定</p>
         </header>
 
         <div class="quick-page-body">
@@ -657,7 +638,7 @@
           <div class="quick-page-voice">
             <div class="voice-dock">
               <button class="voice-lang" id="btnVoiceLang" onclick="switchVoiceLang()" title="切换识别语言">中文</button>
-              <span class="voice-tip" id="voiceTip">🎙️ 点击底部话筒，持续说话自动识别 金额 · 日期 · 账户 · 分类</span>
+              <span class="voice-tip" id="voiceTip">🎙️ 点击说话记账</span>
             </div>
             <div class="quick-page-actions">
               <button class="voice-btn quick-voice-btn" id="btnVoice" onclick="toggleVoice()" title="点击开始/结束说话记账">
@@ -675,7 +656,6 @@
       <section class="page" id="page-settings">
         <header class="page-header">
           <h2>⚙️ 设置</h2>
-          <p class="subtitle">数据范围 / 场景 / 功能模块 / 预算 / 选项 / 账户 / 汇率 / 安全 / 备份</p>
         </header>
 
         <div class="settings-body">
@@ -1013,9 +993,9 @@
       </div>
       <div class="modal-body">
         <div class="form-grid">
-          <label class="full">📝 什么事情 <input type="text" id="rContent" placeholder="例如：去银行办转账 / 开供应商会议" required></label>
+          <label class="full">📝 什么事情 <input type="text" id="rContent" placeholder="提醒事项" required></label>
           <label>📅 提醒时间 <input type="datetime-local" id="rAt" required></label>
-          <label>📍 地点 <input type="text" id="rLocation" placeholder="例如：市中心办公室"></label>
+          <label>📍 地点 <input type="text" id="rLocation" placeholder="地点"></label>
           <label>🔔 提醒方式
             <select id="rMethod">
               <option value="manual">手动</option>
@@ -1184,7 +1164,7 @@
             <label data-cand-field="expense_category">支出分类 <select id="wbCategory"></select></label>
             <label class="full">备注 <input type="text" id="wbRemark" placeholder="备注"></label>
           </div>
-          <div class="wb-hint">💡 选中识别文字中的片段，右键/复制后粘贴到对应字段；或直接手工填写。点击「保存为模板」系统会记住此版式，下次同类单据自动套用。</div>
+          <div class="wb-hint">💡 可点字段旁的候选词快速填入</div>
         </div>
       </div>
       <div class="modal-footer workbench-footer">
@@ -1264,7 +1244,7 @@
        顺序说明：静态脚本先于 boot.js 动态加载的 app.js 执行。
        reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
-  <script src="js/voice/reminders.js?v=59"></script>
+  <script src="js/voice/reminders.js?v=60"></script>
   <script src="js/voice/quick-voice.js?v=60"></script>
   <script src="js/ledger-crud.js?v=38"></script>
   <script src="js/ai/ai-workbench.js?v=59"></script>
@@ -1280,7 +1260,7 @@
   <script src="js/exchange-rate/frankfurter-provider.js?v=38"></script>
   <script src="js/exchange-rate/rate-calculator.js?v=38"></script>
   <script src="js/exchange-rate/exchange-rate-engine.js?v=38"></script>
-  <script src="js/exchange-rate/fx-tool.js?v=45"></script>
+  <script src="js/exchange-rate/fx-tool.js?v=46"></script>
   <script src="js/boot.js?v=53"></script>
 </body>
 </html>

@@ -180,6 +180,14 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 }
 .btn-small:hover { filter: brightness(1.1); }
 
+/* ============ 全局简化：隐藏说明性提示文字（保留功能） ============ */
+.settings-sub, .settings-note, .recur-hint, .date-range-hint, .preset-hint, .country-hint, .scene-hint,
+#backupHint, #rateHint, #setDataHint, #sceneHint, #countryHint,
+.health-m-hint, .fx-disclaimer-text, .ai-ocr-hint, .fx-fav-hint, .fx-title-sub {
+  display: none !important;
+}
+.health-m { justify-content: space-between; }
+
 /* ============ 主内容区 ============ */
 .main { flex: 1; margin-left: 240px; padding: 28px 32px; min-width: 0; max-width: 100%; }
 
