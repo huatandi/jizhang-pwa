@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v131';
+const CACHE_NAME = 'jizhang-pwa-v132';
 const APP_SHELL = [
   './',
   './index.html',
@@ -119,6 +119,9 @@ const APP_SHELL = [
   './vendor/onnx/ort-wasm-simd-threaded.mjs',
   './vendor/onnx/ort-wasm-simd-threaded.asyncify.mjs',
   './vendor/onnx/ort-wasm-simd-threaded.asyncify.wasm',
+  // WebGPU/JSEP 试验构建（与 onnxruntime-web 1.24.3 版本匹配；实验 flag 默认关闭时才按需加载）
+  './vendor/onnx/ort-wasm-simd-threaded.jsep.mjs',
+  './vendor/onnx/ort-wasm-simd-threaded.jsep.wasm',
   // Whisper 专用 ORT wasm（AUD-B1：与 transformers.js 捆绑的 ORT 1.26.0-dev 严格一致，独立于 Paddle 的 1.24.3）
   './vendor/onnx-whisper/ort-wasm-simd-threaded.wasm',
   './vendor/onnx-whisper/ort-wasm-simd-threaded.mjs',
