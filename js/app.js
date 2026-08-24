@@ -247,7 +247,8 @@ function closeModal(id) {
 }
 document.querySelectorAll('.modal-overlay').forEach(ov => {
   ov.addEventListener('click', (e) => {
-    if (e.target === ov) {
+    // 点击卡片外围（不在 .modal 卡片内）→ 关闭。用 closest 判定更稳，手机端点外围也能关。
+    if (!e.target.closest('.modal')) {
       // 携带用户输入/识别结果的弹窗：点击外围不关闭（避免误关丢失已填/已识别数据，用户明确要求）
       const protectedModals = ['aiWorkbenchModal', 'expenseModal', 'incomeModal', 'purchaseModal'];
       if (protectedModals.includes(ov.id)) return;
