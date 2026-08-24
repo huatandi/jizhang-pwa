@@ -2144,10 +2144,10 @@ async function wbSave() {
       const amountConf = wbAiValues && wbAiValues.__amountConfidence;
       const userChanged = wbAiValues.wbAmount != null && String(wbAiValues.wbAmount).trim() !== String(fields.amount || '').trim();
       if (meta.templateId) {
-        // 已有模板：记录使用（用户保存 = 弱正样本 §56；未改金额且高置信 → ok）
-        const ok = !userChanged && (amountConf == null || amountConf >= 0.85);
+        // 已有模板：记录使用（用户保存 = 弱正样本 §56；用户确认过金额也算一次成功）
+        const ok = (wbAiValues.__amountConfirmed || !userChanged) && (amountConf == null || amountConf >= 0.85);
         TE.record(meta.templateId, { ok, engine: meta.engine, preprocessProfile: meta.preprocessProfile }).catch(() => {});
-      } else if (fields.amount && (amountConf == null || amountConf >= 0.7)) {
+      } else if (fields.amount && (wbAiValues.__amountConfirmed || amountConf == null || amountConf >= 0.7)) {
         // 陌生票且关键字段可信 → 创建候选模板（§63：不立即 stable，防垃圾模板）
         TE.save({
           merchantName: fields.merchant || fields.company || meta.merchantName || null,
@@ -2159,15 +2159,24 @@ async function wbSave() {
       }
     }
   } catch (e) { /* 模板学习失败不影响保存 */ }
-  // 金额置信度分层（§二十六）：最大猜测(0.45)低置信 → 不静默入账，提示核对
+  // 金额置信度分层（§二十六）：最大猜测(0.45)低置信 → 不再硬拦截，改为"确认后放行"
   const amtEl = document.getElementById('wbAmount');
   const aiConf = wbAiValues && wbAiValues.__amountConfidence;
   if (fields.amount && amtEl && !wbLockedFields.has('wbAmount') && aiConf != null && aiConf < 0.60) {
-    // 金额是低置信猜测：保留工作台，提示用户核对/重新识别（不自动对号入座）
-    showToast('⚠️ 金额识别置信度较低（最大金额猜测），请核对金额或点「🔄 重新识别」', 'error');
-    amtEl.classList.add('wb-low-conf');
-    setTimeout(() => amtEl.classList.remove('wb-low-conf'), 3000);
-    return;
+    // 用户确认机制（V5 §39）：让用户明示"认同识别结果"，确认后用锁定金额继续保存
+    const doConfirm = window.confirm
+      ? window.confirm(`金额识别置信度较低（系统猜测最大值）。\n识别金额：${fields.amount}\n\n是否确认使用该金额？\n（确认后本张票按此金额保存，并可重新识别覆盖）`)
+      : true; // 无 confirm 环境（如部分 WebView）→ 默认为确认，避免死锁
+    if (!doConfirm) {
+      showToast('已取消保存，可点「🔄 重新识别」或修改金额后再保存', 'error');
+      amtEl.classList.add('wb-low-conf');
+      setTimeout(() => amtEl.classList.remove('wb-low-conf'), 3000);
+      return;
+    }
+    // 用户确认：锁定金额字段（后续识别不覆盖），并继续走保存流程
+    wbLockedFields.add('wbAmount');
+    if (wbAiValues) wbAiValues.__amountConfirmed = true;
+    amtEl.classList.remove('wb-low-conf');
   }
   if (!fields.date && !fields.amount) {
     return showToast('请至少填写日期或金额', 'error');
