@@ -47,6 +47,15 @@
     setCallback(cb) { this.cb = cb || {}; }
     setLang(lang) { this.lang = lang || defaultAsrBcp47(); }
 
+    /** V5 Phase1 保险13/14：隐私门——LOCAL_ONLY 模式下本地失败也绝不启用 WebSpeech(在线) */
+    _privacyAllowsOnline() {
+      try {
+        const P = global.AIPrivacy;
+        if (P && typeof P.getMode === 'function') return P.getMode() !== 'local_only';
+      } catch (e) { /* ignore */ }
+      return true;
+    }
+
     _emit(name, payload) {
       if (this.cb && typeof this.cb[name] === 'function') {
         try { this.cb[name](payload); } catch (e) { console.error('[asr] cb error:', e); }
@@ -116,14 +125,16 @@
         this.mode = null; // 防止 mode 残留 'local'
       }
 
-      // 回退：在线（需授权）
-      if (this.allowOnline && global.AsrKit.webspeechSupported) {
+      // 回退：在线（需授权 + 隐私门：LOCAL_ONLY 绝不启用）
+      if (this.allowOnline && this._privacyAllowsOnline() && global.AsrKit.webspeechSupported) {
         this.engine = new global.AsrKit.WebSpeechEngine();
         this.mode = 'online';
         return this.engine;
       }
       const err = new Error(ERR.ASR_FAILED);
       err.cause = e;
+      // 隐私门导致的失败：明确标记，避免"本地失败→静默在线"掩盖隐私策略
+      if (!this._privacyAllowsOnline()) err.privacyBlocked = true;
       throw err;
     }
 
@@ -177,7 +188,8 @@
           const cb2 = global.AsrKit.circuitBreaker;
           if (cb2) cb2.markFailure('whisper', e && e.message); // 失败 → 累计,到阈值即熔断
           // 预热失败：若有在线授权则降级，否则上抛规范错误码（防止原始 Error 泄漏给 UI）
-          if (this.allowOnline && global.AsrKit.webspeechSupported) {
+          // 隐私门：LOCAL_ONLY 下即使 allowOnline=true 也绝不启用 WebSpeech
+          if (this.allowOnline && this._privacyAllowsOnline() && global.AsrKit.webspeechSupported) {
             this.engine = new global.AsrKit.WebSpeechEngine();
             this.mode = 'online';
             this.engine.setCallback((ev) => {

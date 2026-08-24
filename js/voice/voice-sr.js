@@ -23,6 +23,14 @@
   let sessionId = 0;       // 会话 ID：每次 listen/stop 递增，隔离旧回调
 
   // 默认语音语言（BCP-47）：跟随 global-config（本币地区 → 浏览器语言）
+  function privacyMode() {
+    try {
+      const P = global.AIPrivacy;
+      if (P && typeof P.getMode === 'function') return P.getMode() || 'local_only';
+    } catch (e) { /* ignore */ }
+    return 'local_only';
+  }
+
   function defaultVoiceLang() {
     const gc = global.AIKit && global.AIKit.globalConfig;
     if (gc && gc.detectLang) {
@@ -110,9 +118,14 @@
 
   function _doListen(opts, cb, sid) {
     activeCb = cb || null;
-    // 默认允许在线回退（WebSpeech 系统语音识别兜底，无需额外授权）：
-    // Whisper 模型下载失败/内存不足时自动降级，避免"引擎启动失败"。
-    allowOnline = opts ? opts.allowOnline !== false : true;
+    // 在线回退（WebSpeech 系统语音识别）默认遵循隐私策略，而非恒定开启：
+    //   local_only    → 默认 false（绝不联网）
+    //   local_first/ai_assist → 默认 true（本地失败才降级，由 AsrManager 隐私门兜底）
+    // 调用方显式传 opts.allowOnline 时以其为准；LOCAL_ONLY 仍由 AsrManager._privacyAllowsOnline 强制拦截。
+    const modeName = privacyMode();
+    allowOnline = opts && opts.allowOnline != null
+      ? !!opts.allowOnline
+      : (modeName !== 'local_only');
     const mgr = _ensureManager();
     mgr.allowOnline = allowOnline;
     // forceOnline：仅本次生效。Whisper 连续失败后强制直接用 WebSpeech（跳过本地模型初始化）。
