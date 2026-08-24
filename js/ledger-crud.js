@@ -76,7 +76,7 @@ function openIncomeModal(prefillDate) {
   document.getElementById('iRemark').value = '';
   fillSelect('iProject', options.departments, true);
   fillSelect('iPayMethod', options.pay_methods, true);
-  fillSelect('iAccount', options.accounts, true);
+  fillAccountSelect('iAccount', true);
   fillSelect('iCardPending', options.discount_accounts, true);
   // 功能补充 P5：填充快捷模板下拉
   fillQuickTemplates('income');
@@ -95,7 +95,7 @@ function editIncome(id) {
     document.getElementById('iRemark').value = r.remark || '';
     fillSelect('iProject', options.departments, true);
     fillSelect('iPayMethod', options.pay_methods, true);
-    fillSelect('iAccount', options.accounts, true);
+    fillAccountSelect('iAccount', true);
     fillSelect('iCardPending', options.discount_accounts, true);
     document.getElementById('iProject').value = r.project;
     document.getElementById('iPayMethod').value = r.pay_method;
@@ -469,7 +469,7 @@ function openExpenseModal(prefillDate) {
   document.getElementById('eHandler').value = '';
   document.getElementById('eRemark').value = '';
   fillSelect('eCategory', options.expense_categories, true);
-  fillSelect('eAccount', options.accounts, true);
+  fillAccountSelect('eAccount', true);
   // 功能补充 P5：填充快捷模板下拉
   fillQuickTemplates('expense');
   openModal('expenseModal');
@@ -485,7 +485,7 @@ function editExpense(id) {
     document.getElementById('eHandler').value = r.handler || '';
     document.getElementById('eRemark').value = r.remark || '';
     fillSelect('eCategory', options.expense_categories, true);
-    fillSelect('eAccount', options.accounts, true);
+    fillAccountSelect('eAccount', true);
     document.getElementById('eCategory').value = r.category;
     document.getElementById('eAccount').value = r.account;
     openModal('expenseModal');

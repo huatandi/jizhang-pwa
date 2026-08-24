@@ -71,7 +71,7 @@ function openQuickModal(autoVoice) {
   document.getElementById('qRemark').value = '';
   const segs = document.querySelectorAll('#page-quick .seg-btn');
   segs.forEach(b => b.classList.toggle('active', b.dataset.type === 'expense'));
-  fillSelect('qAccount', options.accounts, true);
+  fillAccountSelect('qAccount', true);
   renderQuickCatSelect();
   closeQuickAddCat();
   // 记忆上次账户/分类，减少重复选择

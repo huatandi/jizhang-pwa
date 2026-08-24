@@ -579,6 +579,23 @@ function fillSelect(id, arr, empty = false) {
     arr.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
 }
 
+// 账户下拉（带语音编号显示）：值仍为账户名，显示为"编号 · 账户名"
+// 例：编号映射 {2:BANORTE} → 下拉显示 "2 · BANORTE"，选中值仍是 "BANORTE"
+function fillAccountSelect(id, empty = false) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const accs = options.accounts || [];
+  const numMap = (options && options.account_numbers) || {};
+  // 反查：账户名 → 编号
+  const numOf = {};
+  for (const k of Object.keys(numMap)) numOf[numMap[k]] = k;
+  const item = (a) => {
+    const n = numOf[a];
+    return `<option value="${escapeHtml(a)}">${n ? escapeHtml(String(n)) + ' · ' + escapeHtml(a) : escapeHtml(a)}</option>`;
+  };
+  sel.innerHTML = (empty ? '<option value="">-- 选择 --</option>' : '') + accs.map(item).join('');
+}
+
 // 功能补充 P4：多币种
 const BASE_CURRENCY = () => (options.base_currency || 'MXN');
 const CURRENCIES = () => (options.currencies && options.currencies.length ? options.currencies : ['MXN', 'CNY', 'USD']);
