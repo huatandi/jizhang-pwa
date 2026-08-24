@@ -253,7 +253,7 @@ function fillWbFields(f) {
     el.value = val;
     el.classList.remove('wb-locked');
   };
-  set('wbDate', f.date);
+  set('wbDate', wbDateToIso(f.date)); // V5：日期必须是合法格式才填入，防止垃圾值显示为 □□□
   set('wbAmount', f.amount);
   set('wbMerchant', f.merchant);
   set('wbCompany', f.company);
@@ -1194,6 +1194,24 @@ function wbOcrLang() {
   return sanitize('spa+eng'); // 兜底
 }
 
+// 把常见日期格式归一化为 yyyy-MM-dd；无法解析返回 null（V5：防止垃圾值进 <input type=date> 显示成 □□□）
+function wbDateToIso(s) {
+  const t = String(s || '').trim();
+  if (!t) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t; // 已是 ISO
+  const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  let m = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/); // YYYY/MM/DD
+  if (m) { const y = +m[1], mo = +m[2], d = +m[3]; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return iso(y, mo, d); }
+  m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); // DD/MM/YYYY / MM/DD/YYYY
+  if (m) {
+    let d = +m[1], mo = +m[2], y = +m[3];
+    if (mo > 12 && d <= 12) { const tmp = d; d = mo; mo = tmp; } // DD.MM 反了
+    if (y < 100) y += 2000;
+    if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) return iso(y, mo, d);
+  }
+  return null;
+}
+
 // 引擎失败 → 把具体引擎错误带到界面（便于直接定位根因，V5 §75）
 function wbOcrFailMessage(e) {
   if (e && e.name === 'OCR_ENGINE_FAIL') {
@@ -1230,7 +1248,7 @@ async function wbLocalOcr() {
         showWbOcr(res.text);
         const f = res.fields;
         const set = (id, val) => { if (val != null && val !== '') { const el = document.getElementById(id); if (el) el.value = val; } };
-        set('wbDate', f.date);
+        set('wbDate', wbDateToIso(f.date)); // V5：日期必须是合法格式才填入
         set('wbAmount', f.amount);
         set('wbMerchant', f.merchant);
         set('wbCompany', f.company);

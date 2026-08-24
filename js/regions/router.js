@@ -29,6 +29,16 @@
     'DOCUMENT_ID', 'CURRENCY', 'INCOME_EXPENSE',
   ];
 
+  /** 值是否像日期（数字+分隔符 或 数字+月份名）；V5：防止把整段文字当日期 */
+  function isDateLike(v) {
+    const t = String(v || '').trim();
+    if (!t) return false;
+    if (/\d{1,4}[\s/.\-]\d{1,2}[\s/.\-]\d{1,4}/.test(t)) return true;      // 2026-08-01 / 01/08/2026
+    if (/\d{1,4}[\s/.\-]?\d{1,2}\s*[a-záéíóúñü]{3,}/i.test(t)) return true; // 01 Ago 2026 / 08-Aug
+    if (/[a-záéíóúñü]{3,9}\s+\d{1,2}\s*,?\s*\d{2,4}/i.test(t)) return true; // Ago 1, 2026
+    return false;
+  }
+
   // 通用文档类型（V5 §23）
   const GENERIC_TYPES = [
     'tax_invoice', 'retail_receipt', 'supermarket_receipt', 'fuel_receipt',
@@ -123,7 +133,11 @@
         const m = t.match(new RegExp('(?:' + re.source + ')\\s*[:：]?\\s*[$¥€£￥]?\\s*([^\\n]{1,40})', 'i'));
         if (m && m[1] && m[1].trim()) { hit = { value: m[1].trim(), raw: m[0].trim(), label: re.source }; break; }
       }
-      if (hit) out[field] = hit;
+      if (hit) {
+        // 日期字段：捕获值必须像日期（否则丢弃，避免把整行垃圾塞进日期框，V5）
+        if (field === 'DATE' && !isDateLike(hit.value)) hit = null;
+        if (hit) out[field] = hit;
+      }
     }
     // 税号：地区模式校验（标签值或全文）
     if (!out.TAX_ID && profile.taxIdPattern) {
