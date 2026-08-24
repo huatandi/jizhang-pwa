@@ -523,7 +523,7 @@
     const t = String(text || '');
     const low = t.toLowerCase();
     // -3) 用户定义编号（V5 §5）："账户2"/"账户 2"/"第二个账户"/"用第一个"/"1号账户"/"银行1"
-    //     → 按账户列表顺序取第 N 个（1=列表第 1 项）。通用机制，未来可复用于分类/客户等。
+    //     优先级：用户显式编号映射（options.account_numbers，如 {"2":"BANORTE"}）> 列表顺序第 N 项
     try {
       if (accounts && accounts.length) {
         const accList = accounts.map(a => String(a || '').trim()).filter(Boolean);
@@ -545,7 +545,16 @@
           m = t.match(/(?:账户|账号|银行|卡)\s*[:：]?\s*([一二三四五六七八九十]{1,2})$/);
           if (m) n = zhNum[m[1]];
         }
-        if (n != null && n >= 1 && n <= accList.length) return accList[n - 1];
+        if (n != null && n >= 1) {
+          // ① 用户显式编号映射优先（设置页可设："2" → "BANORTE"；经 setOptions 注入）
+          const numMap = (__opts && __opts.account_numbers) || null;
+          if (numMap) {
+            const hit = numMap[String(n)];
+            if (hit && accList.some(a => a === hit)) return hit;
+          }
+          // ② 回退：列表顺序第 N 项
+          if (n <= accList.length) return accList[n - 1];
+        }
       }
     } catch (e) { /* 编号解析失败不影响 */ }
     // -2) PvM 个人记忆优先（用户亲自确认过的账户/实体简称，覆盖系统词库）

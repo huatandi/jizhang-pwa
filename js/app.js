@@ -300,9 +300,9 @@ async function loadOptions() {
   } catch (e) {
     showToast('加载配置失败', 'error');
   }
-  // 同步语音引擎的选项（分类/账户列表随用户配置更新）
+  // 同步语音引擎的选项（分类/账户列表/账户编号随用户配置更新）
   if (window.VoiceEngine) {
-    window.VoiceEngine.setOptions({ expense_categories: options && options.expense_categories, departments: options && options.departments, accounts: options && options.accounts });
+    window.VoiceEngine.setOptions({ expense_categories: options && options.expense_categories, departments: options && options.departments, accounts: options && options.accounts, account_numbers: options && options.account_numbers });
   }
   // 同步 VoiceKit V3（本地解析引擎）的选项访问
   if (window.VoiceKit && window.VoiceKit.setOptionsGetter) {
@@ -608,18 +608,23 @@ async function renderAccountMetaList() {
   for (const m of (Array.isArray(accountMetaCache) ? accountMetaCache : [])) metaBy[m.account] = m;
   const accs = options.accounts || [];
   if (!accs.length) { list.innerHTML = '<div class="recur-hint">暂无账户，请在下方添加（支持自定义各国银行名）。</div>'; return; }
+  // 账户编号映射（V5 §5）：用户手动指定编号（如 1=BBVA），语音说"账户2"即可对应
+  const numMap = (options && options.account_numbers) || {};
   list.innerHTML = accs.map(a => {
     const m = metaBy[a] || { initial_balance: 0, acc_type: 'asset' };
+    // 找该账户的编号（反查）
+    const num = Object.keys(numMap).find(k => numMap[k] === a) || '';
     return `
     <div class="rate-item">
       <span class="rate-cur">${escapeHtml(a)}</span>
       <span class="account-meta-controls">
+        <input type="number" class="account-num-input" data-acc-num="${escapeHtml(a)}" value="${escapeHtml(String(num))}" min="1" max="99" placeholder="编号" title="语音编号（如 2 → 说'账户2'选择此账户）">
         <select class="currency-select" data-acc="${escapeHtml(a)}" data-k="type" title="账户类型">
           <option value="asset" ${m.acc_type === 'asset' ? 'selected' : ''}>资产</option>
           <option value="liability" ${m.acc_type === 'liability' ? 'selected' : ''}>负债</option>
         </select>
         <input type="number" class="account-meta-input" data-acc="${escapeHtml(a)}" data-k="initial" value="${Number(m.initial_balance) || 0}" step="0.01" min="0" title="期初余额（基准币种）">
-        <button class="btn-small" onclick="saveAccountMeta('${escJs(a)}')" title="保存期初余额与类型">💾</button>
+        <button class="btn-small" onclick="saveAccountMeta('${escJs(a)}')" title="保存编号/期初余额与类型">💾</button>
         <button class="account-del-btn" onclick="removeAccountItem('${escJs(a)}')" title="删除账户 ${escapeHtml(a)}">×</button>
       </span>
     </div>`;
@@ -665,20 +670,33 @@ async function removeAccountItem(v) {
   showToast('已删除账户「' + v + '」');
 }
 
-// 保存单个账户的期初余额与类型
+// 保存单个账户的期初余额与类型 + 语音编号（V5 §5）
 async function saveAccountMeta(nameEncoded) {
   const name = deJs(nameEncoded);
   // 按 data-acc 属性精确查找（遍历而非 querySelector，兼容含 [ ] " 等特殊字符的账户名）
-  let typeSel = null, initInp = null;
+  let typeSel = null, initInp = null, numInp = null;
   for (const row of document.querySelectorAll('#accountMetaList .rate-item')) {
     const sel = row.querySelector('select[data-acc]');
-    if (sel && sel.getAttribute('data-acc') === name) { typeSel = sel; initInp = row.querySelector('input[data-acc]'); break; }
+    if (sel && sel.getAttribute('data-acc') === name) { typeSel = sel; initInp = row.querySelector('input[data-acc]'); numInp = row.querySelector('input[data-acc-num]'); break; }
   }
   const initial = Number(initInp ? initInp.value : 0);
   const accType = typeSel ? typeSel.value : 'asset';
+  // 语音编号：写 options.account_numbers（如 { "2": "BANORTE" }）
+  const numRaw = numInp ? String(numInp.value).trim() : '';
   try {
+    const num = /^\d{1,2}$/.test(numRaw) ? Number(numRaw) : null;
+    const curMap = (options && options.account_numbers) ? Object.assign({}, options.account_numbers) : {};
+    // 移除旧编号（其他账户占用同一编号时清除）
+    for (const k of Object.keys(curMap)) if (curMap[k] === name) delete curMap[k];
+    if (num) curMap[String(num)] = name;
+    await api('/options/account_numbers', 'PUT', { value: curMap });
+    options = await api('/options');
     await api('/account-meta/' + encodeURIComponent(name), 'PUT', { initial_balance: Number.isFinite(initial) ? initial : 0, acc_type: accType });
-    showToast('✅ 账户「' + name + '」已保存');
+    // 同步语音引擎（账户编号立即生效）
+    if (window.VoiceEngine && typeof window.VoiceEngine.setOptions === 'function') {
+      window.VoiceEngine.setOptions({ expense_categories: options.expense_categories, departments: options.departments, accounts: options.accounts, account_numbers: options.account_numbers });
+    }
+    showToast('✅ 账户「' + name + '」已保存' + (num ? '（语音编号 ' + num + '）' : ''));
     refreshDashboards();
   } catch (e) { showToast('保存失败: ' + e.message, 'error'); }
 }

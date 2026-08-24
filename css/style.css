@@ -3261,6 +3261,17 @@ select option {
 
 /* ================== 资产账户（功能补充 P4） ================== */
 .account-meta-controls { display: inline-flex; gap: 6px; align-items: center; }
+.account-num-input {
+  width: 52px;
+  padding: 6px 4px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 12px;
+  text-align: center;
+}
+.account-num-input::placeholder { color: var(--text-3, #999); font-size: 11px; }
 .account-meta-input {
   width: 90px;
   padding: 6px 8px;

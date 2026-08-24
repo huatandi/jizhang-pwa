@@ -179,7 +179,13 @@
         return ok({ ok: true, list });
       }
       if (method === 'PUT') {
-        const list = Array.isArray((body || {}).list) ? body.list.map(String).filter(Boolean) : [];
+        // account_numbers 存对象映射（{"2":"BANORTE"}），其余键仍存数组
+        const b = body || {};
+        if (key === 'account_numbers' && b.value && typeof b.value === 'object' && !Array.isArray(b.value)) {
+          DB.prepare('INSERT OR REPLACE INTO options (key, value) VALUES (?, ?)').run(key, JSON.stringify(b.value));
+          return ok({ ok: true, value: b.value });
+        }
+        const list = Array.isArray(b.list) ? b.list.map(String).filter(Boolean) : [];
         DB.prepare('INSERT OR REPLACE INTO options (key, value) VALUES (?, ?)').run(key, JSON.stringify(list));
         return ok({ ok: true, list });
       }
