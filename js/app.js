@@ -1153,14 +1153,17 @@ function renderQueryResult(r) {
     if (queryType === 'supplier' && !dayTotal) {
       dayTotal = list.reduce((s, it) => s + (it.paid || 0), 0);
     }
+    // 双击日期/当日合计 → 编辑该日第一条记录（可在弹窗改数据与日期，便于纠正错误）
+    const first = list[0] || null;
+    const dblDay = first ? (first.kind === 'income' ? `editIncome(${first.id})` : first.kind === 'expense' ? `editExpense(${first.id})` : first.kind === 'purchase' ? `editPurchase(${first.id})` : '') : '';
     return `
     <tr>
       <td class="date-cell">
-        <span class="tag tag-blue">${fmtDate(date)}</span>
+        <span class="tag tag-blue" ondblclick="${dblDay}" title="双击编辑日期/内容">${fmtDate(date)}</span>
         <button class="action-btn add-btn" onclick="${queryType === 'supplier' ? `openPurchaseModal('${escJs(date)}')` : queryType === 'expense_category' ? `openExpenseModal('${escJs(date)}')` : queryType === 'income_category' ? `openIncomeModal('${escJs(date)}')` : `openQuickModal()`}" title="在此日期下添加记录">＋</button>
       </td>
       <td class="account-details">${list.map(chip).join('')}</td>
-      <td class="amount ${dayTotal >= 0 ? 'positive' : 'negative'}">${dayTotal ? (dayTotal >= 0 ? '¥' : '-¥') + fmtMoney(Math.abs(dayTotal)) : ''}</td>
+      <td class="amount ${dayTotal >= 0 ? 'positive' : 'negative'}" ondblclick="${dblDay}" title="双击编辑">${dayTotal ? (dayTotal >= 0 ? '¥' : '-¥') + fmtMoney(Math.abs(dayTotal)) : ''}</td>
     </tr>`;
   }).join('');
 }
