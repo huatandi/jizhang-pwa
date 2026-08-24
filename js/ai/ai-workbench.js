@@ -158,6 +158,10 @@ function fileToImage(file) {
 // 打开工作台并载入第一张图片（本地识别路径）；返回 Promise 等待图片加载完成
 function openWorkbenchForFile(file) {
   return new Promise((resolve) => {
+    // V5：记录并展示当前图片文件名，方便用户对号入座
+    wbFileName = (file && (file.name || '未知文件')) || '';
+    const fnEl = document.getElementById('wbFileName');
+    if (fnEl) { fnEl.textContent = '📄 ' + wbFileName; fnEl.title = wbFileName; }
     const url = URL.createObjectURL(file);
     const img = document.getElementById('wbImg');
     if (img) {
@@ -693,8 +697,9 @@ function aiRefreshAll() {
 }
 
 let wbDocId = null;       // 当前工作台文档 id
-let wbOcrText = '';       // 当前工作台 OCR 原文
+ let wbOcrText = '';       // 当前工作台 OCR 原文
 let wbOcrMeta = null;     // V5 §42-57：本次识别的指纹/模板/地区元数据（纠错学习用）
+let wbFileName = '';      // V5：当前工作台图片文件名（对号入座显示）
 
 // 渲染已上传单据预览网格
 async function aiRefreshDocs() {
@@ -1207,8 +1212,9 @@ function wbOcrLang() {
 }
 
 // 把常见日期格式归一化为 yyyy-MM-dd；无法解析返回 null（V5：防止垃圾值进 <input type=date> 显示成 □□□）
+// 自动去掉时间后缀（"17/06/2026 10:46:30" → "17/06/2026" → "2026-06-17"）
 function wbDateToIso(s) {
-  const t = String(s || '').trim();
+  let t = String(s || '').trim().split(/[\sT]/)[0]; // 只取日期部分
   if (!t) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t; // 已是 ISO
   const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;

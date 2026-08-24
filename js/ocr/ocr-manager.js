@@ -22,7 +22,7 @@
     maxEdge: null,         // 手动覆盖目标边长
     deskew: true,          // V2：自动倾斜校正（手机斜拍）
     glowReduce: true,      // V2：自动反光抑制（热敏纸/塑封）
-    autoRotate: false,     // V5 §16：轴向方向检测（实验性，默认关；180/270 方向需 OSD/模板记忆）
+    autoRotate: true,      // V5 §16：轴向方向检测（竖排/横排 90° 票转正；Tesseract 对 180° 也有较好容错，故默认开启）
     longReceipt: true,     // V5 §17：长票据重叠切片（保宽缩放 + 切片识别）
     worker: false,         // V5 §71：预处理 Worker（默认关，真机验证后开启）
     signal: null,          // V5 §73：AbortSignal（阶段间检查，超时/取消可中止）

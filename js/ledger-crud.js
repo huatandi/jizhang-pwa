@@ -69,7 +69,7 @@ async function renderIncome() {
 let editingIncomeId = null;
 // 把任意日期归一化为 yyyy-MM-dd（供 date 输入框）；无法解析 → 用今天。避免把 OCR 等非纯日期塞进日期框显示成 □□□
 function normalizeDateForInput(val) {
-  const t = String(val || '').trim();
+  const t = String(val || '').trim().split(/[\sT]/)[0]; // 只取日期部分（去掉时间）
   if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
   const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   let m = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
