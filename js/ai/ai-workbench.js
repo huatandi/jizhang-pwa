@@ -228,13 +228,13 @@ function wbReapplyAi() {
   }
   showToast('↺ 已恢复 AI 识别值（可再手动修改）');
 }
-// 重置锁与 AI 原值（打开新图时）
+// 重置锁与 AI 原值（打开新图时）；并清空字段值，避免上一张的残留值（尤其垃圾日期）残留显示
 function wbResetFieldLocks() {
   wbLockedFields = new Set();
   wbAiValues = {};
   for (const id of WB_FIELD_IDS) {
     const el = document.getElementById(id);
-    if (el) el.classList.remove('wb-locked');
+    if (el) { el.classList.remove('wb-locked'); el.value = ''; }
   }
 }
 
@@ -253,7 +253,6 @@ function fillWbFields(f) {
     el.value = val;
     el.classList.remove('wb-locked');
   };
-  set('wbDate', wbDateToIso(f.date)); // V5：日期必须是合法格式才填入，防止垃圾值显示为 □□□
   set('wbAmount', f.amount);
   set('wbMerchant', f.merchant);
   set('wbCompany', f.company);
@@ -262,6 +261,19 @@ function fillWbFields(f) {
   set('wbTail', f.account_tail ? '*' + f.account_tail : '');
   set('wbTax', f.tax);
   set('wbRemark', f.remark);
+  // V5：日期必须合法格式才填入；无效 → 直接清空日期框（否则残留垃圾值显示为 □□□）
+  const isoDate = wbDateToIso(f.date);
+  const dEl = document.getElementById('wbDate');
+  if (dEl) {
+    if (isoDate) {
+      wbAiValues.wbDate = isoDate;
+      if (!wbLockedFields.has('wbDate')) { dEl.value = isoDate; dEl.classList.remove('wb-locked'); }
+    } else if (!wbLockedFields.has('wbDate')) {
+      dEl.value = '';
+      wbAiValues.wbDate = null;
+      dEl.classList.remove('wb-low-conf');
+    }
+  }
   if (f.transaction_type === 'income') { const t = document.getElementById('wbType'); if (t && !wbLockedFields.has('wbType')) t.value = 'income'; }
   if (f.category) {
     const sel = document.getElementById('wbCategory');
@@ -1248,7 +1260,6 @@ async function wbLocalOcr() {
         showWbOcr(res.text);
         const f = res.fields;
         const set = (id, val) => { if (val != null && val !== '') { const el = document.getElementById(id); if (el) el.value = val; } };
-        set('wbDate', wbDateToIso(f.date)); // V5：日期必须是合法格式才填入
         set('wbAmount', f.amount);
         set('wbMerchant', f.merchant);
         set('wbCompany', f.company);
@@ -1257,6 +1268,10 @@ async function wbLocalOcr() {
         set('wbTail', f.account_tail ? '*' + f.account_tail : '');
         set('wbTax', f.tax);
         set('wbRemark', f.remark);
+        // V5：日期必须合法格式才填入；无效 → 直接清空日期框（防止残留垃圾值显示为 □□□）
+        const isoDate = wbDateToIso(f.date);
+        const dEl = document.getElementById('wbDate');
+        if (dEl) { dEl.value = isoDate || ''; }
         if (f.transaction_type === 'income') { const t = document.getElementById('wbType'); if (t) t.value = 'income'; }
         if (f.category) {
           const sel = document.getElementById('wbCategory');
