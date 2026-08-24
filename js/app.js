@@ -650,7 +650,6 @@ async function renderAccountMetaList() {
           <option value="liability" ${m.acc_type === 'liability' ? 'selected' : ''}>负债</option>
         </select>
         <input type="number" class="account-meta-input" data-acc="${escapeHtml(a)}" data-k="initial" value="${Number(m.initial_balance) || 0}" step="0.01" min="0" title="期初余额（基准币种）">
-        <button class="btn-small" onclick="saveAccountMeta('${escJs(a)}')" title="保存编号/期初余额与类型">💾</button>
         <button class="account-del-btn" onclick="removeAccountItem('${escJs(a)}')" title="删除账户 ${escapeHtml(a)}">×</button>
       </span>
     </div>`;
@@ -727,7 +726,35 @@ async function saveAccountMeta(nameEncoded) {
   } catch (e) { showToast('保存失败: ' + e.message, 'error'); }
 }
 
-// 功能补充 P5：快捷模板（常用账单一键复账）
+// 批量保存所有账户的 编号/期初余额/类型（原每账户 💾 已并入右下角"保存全部设置"）
+async function saveAllAccountMeta() {
+  const rows = document.querySelectorAll('#accountMetaList .rate-item');
+  if (!rows.length) return;
+  const numMap = Object.assign({}, (options && options.account_numbers) || {});
+  const metaP = [];
+  rows.forEach(row => {
+    const sel = row.querySelector('select[data-acc]');
+    if (!sel) return;
+    const name = sel.getAttribute('data-acc');
+    const accType = sel.value;
+    const initEl = row.querySelector('input[data-acc]');
+    const init = Number(initEl ? initEl.value : 0) || 0;
+    const numEl = row.querySelector('input[data-acc-num]');
+    const numRaw = numEl ? String(numEl.value).trim() : '';
+    const num = /^\d{1,2}$/.test(numRaw) ? Number(numRaw) : null;
+    // 清除该账户占用的旧编号，避免冲突
+    for (const k of Object.keys(numMap)) if (numMap[k] === name) delete numMap[k];
+    if (num) numMap[String(num)] = name;
+    metaP.push(api('/account-meta/' + encodeURIComponent(name), 'PUT', { initial_balance: Number.isFinite(init) ? init : 0, acc_type: accType }));
+  });
+  await api('/options/account_numbers', 'PUT', { value: numMap });
+  await Promise.all(metaP);
+  options = await api('/options');
+  if (window.VoiceEngine && typeof window.VoiceEngine.setOptions === 'function') {
+    window.VoiceEngine.setOptions({ expense_categories: options.expense_categories, departments: options.departments, accounts: options.accounts, account_numbers: options.account_numbers });
+  }
+  refreshDashboards();
+}
 const QUICK_TPL_KEY = 'quick_templates';
 function getQuickTemplates() {
   return (options && options.quick_templates && typeof options.quick_templates === 'object') ? options.quick_templates : { income: [], expense: [] };
@@ -1786,6 +1813,8 @@ async function saveSettings(close = true) {
     document.getElementById('rangeEnd').value = currentRange.end;
   }
   // 设置已改为独立页面：保存后停留页面并提示（不再关闭弹窗）
+  // 资产账户（编号/期初余额/类型）也一并保存（原每账户 💾 已移除）
+  try { await saveAllAccountMeta(); } catch (e) { console.warn('[settings] 账户元数据保存失败: ' + (e && e.message || e)); }
   showToast('设置已保存 ✅');
   return settings;
 }
