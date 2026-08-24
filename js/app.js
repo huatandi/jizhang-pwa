@@ -565,18 +565,22 @@ function escapeHtml(s) {
 // 审计 S3 修复：把字符串安全嵌入内联 onclick 的 JS 字符串字面量。
 // 将每个字符编码为 \xNN 十六进制转义——不含引号、尖括号、实体，HTML 属性解析与 JS 解析都安全。
 function escJs(s) {
+  // 用 \uHHHH(4 位十六进制)编码每个 UTF-16 单元，安全嵌入 onclick 单引号字符串，
+  // 覆盖中文/CJK(码点>0xFF)与 emoji(代理对)——旧 \xHH 只支持 2 位，中文会被截断成乱码。
   let out = '';
-  for (const ch of String(s == null ? '' : s)) {
-    out += '\\x' + ch.charCodeAt(0).toString(16).padStart(2, '0');
+  const str = String(s == null ? '' : s);
+  for (let i = 0; i < str.length; i++) {
+    out += '\\u' + str.charCodeAt(i).toString(16).padStart(4, '0');
   }
   return out;
 }
 
-// 解码 escJs 编码的字符串（onclick 接收端调用）
+// 解码 escJs 编码的字符串（onclick 接收端调用；兼容旧 \xHH 与 \uHHHH）
 function deJs(s) {
-  if (typeof s !== 'string' || !s.includes('\\x')) return s;
+  if (typeof s !== 'string' || (!s.includes('\\u') && !s.includes('\\x'))) return s;
   try {
-    return s.replace(/\\x([0-9a-fA-F]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+    return s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+            .replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
   } catch (e) { return s; }
 }
 
