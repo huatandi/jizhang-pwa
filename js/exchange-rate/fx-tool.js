@@ -152,7 +152,10 @@
     if (card && card.hidden) card.hidden = false;
     setStatus(background ? '更新中…' : '获取参考汇率…');
 
-    const quotes = getFavQuotes();
+    // V5 修复：除常用外，必须把"当前 from/to"也纳入获取列表 —— 否则互换/改成非常用币(如 MXN 当 base 变化后)
+    // 时 state.rates[to] 缺失 → 换算显示 "--"。过滤 base 自身与非法代码。
+    const extra = [state.to, state.from].filter((c) => c && c !== state.base && /^[A-Z]{3}$/.test(c));
+    const quotes = Array.from(new Set(getFavQuotes().concat(extra)));
     try {
       const rates = await Engine.getFavoriteRates(state.base, quotes, { refreshInBackground: !background });
       state.rates = {};
@@ -463,8 +466,9 @@
     if (m) m.remove();
     renderPair();
     renderFavGrid();
-    // 若 to 是新币种且未加载 → 刷新汇率
-    if (!state.rates[state.to] && state.to !== state.base) {
+    // 修改了前货币(=本币) → 汇率基准已变，必须重取（含 to/from 币），否则旧 base 的 rates 失效
+    if (side === 'from') loadRates(true).catch(() => {});
+    else if (!state.rates[state.to] && state.to !== state.base) {
       loadRates(true).catch(() => {});
     }
   }

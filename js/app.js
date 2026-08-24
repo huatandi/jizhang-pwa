@@ -1129,7 +1129,8 @@ function renderQueryResult(r) {
       ${it.kind === 'income' ? `<button class="action-btn" onclick="editIncome(${it.id})" title="编辑">✏️</button><button class="action-btn delete" onclick="deleteIncome(${it.id})" title="删除">🗑️</button>` : ''}
       ${it.kind === 'expense' ? `<button class="action-btn" onclick="editExpense(${it.id})" title="编辑">✏️</button><button class="action-btn delete" onclick="deleteExpense(${it.id})" title="删除">🗑️</button>` : ''}
       ${it.kind === 'purchase' ? `<button class="action-btn" onclick="editPurchase(${it.id})" title="编辑">✏️</button><button class="action-btn delete" onclick="deletePurchase(${it.id})" title="删除">🗑️</button>` : ''}`;
-    return `<span class="income-pair">
+    const dbl = (it.kind === 'income' ? `editIncome(${it.id})` : it.kind === 'expense' ? `editExpense(${it.id})` : it.kind === 'purchase' ? `editPurchase(${it.id})` : '');
+    return `<span class="income-pair" ondblclick="${dbl}" title="双击编辑">
       ${tag}
       ${catIconHtml(iconName, kindForIcon)}
       ${link}
