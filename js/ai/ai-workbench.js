@@ -1570,7 +1570,32 @@ async function wbSmartRecognize() {
           fields.remark = fields.remark ? fields.remark + ' · ' + p.note : p.note;
           added++;
         }
-        if (p.amount != null && fields.amount == null) { fields.amount = String(p.amount); added++; }
+        if (p.amount != null) {
+          // V4 Fusion：OCR 已有金额且与语音不同 → 用 EvidenceEngine 决策
+          // （语音置信高则覆盖并保留 original；冲突则提示确认）
+          const ocrAmt = fields.amount != null ? String(fields.amount).trim() : null;
+          const voiceAmt = String(p.amount);
+          if (ocrAmt && ocrAmt !== voiceAmt) {
+            const fused = window.EvidenceEngine ? window.EvidenceEngine.fuse('amount', [
+              window.EvidenceEngine.create({ field: 'amount', value: Number(ocrAmt), confidence: 0.85, source: 'ocr' }),
+              window.EvidenceEngine.create({ field: 'amount', value: p.amount, confidence: 0.93, source: 'voice', evidence: { transcript: rec.text } }),
+            ]) : null;
+            if (fused && fused.action === 'CONFLICT') {
+              // 冲突 → 提示用户确认，不静默覆盖
+              showToast(`⚠️ 金额冲突：OCR ${ocrAmt} vs 语音 ${voiceAmt}，请手动确认`, 'error');
+              fields.amount = voiceAmt;
+              fields.__amountConflict = true;
+            } else {
+              // 语音高分覆盖（AUTO/SOFT）→ 记录 original 供溯源
+              fields.amount = voiceAmt;
+              if (fused) { fields.__voiceOverridesOcr = { original: ocrAmt, value: voiceAmt }; }
+            }
+            added++;
+          } else if (!ocrAmt) {
+            fields.amount = voiceAmt;
+            added++;
+          }
+        }
         if (p.date && !fields.date) { fields.date = p.date; added++; }
         showToast(added ? `🎤 语音补充了 ${added} 项（${p.note || p.category || '语音指令'}）` : '🎤 未识别到可补充字段');
       } else {

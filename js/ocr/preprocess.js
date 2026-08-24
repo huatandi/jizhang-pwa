@@ -295,9 +295,183 @@
   }
 
   /**
-   * 完整预处理管线：load → resize → deskew → enhance。
-   * opts: { maxEdge, enhanceMode, rotateDeg, deskew, upscaleSmall }
-   * 返回 { canvas, width, height, scale, deskewAngle }
+   * 透视矫正（V4 §19）：斜拍/俯拍票据 → 四点 → 单应变换 → 正面矩形。
+   * points: 文档四角（顺时针 TL/TR/BR/BL，像素坐标）。缺省时尝试自动检测。
+   * 返回 { canvas, points, used, perspectiveAngle }
+   */
+  function perspectiveCorrection(canvas, points) {
+    let quad = points;
+    let used = 'given';
+    if (!quad || quad.length !== 4) {
+      const auto = detectDocumentQuad(canvas);
+      if (auto) { quad = auto; used = 'auto'; }
+      else return { canvas, points: null, used: 'none', perspectiveAngle: 0 };
+    }
+    try {
+      const out = warpQuad(canvas, quad);
+      return { canvas: out, points: quad, used, perspectiveAngle: 1 };
+    } catch (e) {
+      console.warn('[ocr] 透视矫正失败，回退原图:', e);
+      return { canvas, points: null, used: 'none', perspectiveAngle: 0 };
+    }
+  }
+
+  /**
+   * 自动检测文档四边形：降采样灰度 → 找"最大连通亮区"的边界角点。
+   * 启发式：票据多为白底，背景偏暗。取 4 个极端角（最左/最右/最上/最下）的亮区点，
+   * 再用"最大内接矩形角"近似。若检测不可靠返回 null（调用方回退 deskew）。
+   */
+  function detectDocumentQuad(canvas) {
+    try {
+      const W = 260; // 降采样（速度）
+      const scale = W / canvas.width;
+      const H = Math.max(1, Math.round(canvas.height * scale));
+      const c2 = document.createElement('canvas');
+      c2.width = W; c2.height = H;
+      const ctx = c2.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(canvas, 0, 0, W, H);
+      const imgData = ctx.getImageData(0, 0, W, H);
+      const d = imgData.data;
+      // 纸面亮度估计（中位数）
+      const lum = [];
+      for (let i = 0; i < d.length; i += 4) lum.push(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+      const sorted = [...lum].sort((a, b) => a - b);
+      const paper = sorted[Math.floor(sorted.length * 0.5)] || 200;
+      const darkThreshold = paper * 0.55; // 背景应明显暗于纸面
+      // 收集"亮区"（纸面）像素
+      const bright = [];
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const l = lum[y * W + x];
+          if (l >= paper * 0.8) bright.push([x, y]);
+        }
+      }
+      if (bright.length < W * H * 0.1) return null; // 亮区太少，不是"白纸照"场景
+      // 四个极端角：离图像四角最远的亮像素（近似文档外接角）
+      const corners = [];
+      const isFar = (p, q) => Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) > (W + H) / 6;
+      const TL = bright.reduce((best, p) => (p[0] + p[1] < best[0] + best[1] ? p : best), bright[0]);
+      const TR = bright.reduce((best, p) => ((W - p[0]) + p[1] < (W - best[0]) + best[1] ? p : best), bright[0]);
+      const BR = bright.reduce((best, p) => ((W - p[0]) + (H - p[1]) < (W - best[0]) + (H - best[1]) ? p : best), bright[0]);
+      const BL = bright.reduce((best, p) => (p[0] + (H - p[1]) < best[0] + (H - best[1]) ? p : best), bright[0]);
+      if (!isFar(TL, TR) || !isFar(TR, BR) || !isFar(BR, BL) || !isFar(BL, TL)) return null;
+      // 映射回原图坐标（缩放）
+      const inv = 1 / scale;
+      const out = [TL, TR, BR, BL].map(p => [Math.round(p[0] * inv), Math.round(p[1] * inv)]);
+      return out;
+    } catch (e) { return null; }
+  }
+
+  /**
+   * 四点单应变换（纯 Canvas 实现）：
+   * 将四边形 quad（TL/TR/BR/BL）透视投影到目标矩形（文档长宽比按四边形估算）。
+   * 使用 8 自由度单应矩阵 + 反向映射 + 双线性采样。
+   */
+  function warpQuad(canvas, quad) {
+    const srcW = canvas.width, srcH = canvas.height;
+    // 目标尺寸：取四边形对边长度平均，保持长宽比（上限 2000）
+    const side = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const wTop = side(quad[0], quad[1]), wBottom = side(quad[3], quad[2]);
+    const hLeft = side(quad[0], quad[3]), hRight = side(quad[1], quad[2]);
+    const dstW = Math.round(Math.max(1, (wTop + wBottom) / 2));
+    const dstH = Math.round(Math.max(1, (hLeft + hRight) / 2));
+    const cap = 2000;
+    const k = Math.min(1, cap / Math.max(dstW, dstH));
+    const W = Math.round(dstW * k), H = Math.round(dstH * k);
+
+    // 目标四角
+    const dst = [[0, 0], [W - 1, 0], [W - 1, H - 1], [0, H - 1]];
+    // 计算单应矩阵 H（src → dst），解 8 元线性方程组
+    const A = [], b = [];
+    for (let i = 0; i < 4; i++) {
+      const [x, y] = quad[i];
+      const [u, v] = dst[i];
+      A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+      A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+    }
+    // 高斯消元
+    const h = solveLinear(A, b);
+    if (!h) throw new Error('homography singular');
+
+    // 反向映射：dst 每个像素 → src 坐标，双线性采样
+    const out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    const octx = out.getContext('2d', { willReadFrequently: true });
+    octx.fillStyle = '#fff';
+    octx.fillRect(0, 0, W, H);
+    const sctx = canvas.getContext('2d', { willReadFrequently: true });
+    const sdata = sctx.getImageData(0, 0, srcW, srcH).data;
+    const oimg = octx.createImageData(W, H);
+    const od = oimg.data;
+    // 求 H 逆（dst → src）
+    const Hinv = invert3x3([
+      h[0], h[1], h[2],
+      h[3], h[4], h[5],
+      h[6], h[7], 1,
+    ]);
+    if (!Hinv) throw new Error('homography not invertible');
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const wInv = Hinv[6] * x + Hinv[7] * y + Hinv[8];
+        const sx = (Hinv[0] * x + Hinv[1] * y + Hinv[2]) / wInv;
+        const sy = (Hinv[3] * x + Hinv[4] * y + Hinv[5]) / wInv;
+        const xi = Math.floor(sx), yi = Math.floor(sy);
+        if (xi < 0 || yi < 0 || xi >= srcW - 1 || yi >= srcH - 1) { /* 留白 */ continue; }
+        const fx = sx - xi, fy = sy - yi;
+        const idx = (yi * srcW + xi) * 4;
+        const idxR = idx + 4, idxD = idx + srcW * 4, idxDR = idxD + 4;
+        const oi = (y * W + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          const v = sdata[idx + c] * (1 - fx) * (1 - fy) +
+            sdata[idxR + c] * fx * (1 - fy) +
+            sdata[idxD + c] * (1 - fx) * fy +
+            sdata[idxDR + c] * fx * fy;
+          od[oi + c] = Math.max(0, Math.min(255, Math.round(v)));
+        }
+        od[oi + 3] = 255;
+      }
+    }
+    octx.putImageData(oimg, 0, 0);
+    return out;
+  }
+
+  // 高斯消元解 8 元线性方程组（单应矩阵系数）
+  function solveLinear(A, b) {
+    const n = 8;
+    const m = A.map((row, i) => [...row, b[i]]);
+    for (let col = 0; col < n; col++) {
+      let pivot = col;
+      for (let r = col + 1; r < n; r++) if (Math.abs(m[r][col]) > Math.abs(m[pivot][col])) pivot = r;
+      if (Math.abs(m[pivot][col]) < 1e-10) return null;
+      [m[col], m[pivot]] = [m[pivot], m[col]];
+      const pv = m[col][col];
+      for (let c = col; c <= n; c++) m[col][c] /= pv;
+      for (let r = 0; r < n; r++) {
+        if (r === col) continue;
+        const f = m[r][col];
+        if (Math.abs(f) < 1e-12) continue;
+        for (let c = col; c <= n; c++) m[r][c] -= f * m[col][c];
+      }
+    }
+    return m.map(row => row[n]);
+  }
+
+  // 3x3 矩阵求逆（单应矩阵）
+  function invert3x3(m) {
+    const [a, b, c, d, e, f, g, h, i] = m;
+    const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+    const D = -(b * i - c * h), E = a * i - c * g, F = -(a * h - b * g);
+    const G = b * f - c * e, H = -(a * f - c * d), I = a * e - b * d;
+    const det = a * A + b * B + c * C;
+    if (Math.abs(det) < 1e-10) return null;
+    const inv = 1 / det;
+    return [A * inv, D * inv, G * inv, B * inv, E * inv, H * inv, C * inv, F * inv, I * inv];
+  }
+
+  /**
+   * 完整预处理管线：load → resize → perspective(QR/auto) → deskew → enhance。
+   * opts: { maxEdge, enhanceMode, rotateDeg, deskew, perspectivePoints, upscaleSmall }
+   * 返回 { canvas, width, height, scale, deskewAngle, perspectiveAngle }
    */
   async function pipeline(src, opts) {
     const o = opts || {};
@@ -305,6 +479,12 @@
     const { canvas, width, height, scale } = smartResize(img, o.maxEdge || PROFILES.balanced);
     let c = canvas;
     if (o.rotateDeg) c = rotate(c, o.rotateDeg);
+    // V4：透视矫正（斜拍/俯拍票据）——QR 四点优先，否则自动检测白纸边界；失败静默回退 deskew
+    let perspectiveAngle = 0;
+    if (o.perspective !== false) {
+      const pc = perspectiveCorrection(c, o.perspectivePoints);
+      if (pc.used !== 'none') { c = pc.canvas; perspectiveAngle = 1; }
+    }
     // V2：自动倾斜校正（手机斜拍的文字歪斜 → OCR 前扶正；纯投影法，零依赖）
     let deskewAngle = 0;
     if (o.deskew !== false) {
@@ -317,7 +497,7 @@
     // V2：反光抑制（高光区域局部压暗，提升热敏纸/塑料卡面识别）
     if (o.glowReduce) c = reduceGlare(c);
     if (o.enhanceMode && o.enhanceMode !== 'none') c = enhance(c, o.enhanceMode);
-    return { canvas: c, width: c.width, height: c.height, scale, deskewAngle };
+    return { canvas: c, width: c.width, height: c.height, scale, deskewAngle, perspectiveAngle };
   }
 
   // canvas → ImageData（送 OCR 引擎）
@@ -332,6 +512,7 @@
 
   global.OcrKit = global.OcrKit || {};
   Object.assign(global.OcrKit, {
-    preprocess: { PROFILES, loadImage, smartResize, rotate, rotateCanvas, estimateDeskew, reduceGlare, toGrayscale, enhance, binarize, pipeline, toImageData, toDataUrl },
+    preprocess: { PROFILES, loadImage, smartResize, rotate, rotateCanvas, estimateDeskew, reduceGlare, toGrayscale, enhance, binarize, pipeline, toImageData, toDataUrl,
+      perspectiveCorrection, detectDocumentQuad, warpQuad },
   });
 })(typeof window !== 'undefined' ? window : globalThis);

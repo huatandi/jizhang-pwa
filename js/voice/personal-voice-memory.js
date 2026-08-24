@@ -130,8 +130,32 @@
     const base = Math.min(0.93, 0.60 + 0.10 * Math.log2(count + 1));
     const srcBonus = SOURCE_BONUS[entry.source] || 0;
     const recency = (Date.now() - (entry.lastSeen || 0)) < 30 * 86400000 ? 0.03 : 0;
-    return Math.min(0.99, Math.round((base + srcBonus + recency) * 100) / 100);
+    // 被拒绝降权（V4：用户明确拒绝过的记忆置信下调）
+    const rejected = (entry.rejected_count || 0) > 0 ? 0.15 : 0;
+    return Math.min(0.99, Math.round((base + srcBonus + recency - rejected) * 100) / 100);
   }
+
+  // ---- 记忆强度（V4 §16）：candidate → weak → medium → strong ----
+  function memoryStrength(entry) {
+    if (!entry) return 'candidate';
+    const src = entry.source || 'AUTO_INFERRED';
+    if (src === 'USER_MANUAL') return 'strong';
+    const count = entry.count || 1;
+    const conf = calcConfidence(entry);
+    if (src === 'USER_CONFIRM' || src === 'USER_CORRECTION') {
+      // count 主导：5 次稳定 → strong；3 次 → medium；否则 weak
+      if (count >= 5) return 'strong';
+      if (count >= 3) return 'medium';
+      return 'weak';
+    }
+    // 自动推断/系统：更保守
+    if (count >= 8 && conf >= 0.85) return 'medium';
+    if (count >= 3) return 'weak';
+    return 'candidate';
+  }
+
+  // 记忆权重（V4 §27）：用于候选排序
+  const STRENGTH_WEIGHT = { strong: 1.0, medium: 0.8, weak: 0.65, candidate: 0.4 };
 
   // ---- 学习：核心写入入口（静默；source 由调用方标注）----
   function learn(phrase, target, opts) {
@@ -176,7 +200,7 @@
     const key = norm(text);
     return loadAll().then((list) => {
       if (!list || !list.length) return null;
-      let best = null;
+      let best = null, bestSort = -1;
       for (const e of list) {
         // 类型/字段/上下文过滤
         if (o.type && e.type && e.type !== o.type) continue;
@@ -190,10 +214,15 @@
         else if (phraseKey && key.includes(phraseKey)) { score = 0.80; how = 'contains'; }
         else if (phraseKey && phraseKey.includes(key)) { score = 0.70; how = 'substring'; }
         if (!score) continue;
+        const strength = memoryStrength(e);
+        // 置信度 = 记忆置信 × 匹配方式（强度不压低命中值，只用于候选竞争排序）
         const conf = Math.min(1, Math.round((e.confidence || 0.5) * score * 100) / 100);
-        if (!best || conf > best.confidence) {
+        // 竞争排序：strong 记忆在同类匹配下优先
+        const sortVal = conf * (STRENGTH_WEIGHT[strength] || 0.5);
+        if (!best || sortVal > bestSort) {
+          bestSort = sortVal;
           best = { phrase: e.phrase, target: e.target, type: e.type, field: e.field,
-            confidence: conf, source: e.source, matchedBy: how, count: e.count };
+            confidence: conf, source: e.source, matchedBy: how, count: e.count, strength };
         }
       }
       return best;
@@ -206,7 +235,7 @@
     if (!text || !memCache || !memCache.length) return null;
     const o = opts || {};
     const key = norm(text);
-    let best = null;
+    let best = null, bestSort = -1;
     for (const e of memCache) {
       if (o.type && e.type && e.type !== o.type) continue;
       if (o.field && e.field && e.field !== o.field) continue;
@@ -218,13 +247,51 @@
       else if (phraseKey && key.includes(phraseKey)) { score = 0.80; how = 'contains'; }
       else if (phraseKey && phraseKey.includes(key)) { score = 0.70; how = 'substring'; }
       if (!score) continue;
+      const strength = memoryStrength(e);
       const conf = Math.min(1, Math.round((e.confidence || 0.5) * score * 100) / 100);
-      if (!best || conf > best.confidence) {
+      const sortVal = conf * (STRENGTH_WEIGHT[strength] || 0.5);
+      if (!best || sortVal > bestSort) {
+        bestSort = sortVal;
         best = { phrase: e.phrase, target: e.target, type: e.type, field: e.field,
-          confidence: conf, source: e.source, matchedBy: how, count: e.count };
+          confidence: conf, source: e.source, matchedBy: how, count: e.count, strength };
       }
     }
     return best;
+  }
+
+  /** 用户明确拒绝（V4 §16/§44）："不是X" → 该记忆降权；连续拒绝则降级强度 */
+  function reject(phrase, target, opts) {
+    const cleanPhrase = String(phrase || '').trim();
+    const cleanTarget = String(target || '').trim();
+    if (!cleanPhrase || !cleanTarget) return Promise.resolve(null);
+    const o = opts || {};
+    return loadAll().then((list) => {
+      // 找到与该 phrase/target 相关的记忆条目（同一 phrase，任意 target）
+      const related = list.filter(e => norm(e.phrase) === norm(cleanPhrase) &&
+        (!o.field || !e.field || e.field === o.field));
+      let updated = null;
+      for (const e of related) {
+        if (norm(e.target) === norm(cleanTarget)) {
+          e.rejected_count = (e.rejected_count || 0) + 1;
+          e.lastSeen = Date.now();
+          // 连续拒绝 2 次 → 直接移除（用户明确不认可这条映射）
+          if (e.rejected_count >= 2) {
+            list.splice(list.indexOf(e), 1);
+            updated = { removed: true, phrase: e.phrase, target: e.target };
+            continue;
+          }
+          e.confidence = calcConfidence(e); // 含拒绝降权
+          updated = { removed: false, phrase: e.phrase, target: e.target, confidence: e.confidence };
+        } else {
+          // 用户拒绝 target A，确认 target B → 提升 B（纠错）
+          e.count = (e.count || 1) + 1;
+          e.source = 'USER_CONFIRM';
+          e.confidence = calcConfidence(e);
+          if (!updated) updated = { removed: false, phrase: e.phrase, target: e.target, confidence: e.confidence };
+        }
+      }
+      return persistAll(list).then(() => updated);
+    });
   }
 
   // ---- 管理 ----
@@ -288,7 +355,7 @@
   function warmup() { return loadAll().then(() => true).catch(() => false); }
 
   global.PersonalVoiceMemory = {
-    ENTITY_TYPES, learn, resolve, resolveSync, list, remove, clearAll, exportJSON, importJSON, warmup,
-    norm, MAX_ENTRIES,
+    ENTITY_TYPES, learn, reject, resolve, resolveSync, list, remove, clearAll, exportJSON, importJSON, warmup,
+    memoryStrength, norm, MAX_ENTRIES,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

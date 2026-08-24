@@ -76,7 +76,7 @@
     /**
      * 统一识别入口。
      * @param {ImageSource} src  HTMLImageElement | HTMLCanvasElement | dataURL
-     * @param {Object} opts  { engine, profile, enhanceMode, documentType }
+     * @param {Object} opts  { engine, profile, enhanceMode, documentType, perspectivePoints }
      * @returns {Promise<OcrResult>}
      */
     async recognize(src, opts) {
@@ -85,10 +85,25 @@
       const maxEdge = o.maxEdge || (global.OcrKit.preprocess.PROFILES[profile] || 1800);
       const enhanceMode = o.enhanceMode === 'auto' ? detectEnhanceMode(profile, o.documentType) : o.enhanceMode;
 
-      // 1) 预处理（主线程，避免 4000×3000 直接进引擎）
+      // V4：先尝试 QR 检测（拿四点供透视矫正；CFDI/票据常见）。失败不影响主流程。
+      let perspectivePoints = o.perspectivePoints || null;
+      if (!perspectivePoints && o.qrFirst !== false) {
+        try {
+          const qr = global.RecognitionCore && global.RecognitionCore.qrEngine;
+          if (qr && typeof qr.detect === 'function') {
+            const codes = await qr.detect(src);
+            if (codes && codes.length && codes[0].points && codes[0].points.length === 4) {
+              perspectivePoints = codes[0].points.map(p => [p.x, p.y]);
+            }
+          }
+        } catch (e) { /* QR 失败不影响 */ }
+      }
+
+      // 1) 预处理（主线程，避免 4000×3000 直接进引擎；含透视矫正）
       const prep = await global.OcrKit.preprocess.pipeline(src, {
         maxEdge, enhanceMode, rotateDeg: o.rotateDeg,
         deskew: o.deskew, glowReduce: o.glowReduce,
+        perspectivePoints,
       });
       const input = prep.canvas;
 
@@ -119,6 +134,8 @@
       result.profile = profile;
       result.maxEdge = maxEdge;
       result.deskewAngle = prep.deskewAngle || 0;
+      result.perspectiveAngle = prep.perspectiveAngle || 0;
+      result.perspectiveUsed = !!perspectivePoints;
       // V2：统一输出补全 —— 文档类型（通用检测，非墨西哥专用）
       if (!result.documentType) {
         result.documentType = detectDocType(result);
