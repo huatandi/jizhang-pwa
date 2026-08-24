@@ -18,6 +18,7 @@ let reminderVoiceLang = defaultReminderLang();
 let reminderVoiceSessionActive = false;
 let reminderVoiceBuffer = '';
 let reminderVoiceTimer = null;
+let reminderAutoSaveTimer = null; // 终结词后 1s 窗口内的自动保存定时器（可被"保存"提前取消）
 let currentNotifyReminder = null;
 // V4.5 字段状态：已确认字段（用户改口/手动改过）不被低置信新段覆盖
 let reminderFieldConfirmed = {};
@@ -682,17 +683,23 @@ function reminderVoiceHandleResult(r) {
     //   说"保存" → 停止录音后自动保存；说"完毕/结束/完成/好了"等 → 仅终止录音（事情已说完）
     const buf = reminderVoiceBuffer;
     const SAVE_RE = /(?:保\s*存|保存|存好|确定|确认|记好|存下|submit|save|guardar|guarda|guárdalo|confirma)/i;
-    const DONE_RE = /(?:完\s*毕|完\s*成|结\s*束|完毕|完成|结束|好了|搞定|可以了|就这样|完事|说完了|listo|finish|done|terminado|terminar)/i;
-    // 用最后一段 final 与累积 buffer 都检测：单字终结词（"好了"/"行"）可能被识别成单独一段
+    // 终结词：表示"说完了"。说完后 ~1s 内若说"保存"→立即保存；否则自动保存（不再要求手动点保存）。
+    const DONE_RE = /(?:完\s*毕|完\s*成|结\s*束|完毕|完成|结束|好了|搞定|可以了|就这样|完事|说完了|关闭|关掉|close|cerrar|listo|finish|done|terminado|terminar)/i;
+    // 用最后一段 final 与累积 buffer 都检测：单字终结词（"好了"/"行"/"关闭"）可能被识别成单独一段
     const hitSave = SAVE_RE.test(buf) || SAVE_RE.test(r.final);
     const hitDone = DONE_RE.test(buf) || DONE_RE.test(r.final);
     if (hitSave) {
       stopReminderVoice();
+      if (reminderAutoSaveTimer) { clearTimeout(reminderAutoSaveTimer); reminderAutoSaveTimer = null; }
       // 延迟让最后一段 final 先写入表单再校验保存
       setTimeout(() => autoSaveReminderByVoice(), 600);
     } else if (hitDone) {
       stopReminderVoice();
-      showToast('✔ 已停止录音，检查后点「保存提醒」即可');
+      if (reminderAutoSaveTimer) { clearTimeout(reminderAutoSaveTimer); reminderAutoSaveTimer = null; }
+      showToast('✔ 已识别完毕，即将自动保存…');
+      speak(reminderVoiceLang === 'es-MX' ? 'Listo, guardando…' : reminderVoiceLang === 'en-US' ? 'Done, saving…' : '已识别完毕，即将保存');
+      // ~1s 窗口：若此时说"保存"会走 hitSave 提前保存并取消此定时器；否则自动保存
+      reminderAutoSaveTimer = setTimeout(() => { reminderAutoSaveTimer = null; autoSaveReminderByVoice(); }, 1000);
     }
   } else if (r.interim) {
     applyReminderVoiceText(reminderVoiceBuffer + ' ' + r.interim);
@@ -742,10 +749,53 @@ function tryClearReminderField(text) {
   setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
   return true;
 }
+// 语音选择"提醒方式"(语音播报/响铃/震动)：
+//   "只要震动" → 只开震动、关其他；"关闭语音播报" → 关语音播报；"开启响铃" / "响铃" → 开响铃
+function tryRemindModeByVoice(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const SPEAK = /(?:语音播报|语音朗读|语音|播报|朗读|voz|hablar|speak)/i;
+  const RING = /(?:响铃|铃声|闹铃|ring|timbre|sonar)/i;
+  const VIBRATE = /(?:震动|振动|vibrar|vibrate|vibra)/i;
+  const has = { speak: SPEAK.test(t), ring: RING.test(t), vibrate: VIBRATE.test(t) };
+  if (!(has.speak || has.ring || has.vibrate)) return false;
+  const ONLY = /(?:只要|仅|只|只开|solo|sólo|only|solamente)/i;
+  const OFF = /(?:不要|不用|无需|关掉|关闭|关|去掉|取消|no\b|off|quitar|desactivar|apagar)/i;
+  const only = ONLY.test(t);
+  const off = OFF.test(t);
+  const set = (id, on) => { const el = document.getElementById(id); if (el) el.checked = on; };
+  const changed = (id, on) => { const el = document.getElementById(id); return !!el && el.checked !== on; };
+  let any = false;
+  if (only) {
+    // "只要 X" → 只开 X，其余关
+    any |= changed('rModeSpeak', has.speak); set('rModeSpeak', has.speak);
+    any |= changed('rModeRing', has.ring);    set('rModeRing', has.ring);
+    any |= changed('rModeVibrate', has.vibrate); set('rModeVibrate', has.vibrate);
+  } else if (off) {
+    if (has.speak)   { any |= changed('rModeSpeak', false);   set('rModeSpeak', false); }
+    if (has.ring)    { any |= changed('rModeRing', false);    set('rModeRing', false); }
+    if (has.vibrate) { any |= changed('rModeVibrate', false); set('rModeVibrate', false); }
+  } else {
+    if (has.speak)   { any |= changed('rModeSpeak', true);    set('rModeSpeak', true); }
+    if (has.ring)    { any |= changed('rModeRing', true);     set('rModeRing', true); }
+    if (has.vibrate) { any |= changed('rModeVibrate', true);  set('rModeVibrate', true); }
+  }
+  const modeDesc = (only ? '仅 ' : '') + [has.speak && '语音播报', has.ring && '响铃', has.vibrate && '震动'].filter(Boolean).join('、');
+  renderReminderVoicePreview();
+  if (any) {
+    showToast('✔ 提醒方式已设为：' + (off ? '已关闭' : modeDesc));
+    speak(off ? '已关闭提醒方式' : ('提醒方式已设为：' + modeDesc));
+  }
+  setReminderVoiceBtnState('done');
+  setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
+  return true; // 命中方式关键词 → 当作命令消费，不落入内容解析
+}
 // 应用语音解析结果到提醒表单
 function applyReminderVoiceText(buffer) {
   // 0.5) 语音"清空某字段"命令：最高优先级，命中即清空该字段并重开聆听
   if (tryClearReminderField(String(buffer || ''))) { reminderVoiceBuffer = ''; return; }
+  // 0.6) 语音选择"提醒方式"(语音播报/响铃/震动)
+  if (tryRemindModeByVoice(String(buffer || ''))) { reminderVoiceBuffer = ''; return; }
   // 0) 说错改口（V3 Correction Engine）："不是明天是后天" / "不是办公室是银行" / "撤销"
   if (window.CorrectionEngine) {
     const corr = CorrectionEngine.parse(buffer);
@@ -1112,7 +1162,7 @@ function startReminderChecker() {
   }
 
   Object.assign(global, {
-    ReminderParser, normalizeRemindAt, tryClearReminderField,
+    ReminderParser, normalizeRemindAt, tryClearReminderField, tryRemindModeByVoice,
     renderReminders, syncRepeatDayUI, openReminderModal, editReminder, saveReminder, deleteReminder,
     markReminderDone, snoozeReminder, dismissReminderNotify, switchReminderVoiceLang, syncReminderVoiceLangUI, getReminderVoiceLangMeta,
     toggleReminderVoice, startReminderVoice, stopReminderVoice, setReminderVoiceBtnState, reminderVoiceHandleResult,

@@ -18,7 +18,7 @@
   const DEFAULT_SETTINGS = {
     vadStartThreshold: 0.012,   // RMS 起音
     vadStopThreshold: 0.008,    // RMS 停音（略低于起音，防抖动）
-    silenceDurationMs: 700,     // 一句话结束静音
+    silenceDurationMs: 1200,     // 一句话结束静音（V5 调大：录音不匆忙，留足停顿时间再判定说完）
     minSpeechMs: 300,           // 最短语音
     maxUtteranceMs: 12000,      // 最长单句
     frameMs: 40,                // 帧长（16000Hz → 640 样本/帧）
