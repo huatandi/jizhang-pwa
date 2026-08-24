@@ -420,7 +420,7 @@ function editReminder(id) {
   document.getElementById('rContent').value = r.content || '';
   document.getElementById('rLocation').value = r.location || '';
   document.getElementById('rNote').value = r.note || '';
-  document.getElementById('rAt').value = r.remind_at ? r.remind_at.slice(0, 16) : '';
+  document.getElementById('rAt').value = r.remind_at ? normalizeRemindAt(r.remind_at) : '';
   setRemindModeUI(r.remind_method || 'voice');
   document.getElementById('rAdvance').value = String(r.advance_minutes || 0);
   document.getElementById('rRepeat').value = r.repeat || 'none';
@@ -802,8 +802,35 @@ function reminderFieldLabel(field) {
   const map = { time: '时间', date: '日期', location: '地点', content: '事项', advance: '提前', note: '备注', repeat: '重复' };
   return map[field] || field;
 }
+// 提醒时间框是 <input type=datetime-local>，只接受 "YYYY-MM-DDTHH:MM"。
+// 数据库存的是 "YYYY-MM-DD HH:MM"(空格)；回填时若原样写入会因非 ISO 而显示成 □□□/乱码。
+// 统一在此归一化；无法解析 → ''(清空，提示用户重选)。
+function normalizeRemindAt(val) {
+  const v = String(val || '').trim();
+  if (!v) return '';
+  const p2 = (n) => String(n).padStart(2, '0');
+  const iso = (y, m, d) => `${y}-${p2(m)}-${p2(d)}`;
+  const dateStr = (v.split(/[T ]/)[0] || '').trim();
+  let y = 0, m = 0, d = 0;
+  let mm = dateStr.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  if (mm) { y = +mm[1]; m = +mm[2]; d = +mm[3]; }
+  else {
+    mm = dateStr.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if (mm) { d = +mm[1]; m = +mm[2]; y = +mm[3]; if (m > 12 && d <= 12) { const t = d; d = m; m = t; } if (y < 100) y += 2000; }
+  }
+  if (!(y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return '';
+  let hh = 0, mi = 0, hasT = false;
+  let tm = v.match(/(\d{1,2}):(\d{2})/);
+  if (tm && +tm[1] <= 23 && +tm[2] <= 59) { hh = +tm[1]; mi = +tm[2]; hasT = true; }
+  if (!hasT) {
+    tm = v.match(/(\d{1,2})[点时:：](\d{1,2})/);
+    if (tm && +tm[1] <= 23 && +tm[2] <= 59) { hh = +tm[1]; mi = +tm[2]; hasT = true; }
+  }
+  return `${iso(y, m, d)}T${p2(hasT ? hh : 0)}:${p2(hasT ? mi : 0)}`;
+}
 function readReminderField(id) { const el = document.getElementById(id); return el ? el.value : ''; }
 function writeReminderField(id, value, pushHistory) {
+  if (id === 'rAt') value = normalizeRemindAt(value); // 保证 datetime-local 写入合法 ISO(T) 值
   if (pushHistory !== false) {
     const fieldName = id === 'rAt' ? 'time' : id === 'rLocation' ? 'location' : id === 'rContent' ? 'content' : id === 'rAdvance' ? 'advance' : id === 'rNote' ? 'note' : id;
     reminderFieldHistory.push({ field: fieldName, oldValue: readReminderField(id) });
@@ -1052,7 +1079,7 @@ function startReminderChecker() {
   }
 
   Object.assign(global, {
-    ReminderParser,
+    ReminderParser, normalizeRemindAt,
     renderReminders, syncRepeatDayUI, openReminderModal, editReminder, saveReminder, deleteReminder,
     markReminderDone, snoozeReminder, dismissReminderNotify, switchReminderVoiceLang, syncReminderVoiceLangUI, getReminderVoiceLangMeta,
     toggleReminderVoice, startReminderVoice, stopReminderVoice, setReminderVoiceBtnState, reminderVoiceHandleResult,
