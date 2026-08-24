@@ -136,6 +136,8 @@
       result.deskewAngle = prep.deskewAngle || 0;
       result.perspectiveAngle = prep.perspectiveAngle || 0;
       result.perspectiveUsed = !!perspectivePoints;
+      // 附上预处理后画布（Region Retry 裁剪用；业务层需要时取用）
+      result._canvas = prep.canvas;
       // V2：统一输出补全 —— 文档类型（通用检测，非墨西哥专用）
       if (!result.documentType) {
         result.documentType = detectDocType(result);

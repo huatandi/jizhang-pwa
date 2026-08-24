@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v93';
+const CACHE_NAME = 'jizhang-pwa-v94';
 const APP_SHELL = [
   './',
   './index.html',
@@ -22,6 +22,7 @@ const APP_SHELL = [
   './js/ocr/tesseract-engine.js',
   './js/ocr/paddle-engine.js',
   './js/ocr/ocr-manager.js',
+  './js/ocr/region-retry.js',
   './js/mexico/money.js',
   './js/mexico/field-normalizer.js',
   './js/mexico/document-detector.js',

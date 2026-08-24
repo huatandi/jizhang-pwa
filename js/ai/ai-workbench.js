@@ -1510,6 +1510,27 @@ async function wbLocalOcrV2(img) {
   };
   // 用 ValidateKit 规范化金额
   if (V.parseMoney && fields.amount != null) fields.amount = String(V.parseMoney(fields.amount));
+
+  // V4.5 Region Retry：金额低置信（max-guess 0.45 / importe 0.80）→ 定位 TOTAL 区域裁剪重识别
+  if ((fields.amount == null || (fields.amountConfidence || 0) < 0.65) &&
+      window.OcrKit && window.OcrKit.regionRetry && result._canvas && result.lines && result.lines.length) {
+    try {
+      const mgr = await getOcrManager();
+      const rr = await window.OcrKit.regionRetry.retry(result, result._canvas, mgr, 'amount');
+      if (rr && rr.value != null && rr.value !== '') {
+        // 仅当区域识别出更合理的值（数字）时采用
+        const num = Number(String(rr.value).replace(/[^\d.-]/g, ''));
+        if (Number.isFinite(num) && num > 0) {
+          const prev = fields.amount != null ? String(fields.amount) : null;
+          fields.amount = String(num);
+          fields.amountConfidence = Math.max(fields.amountConfidence || 0, 0.85);
+          fields.amountSource = 'region-retry';
+          // 溯源：保留 OCR 原值（供 EvidenceEngine）
+          if (prev && prev !== fields.amount) fields.__amountOriginal = prev;
+        }
+      }
+    } catch (e) { console.warn('[ocr] 区域重试失败（不影响主结果）:', e); }
+  }
   return {
     text: fullText,
     fields,
