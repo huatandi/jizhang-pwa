@@ -1464,31 +1464,35 @@ function extractCommonFields(fullText, words) {
   // ⚠️ 墨西哥小票常有 EFECTIVO(现金支付)/CAMBIO(找零) 行，其金额必须排除，总额只能取 TOTAL
   // 置信度分层（§二十六）：TOTAL 标签 0.90 → IMPORTE 0.80 → 最大金额猜测 0.45
   const CASH_LABEL_RE = /\b(?:EFECTIVO|CAMBIO|VUELTO|CASH|CHANGE|ENTREGADO|RECIBIDO|PAGADO)\b/i;
+  // 金额：容忍西班牙千分位的可选空格（"16, 000.00" → 16000；"1,505.30" → 1505.30）
+  const MONEY_PAT = '\\d{1,3}(?:,\\s?\\d{3})*\\.\\d{2}|\\d+\\.\\d{2}';
+  const MONEY_NUM = new RegExp('(' + MONEY_PAT + ')');
+  const numMoney = (s) => Number(String(s).replace(/[,\s]/g, ''));
   f.amountSource = null;
   f.amountConfidence = 0;
-  m = t.match(/(?:\bTOTAL\b(?!\s*SUB)|total a pagar|gran total|合计|总计|金额|AMOUNT)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
+  m = t.match(new RegExp('(?:\\bTOTAL\\b(?!\\s*SUB)|total a pagar|gran total|合计|总计|金额|AMOUNT)\\s*[=:]?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
   if (m) { f.amountSource = 'label'; f.amountConfidence = 0.90; }
   if (!m) {
-    m = t.match(/(?:IMPORTE|Monto|MONTO)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
+    m = t.match(new RegExp('(?:IMPORTE|Monto|MONTO)\\s*[=:]?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
     if (m) { f.amountSource = 'importe'; f.amountConfidence = 0.80; }
   }
   if (!m) {
     // 兜底：剔除现金/找零标签及其金额后，取剩余最大金额（排除 EFECTIVO/CAMBIO 行）
     let cleaned = t.replace(new RegExp(CASH_LABEL_RE.source + '\\s*[=:]?\\s*[$¥€£￥₩]?\\s*[\\d][\\d,]*\\.?\\d*', 'gi'), ' ');
-    let all = cleaned.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
+    let all = cleaned.match(/\d{1,3}(?:,\s?\d{3})*\.\d{2}|\d+\.\d{2}/g);
     if (!all || !all.length) {
       // 剔除失败（标签与金额分行）→ 移除标签词本身再取最大
       cleaned = t.replace(CASH_LABEL_RE, ' ');
-      all = cleaned.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
+      all = cleaned.match(/\d{1,3}(?:,\s?\d{3})*\.\d{2}|\d+\.\d{2}/g);
     }
-    if (all && all.length) { const best = Math.max(...all.map(x => Number(x.replace(/,/g, '')))); f.amount = String(best); f.amountSource = 'max'; f.amountConfidence = 0.45; }
+    if (all && all.length) { const best = Math.max(...all.map(numMoney)); f.amount = String(best); f.amountSource = 'max'; f.amountConfidence = 0.45; }
   } else {
-    f.amount = String(Number(m[1].replace(/,/g, '')));
+    f.amount = String(numMoney(m[1]));
   }
   // TOTAL 已匹配但金额恰为现金/找零（如 OCR 把 EFECTIVO 值排在 TOTAL 后）→ 显式重取 TOTAL 行
   if (f.amount != null && CASH_LABEL_RE.test(t)) {
-    const tot = t.match(/(?:\bTOTAL\b(?!\s*SUB)|total a pagar|gran total)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
-    if (tot && tot[1]) f.amount = String(Number(tot[1].replace(/,/g, '')));
+    const tot = t.match(new RegExp('(?:\\bTOTAL\\b(?!\\s*SUB)|total a pagar|gran total)\\s*[=:]?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
+    if (tot && tot[1]) f.amount = String(numMoney(tot[1]));
   }
   // 商户：已知标签（排除银行专属标签；支持中文；捕获组不含 / : 以免吞掉日期；在日期/金额标签前截断）
   const merchantTags = ['NOMBRE', 'RAZON SOCIAL', 'PROVEEDOR', 'MERCHANT', '商户', '公司', '销售方', '收款方', '付款方', '店名'];
@@ -1643,6 +1647,44 @@ async function wbLocalOcrV2(img) {
       if (fields.account_tail == null && sb.accountTail) fields.account_tail = sb.accountTail;
     } catch (e) { /* 语义补全失败不影响 */ }
   }
+
+  // V5 §57：实体别名自动套用 —— 用户纠正过的商户/对方名称（"RECIBO"→"TANIA PAMELA..."）下次识别自动生效
+  try {
+    const kb = window.RecognitionCore && window.RecognitionCore.knowledgeBase;
+    if (kb && kb.resolveAlias) {
+      const resolve = (name) => {
+        try { const r = kb.resolveAlias(name); return (r && r.canonical) ? r.canonical : name; }
+        catch (e) { return name; }
+      };
+      if (fields.merchant) fields.merchant = resolve(fields.merchant);
+      if (fields.company) fields.company = resolve(fields.company);
+      if (fields.bank_payer) fields.bank_payer = resolve(fields.bank_payer);
+      if (fields.bank_receiver) fields.bank_receiver = resolve(fields.bank_receiver);
+    }
+  } catch (e) { /* 别名解析失败不影响 */ }
+
+  // V5 §52-56：学习规则套用 —— 同一上下文下被用户反复纠正的"金额"（如固定房租），OCR 又给出同样错误值→ 套用已学正确值
+  try {
+    const CL = window.OcrKit && window.OcrKit.correctionLearner;
+    if (CL && typeof CL.applyLearned === 'function') {
+      const ctx = wbOcrMeta ? (wbOcrMeta.templateId || wbOcrMeta.merchantId || wbOcrMeta.docType || 'global') : 'global';
+      const learned = await CL.applyLearned(fields, ctx);
+      for (const [k, ch] of Object.entries(learned || {})) {
+        if (k === 'amount' && ch.to != null) {
+          if (fields.amount == null || String(fields.amount) === '0' || String(fields.amount) === '' || String(fields.amount) === ch.from) {
+            fields.__amountOriginal = ch.from != null ? ch.from : (fields.amount != null ? fields.amount : null);
+            fields.amount = String(ch.to);
+            fields.amountConfidence = Math.max(fields.amountConfidence || 0, 0.8);
+            fields.amountSource = 'learned';
+            fields.__amountReason = '学习记忆：此前你纠正过该票金额 ' + ch.from + ' → ' + ch.to;
+          }
+        } else if ((k === 'merchant' || k === 'company') && ch.to != null) {
+          const f = k === 'merchant' ? 'merchant' : 'company';
+          if (!fields[f]) fields[f] = ch.to;
+        }
+      }
+    }
+  } catch (e) { /* 学习套用失败不影响 */ }
 
   // V5 §27-33 金额智能（约束引擎 + 字符混淆候选）：现金/财务闭环保守裁决。
   // 仅在"数学闭环成立 + 变体来自字符混淆"时采用变体（如 $→5：TOTAL 560.00 / EFECTIVO 70 / CAMBIO 10 → 60.00）；

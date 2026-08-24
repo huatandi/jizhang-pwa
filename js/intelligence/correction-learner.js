@@ -194,9 +194,36 @@
   async function listRules() { return global.OcrMemoryStore.all(RULES); }
   async function clearAll() { await global.OcrMemoryStore.clear(EVENTS); await global.OcrMemoryStore.clear(RULES); }
 
+  /**
+   * 套用已学规则（V5 §52-56）：同一上下文下用户反复纠正的字段值 → OCR 又给出同样的错误值 → 建议替换。
+   * 仅对 status='active' 且 successCount≥minSupport 的规则生效（防一次纠正即污染 §54）。
+   * @param {Object} fields 当前字段（amount/merchant/...）
+   * @param {string} context templateId|merchantId|docType|region|'global'
+   * @returns {Promise<Object>} { amount:{from,to,rule}, merchant:{...} }
+   */
+  async function applyLearned(fields, context) {
+    const out = {};
+    if (!fields) return out;
+    const rules = await global.OcrMemoryStore.all(RULES);
+    const map = { amount: 'amount', merchant: 'merchant' };
+    for (const [field, fkey] of Object.entries(map)) {
+      const cur = fields[fkey];
+      if (cur == null || String(cur) === '') continue;
+      const normCur = _norm(String(cur));
+      const r = rules.find(x =>
+        x.field === field && x.status === 'active' && x.right != null &&
+        (x.successCount || 0) >= CONFIG.minSupport &&
+        (x.context === context || x.scope === 'instance') &&
+        normCur === _norm(String(x.wrong))
+      );
+      if (r) out[field] = { from: cur, to: r.right, rule: r };
+    }
+    return out;
+  }
+
   global.OcrKit = global.OcrKit || {};
   global.OcrKit.correctionLearner = {
-    record, negative, confidence, isSuppressed, recordWeakPositive,
+    record, negative, confidence, isSuppressed, recordWeakPositive, applyLearned,
     listEvents, listRules, clearAll, SCOPES, CONFIG,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
