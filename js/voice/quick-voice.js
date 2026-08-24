@@ -1209,6 +1209,19 @@ async function saveQuick() {
   } else {
     await api('/income', 'POST', { date, project: cat, pay_method: '', account, amount, handler: '', remark, discount: 0, card_pending_account: '' });
   }
+  // PvM 静默学习：语音识别的账户/商户 ≠ 最终保存值 → 用户纠正（"三坦德"→"Santander"）
+  try {
+    if (window.PersonalVoiceMemory && voiceBuffer) {
+      const pvm = window.PersonalVoiceMemory;
+      // 账户纠正：buffer 中含账户词但最终账户不同
+      if (account && !voiceBuffer.toLowerCase().includes(String(account).toLowerCase())) {
+        const accMatch = voiceBuffer.match(/(?:从|用|账户是|账号是|付|扣|转|存|取|刷)\s*([^\s，。,.!！?？]{1,12})/);
+        if (accMatch && accMatch[1]) {
+          pvm.learn(accMatch[1], account, { type: 'ACCOUNT', field: 'account', context: 'quick', source: 'USER_CORRECTION' });
+        }
+      }
+    }
+  } catch (e) { /* 静默失败 */ }
   // 保存后停止语音会话
   if (voiceSessionActive) stopVoiceSession();
   gotoPage('dashboard');

@@ -743,6 +743,21 @@
             <div class="settings-note" style="margin-top:6px">💡 Web 无法调用系统「闹钟」音量通道，铃声输出跟随手机媒体音量。闹铃响时同时叠加语音播报与震动，尽可能保证听到。上传的音乐片段仅保存在本机浏览器（IndexedDB），不会上传服务器。</div>
           </div>
 
+          <!-- 个人语音学习（PvM：通用个人语言记忆，本地 IndexedDB，不上传） -->
+          <div class="settings-section">
+            <div class="settings-title">🧠 个人语音学习 <span class="settings-sub">越用越懂你：记住你的简称/叫法/纠错（如"店里"→华泰店、"三坦德"→Santander）</span></div>
+            <label class="switch-row"><span>开启语音记忆学习</span><input type="checkbox" id="pvmEnabled" checked></label>
+            <div class="alarm-settings-row" style="margin-top:8px;flex-wrap:wrap;gap:6px">
+              <button class="btn-small" onclick="pvmList()" title="查看已记住的语音记忆">📖 查看记忆</button>
+              <button class="btn-small" onclick="pvmExport()" title="导出 JSON，换手机后导入恢复">📤 导出</button>
+              <button class="btn-small" onclick="document.getElementById('pvmImportFile').click()" title="从 JSON 导入恢复语音习惯">📥 导入</button>
+              <button class="btn-small" onclick="pvmClear()" title="清除全部语音记忆">🗑️ 清空</button>
+              <input type="file" id="pvmImportFile" accept=".json,application/json" style="display:none" onchange="pvmImport(this)">
+            </div>
+            <div id="pvmListBox" style="margin-top:8px;max-height:200px;overflow-y:auto;font-size:12px"></div>
+            <div class="settings-note" style="margin-top:6px">💡 仅保存在本机（IndexedDB）。识别正确时自动记一次；识别错误你改掉后自动学习，下次直接识别。</div>
+          </div>
+
           <!-- 月度预算 -->
           <div class="settings-section">
             <div class="settings-title">🎯 月度支出预算 <span class="settings-sub">在数据总览显示预算使用进度</span></div>
@@ -1218,7 +1233,8 @@
 
   <script src="js/offline-db.js?v=43"></script>
   <script src="js/offline-backend.js?v=43"></script>
-  <script src="js/voice-engine.js?v=44"></script>
+  <script src="js/voice/personal-voice-memory.js?v=1"></script>
+  <script src="js/voice-engine.js?v=45"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
   <script src="js/ai/global-config.js?v=39"></script>
   <script src="js/offline-ocr.js?v=38"></script>

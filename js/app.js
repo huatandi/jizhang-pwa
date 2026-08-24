@@ -2934,6 +2934,12 @@ async function initAfterLogin() {
       window.VoiceSR.warmup().catch(() => {});
     }, 3000);
   }
+  // PvM 个人语音记忆预热：加载本地记忆缓存（voice-engine 同步解析需要）
+  if (window.PersonalVoiceMemory && typeof window.PersonalVoiceMemory.warmup === 'function') {
+    setTimeout(() => {
+      window.PersonalVoiceMemory.warmup().catch(() => {});
+    }, 800);
+  }
   // 顶栏模式徽章（当前登录模式：开店/家庭）
   updatePageModeBadge();
 }

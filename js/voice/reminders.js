@@ -383,7 +383,7 @@ function remindModeLabel(v) {
   return parts.length ? parts.join(' ') : '🔕 仅卡片';
 }
 
-// 打开提醒弹窗（mode='voice' 时打开后自动开始语音监听）
+// 打开提醒弹窗（mode='voice' 时不自动开始监听——用户要求：按下"点击说话"才播"请说"并开始识别）
 function openReminderModal(mode) {
   editingReminderId = null;
   document.getElementById('rContent').value = '';
@@ -398,12 +398,13 @@ function openReminderModal(mode) {
   document.getElementById('btnSaveReminder').textContent = '保存提醒';
   renderReminderVoicePreview();
   openModal('reminderModal');
-  // 语音添加提醒：打开弹窗后自动开始监听（无需再点话筒）
   if (mode === 'voice') {
+    // 不自动开始监听：聚焦"点击说话"按钮，等用户按下才开始（避免一进卡片就播"请说"）
+    if (!reminderVoiceSessionActive) setReminderVoiceBtnState('idle');
     setTimeout(() => {
-      if (!VoiceSR.supported) return showToast('当前浏览器不支持语音识别，可手动填写', 'error');
-      if (!reminderVoiceSessionActive) startReminderVoice();
-    }, 350);
+      const btn = document.getElementById('btnReminderVoice');
+      if (btn) btn.focus();
+    }, 250);
   } else {
     document.getElementById('rContent').focus();
   }
@@ -444,6 +445,16 @@ async function saveReminder() {
   const linkType = document.getElementById('rLinkType').value || '';
   if (!content) return showToast('请填写提醒事项', 'error');
   if (!rAt) return showToast('请设置提醒时间', 'error');
+  // PvM 静默学习：语音识别的原始地点 ≠ 最终保存地点 → 用户纠正（"店里"→"华泰店"）
+  if (window.PersonalVoiceMemory && reminderVoiceBuffer) {
+    try {
+      const pvm = window.PersonalVoiceMemory;
+      const rawLoc = reminderVoiceBuffer.match(/(?:在|去|前往)\s*([^，。,.!！?？]{1,12})/);
+      if (rawLoc && location && rawLoc[1] !== location) {
+        pvm.learn(rawLoc[1], location, { type: 'LOCATION', field: 'location', context: 'reminder', source: 'USER_CORRECTION' });
+      }
+    } catch (e) { /* 静默失败 */ }
+  }
   const body = { content, remind_at: rAt.replace('T', ' '), location, remind_method: method, advance_minutes: advance, note, repeat, repeat_day: repeatDay, link_type: linkType };
   try {
     if (editingReminderId) await api('/reminders/' + editingReminderId, 'PUT', body);
@@ -946,12 +957,77 @@ function startReminderChecker() {
 }
 
   // ===== 显式暴露全局函数名（HTML onclick + JS 生成的 onclick 需要） =====
+  // ================== 个人语音学习管理（PvM 设置页） ==================
+  const pvmTypeLabel = { PERSON: '人', COMPANY: '公司', BANK: '银行', MERCHANT: '商户', SUPPLIER: '供应商', CUSTOMER: '客户', LOCATION: '地点', PRODUCT: '商品', SERVICE: '服务', ACCOUNT: '账户', CATEGORY: '分类', PROJECT: '项目', TAG: '标签', OTHER: '其他' };
+  async function pvmList() {
+    const pvm = window.PersonalVoiceMemory;
+    const box = document.getElementById('pvmListBox');
+    if (!pvm || !box) return;
+    const list = await pvm.list();
+    if (!list.length) { box.innerHTML = '<div class="settings-sub">暂无记忆。用语音记账/提醒并纠正识别结果，系统会自动学习。</div>'; return; }
+    box.innerHTML = '<div class="settings-sub" style="margin-bottom:4px">共 ' + list.length + ' 条</div>' +
+      list.slice(0, 200).map(e =>
+        `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #f0f0f0">
+          <span style="flex:0 0 40px;opacity:.7">${pvmTypeLabel[e.type] || e.type}</span>
+          <span style="flex:1">“${escapeHtml(e.phrase)}” → <b>${escapeHtml(e.target)}</b></span>
+          <span style="opacity:.6;font-size:11px">${Math.round((e.confidence || 0) * 100)}%</span>
+          <button class="btn-small" onclick="pvmRemove('${e.id.replace(/'/g, '')}')">✕</button>
+        </div>`).join('');
+  }
+  async function pvmRemove(id) {
+    const pvm = window.PersonalVoiceMemory;
+    if (!pvm) return;
+    await pvm.remove(id);
+    showToast('已删除该条记忆 🗑️');
+    pvmList();
+  }
+  async function pvmClear() {
+    const pvm = window.PersonalVoiceMemory;
+    if (!pvm) return;
+    if (!confirm('确定清除全部个人语音记忆？此操作不可恢复。')) return;
+    await pvm.clearAll();
+    const box = document.getElementById('pvmListBox');
+    if (box) box.innerHTML = '<div class="settings-sub">已清空。</div>';
+    showToast('已清空全部语音记忆 🗑️');
+  }
+  async function pvmExport() {
+    const pvm = window.PersonalVoiceMemory;
+    if (!pvm) return;
+    const json = await pvm.exportJSON();
+    try {
+      const blob = new Blob([json], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'voice-memory-' + todayLocal() + '.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      showToast('已导出语音记忆 📤');
+    } catch (e) {
+      // iOS 不支持 download 时回退：弹出文本供复制
+      prompt('复制以下 JSON（换手机时导入）：', json);
+    }
+  }
+  async function pvmImport(input) {
+    const pvm = window.PersonalVoiceMemory;
+    if (!pvm || !input || !input.files || !input.files[0]) return;
+    try {
+      const text = await input.files[0].text();
+      const r = await pvm.importJSON(text);
+      showToast(r.ok ? `已导入 ${r.count} 条记忆 📥` : '导入失败：' + r.msg, r.ok ? undefined : 'error');
+      if (r.ok) pvmList();
+    } catch (e) {
+      showToast('导入失败：' + e.message, 'error');
+    }
+    input.value = '';
+  }
+
   Object.assign(global, {
     ReminderParser,
     renderReminders, syncRepeatDayUI, openReminderModal, editReminder, saveReminder, deleteReminder,
     markReminderDone, snoozeReminder, dismissReminderNotify, switchReminderVoiceLang, syncReminderVoiceLangUI, getReminderVoiceLangMeta,
     toggleReminderVoice, startReminderVoice, stopReminderVoice, setReminderVoiceBtnState, reminderVoiceHandleResult,
     applyReminderVoiceText, autoSaveReminderByVoice, renderReminderVoicePreview, checkRemindersDue, startReminderChecker,
+    pvmList, pvmRemove, pvmClear, pvmExport, pvmImport,
     // 只读状态访问器（quick-voice 需判断提醒语音会话是否活跃，避免双识别器冲突）
     isReminderVoiceActive: () => reminderVoiceSessionActive,
   });

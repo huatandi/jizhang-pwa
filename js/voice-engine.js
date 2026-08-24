@@ -496,6 +496,18 @@
   function parseAccount(text, accounts) {
     const t = String(text || '');
     const low = t.toLowerCase();
+    // -2) PvM 个人记忆优先（用户亲自确认过的账户/实体简称，覆盖系统词库）
+    //     "三坦德"→Santander（用户纠错学习）、"店里"→账户（若用户这样定义）
+    try {
+      const pvm = typeof window !== 'undefined' ? window.PersonalVoiceMemory : (typeof globalThis !== 'undefined' ? globalThis.PersonalVoiceMemory : null);
+      if (pvm && typeof pvm.resolveSync === 'function' && accounts && accounts.length) {
+        // 阈值 0.60：新记忆 count=1 整句 contains 即可用；账户列表二次校验兜底防误配
+        const m = pvm.resolveSync(t, { field: 'account', context: 'quick' });
+        if (m && m.confidence >= 0.60 && accounts.some(a => String(a).toLowerCase() === String(m.target).toLowerCase())) {
+          return m.target;
+        }
+      }
+    } catch (e) { /* PvM 不可用不影响 */ }
     // -1) BankResolver 优先（V3 银行专有词：普通话中文音译/拼音 → 标准银行名）
     //     例："桑坦德"→Santander、"贝贝瓦"→BBVA、"班诺特"→Banorte
     //     resolveToAccount 额外处理账户缩写（SAND→Scotiabank、SANTANDE→Santander）
@@ -630,6 +642,17 @@
       }
     }
     if (location) location = cutAtAction(location);
+    // PvM 个人地点记忆：用户自定义简称 → 真实地点（"店里"→"华泰店"、"仓库"→"北仓库"）
+    // 仅当已载入缓存时同步解析；命中置信 ≥0.70 覆盖系统词表结果（用户亲自确认过的优先）
+    if (location) {
+      try {
+        const pvm = typeof window !== 'undefined' ? window.PersonalVoiceMemory : (typeof globalThis !== 'undefined' ? globalThis.PersonalVoiceMemory : null);
+        if (pvm && typeof pvm.resolveSync === 'function') {
+          const m = pvm.resolveSync(location, { field: 'location', context: 'reminder' });
+          if (m && m.confidence >= 0.70) location = m.target;
+        }
+      } catch (e) { /* 记忆不可用不影响 */ }
+    }
     return location || null;
   }
 

@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v88';
+const CACHE_NAME = 'jizhang-pwa-v89';
 const APP_SHELL = [
   './',
   './index.html',
@@ -48,6 +48,7 @@ const APP_SHELL = [
   './js/voice/voice-parser.js',
   './js/voice/voice-sr.js',
   './js/voice/voice-qa.js',
+  './js/voice/personal-voice-memory.js',
   // app.js 拆分模块（app.js v69 拆分）
   './js/voice/reminders.js',
   './js/voice/correction-engine.js',
