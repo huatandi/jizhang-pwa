@@ -749,6 +749,7 @@
             <label class="switch-row"><span>开启语音记忆学习</span><input type="checkbox" id="pvmEnabled" checked></label>
             <div class="alarm-settings-row" style="margin-top:8px;flex-wrap:wrap;gap:6px">
               <button class="btn-small" onclick="pvmList()" title="查看已记住的语音记忆">📖 查看记忆</button>
+              <button class="btn-small" onclick="pvmLog()" title="查看学习日志（为什么学会的）">📜 学习日志</button>
               <button class="btn-small" onclick="pvmExport()" title="导出 JSON，换手机后导入恢复">📤 导出</button>
               <button class="btn-small" onclick="document.getElementById('pvmImportFile').click()" title="从 JSON 导入恢复语音习惯">📥 导入</button>
               <button class="btn-small" onclick="pvmClear()" title="清除全部语音记忆">🗑️ 清空</button>
@@ -1233,10 +1234,12 @@
 
   <script src="js/offline-db.js?v=43"></script>
   <script src="js/offline-backend.js?v=43"></script>
-  <script src="js/voice/personal-voice-memory.js?v=2"></script>
+  <script src="js/voice/personal-voice-memory.js?v=3"></script>
   <!-- Intelligence Layer：Field Evidence / Conflict Resolver（V4 Phase 1） -->
   <script src="js/intelligence/evidence-engine.js?v=1"></script>
   <script src="js/intelligence/conflict-resolver.js?v=1"></script>
+  <!-- Learning Engine：学习事件/评分阈值/自动学习提示 -->
+  <script src="js/learning/learning-engine.js?v=1"></script>
   <script src="js/voice-engine.js?v=46"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
   <script src="js/ai/global-config.js?v=39"></script>
@@ -1274,9 +1277,9 @@
        顺序说明：静态脚本先于 boot.js 动态加载的 app.js 执行。
        reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
-  <script src="js/voice/reminders.js?v=68"></script>
+  <script src="js/voice/reminders.js?v=69"></script>
   <script src="js/voice/correction-engine.js?v=1"></script>
-  <script src="js/voice/quick-voice.js?v=66"></script>
+  <script src="js/voice/quick-voice.js?v=67"></script>
   <script src="js/ledger-crud.js?v=38"></script>
   <script src="js/ai/ai-workbench.js?v=62"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->

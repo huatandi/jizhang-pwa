@@ -452,6 +452,10 @@ async function saveReminder() {
       const rawLoc = reminderVoiceBuffer.match(/(?:在|去|前往)\s*([^，。,.!！?？]{1,12})/);
       if (rawLoc && location && rawLoc[1] !== location) {
         pvm.learn(rawLoc[1], location, { type: 'LOCATION', field: 'location', context: 'reminder', source: 'USER_CORRECTION' });
+        // Learning Engine：记录纠正事件（用户修改 +30）
+        if (window.LearningEngine && typeof window.LearningEngine.record === 'function') {
+          window.LearningEngine.record({ input: rawLoc[1], source: 'voice', field: 'location', context: 'reminder', finalValue: location, userConfirmed: false, rules: ['modify'] });
+        }
       }
     } catch (e) { /* 静默失败 */ }
   }
@@ -970,8 +974,23 @@ function startReminderChecker() {
         `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #f0f0f0">
           <span style="flex:0 0 40px;opacity:.7">${pvmTypeLabel[e.type] || e.type}</span>
           <span style="flex:1">“${escapeHtml(e.phrase)}” → <b>${escapeHtml(e.target)}</b></span>
-          <span style="opacity:.6;font-size:11px">${Math.round((e.confidence || 0) * 100)}%</span>
+          <span style="opacity:.6;font-size:11px">${pvm.memoryStrength ? pvm.memoryStrength(e) : ''} ${Math.round((e.confidence || 0) * 100)}%</span>
           <button class="btn-small" onclick="pvmRemove('${e.id.replace(/'/g, '')}')">✕</button>
+        </div>`).join('');
+  }
+  // 学习日志（Learning Engine）：展示最近学习事件
+  async function pvmLog() {
+    const box = document.getElementById('pvmListBox');
+    if (!box) { showToast('请先打开设置页', 'error'); return; }
+    if (!window.LearningEngine || typeof window.LearningEngine.list !== 'function') { box.innerHTML = '<div class="settings-sub">学习引擎未加载。</div>'; return; }
+    const logs = window.LearningEngine.list();
+    if (!logs.length) { box.innerHTML = '<div class="settings-sub">暂无学习日志。识别后被纠正/确认的内容会记录在这里。</div>'; return; }
+    const levelLabel = { none: '未学习', short: '短期', personal: '个人', stable: '稳定' };
+    box.innerHTML = '<div class="settings-sub" style="margin-bottom:4px">共 ' + logs.length + ' 条学习记录</div>' +
+      logs.slice(0, 100).map(ev =>
+        `<div style="padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:12px">
+          <div><b>“${escapeHtml(ev.input)}”</b> → ${escapeHtml(ev.target)} <span style="opacity:.6">${ev.field || ''}${ev.context ? ' · ' + ev.context : ''}</span></div>
+          <div style="opacity:.65;font-size:11px">次数 ${ev.count} · 确认 ${ev.confirmed} · 拒绝 ${ev.rejected} · 得分 ${ev.score}（${levelLabel[window.LearningEngine.scoreLevel(ev.score)] || ''}）${ev.conflict ? ' · ⚠️ 冲突' : ''}</div>
         </div>`).join('');
   }
   async function pvmRemove(id) {
@@ -1027,7 +1046,7 @@ function startReminderChecker() {
     markReminderDone, snoozeReminder, dismissReminderNotify, switchReminderVoiceLang, syncReminderVoiceLangUI, getReminderVoiceLangMeta,
     toggleReminderVoice, startReminderVoice, stopReminderVoice, setReminderVoiceBtnState, reminderVoiceHandleResult,
     applyReminderVoiceText, autoSaveReminderByVoice, renderReminderVoicePreview, checkRemindersDue, startReminderChecker,
-    pvmList, pvmRemove, pvmClear, pvmExport, pvmImport,
+    pvmList, pvmLog, pvmRemove, pvmClear, pvmExport, pvmImport,
     // 只读状态访问器（quick-voice 需判断提醒语音会话是否活跃，避免双识别器冲突）
     isReminderVoiceActive: () => reminderVoiceSessionActive,
   });

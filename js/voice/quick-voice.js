@@ -1218,6 +1218,9 @@ async function saveQuick() {
         const accMatch = voiceBuffer.match(/(?:从|用|账户是|账号是|付|扣|转|存|取|刷)\s*([^\s，。,.!！?？]{1,12})/);
         if (accMatch && accMatch[1]) {
           pvm.learn(accMatch[1], account, { type: 'ACCOUNT', field: 'account', context: 'quick', source: 'USER_CORRECTION' });
+          if (window.LearningEngine && typeof window.LearningEngine.record === 'function') {
+            window.LearningEngine.record({ input: accMatch[1], source: 'voice', field: 'account', context: 'quick', finalValue: account, userConfirmed: false, rules: ['modify'] });
+          }
         }
       }
     }

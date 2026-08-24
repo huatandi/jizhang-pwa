@@ -121,9 +121,67 @@
     return kept;
   }
 
-  // ---- 置信度（§33/§38）：count 加权 + source 优先级 + 最近使用 ----
+  // ---- Negative Memory（V4 §11）：用户明确"不要理解成X" → 阻止该映射 ----
+  // blocked 列表：{ id, phrase, target, field, context, reason, createdAt }
+  let blockedCache = null; // { normPhrase_target_field: entry }
+  const BLOCK_LS_KEY = 'sm_voice_blocks';
+  function loadBlocked() {
+    if (blockedCache) return blockedCache;
+    blockedCache = {};
+    try {
+      const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(BLOCK_LS_KEY) : null;
+      if (raw) {
+        const arr = JSON.parse(raw) || [];
+        arr.forEach(b => { blockedCache[b.id] = b; });
+      }
+    } catch (e) { blockedCache = {}; }
+    return blockedCache;
+  }
+  function saveBlocked() {
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(BLOCK_LS_KEY, JSON.stringify(Object.values(blockedCache || {}))); } catch (e) { /* ignore */ }
+  }
+  /** 阻止："以后说X时，不要理解成Y"（Negative Memory） */
+  function block(phrase, target, opts) {
+    const cleanPhrase = String(phrase || '').trim();
+    const cleanTarget = String(target || '').trim();
+    if (!cleanPhrase || !cleanTarget) return false;
+    const o = opts || {};
+    loadBlocked();
+    const id = 'blk_' + norm(cleanPhrase) + '_' + norm(cleanTarget) + '_' + (o.field || '') + '_' + (o.context || '');
+    blockedCache[id] = { id, phrase: cleanPhrase, target: cleanTarget, field: o.field || '', context: o.context || '', reason: o.reason || 'user_rejected', createdAt: Date.now() };
+    saveBlocked();
+    return true;
+  }
+  function unblock(id) {
+    loadBlocked();
+    if (blockedCache[id]) { delete blockedCache[id]; saveBlocked(); return true; }
+    return false;
+  }
+  function listBlocked() { return Object.values(loadBlocked()).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); }
+  // 检查某 phrase→target 是否被阻止（resolve 前调用）
+  function isBlocked(phrase, target, field, context) {
+    loadBlocked();
+    const np = norm(phrase), nt = norm(target);
+    for (const b of Object.values(blockedCache)) {
+      if (b.field && field && b.field !== field) continue;
+      if (b.context && context && b.context !== context) continue;
+      if (norm(b.phrase) === np && norm(b.target) === nt) return true;
+    }
+    return false;
+  }
+
+  // ---- 置信度（§33/§38）：count 加权 + source 优先级 + 最近使用 + 时间衰减（V4 §12）----
   // 源加成：USER_MANUAL +0.10 / USER_CONFIRM +0.08 / USER_CORRECTION +0.06 / AUTO_INFERRED 0
   const SOURCE_BONUS = { SYSTEM: 0, AUTO_INFERRED: 0, USER_CORRECTION: 0.06, USER_CONFIRM: 0.08, USER_MANUAL: 0.10 };
+  // 时间衰减：超过 60 天未使用，每 30 天再降 0.03（长期不用降低权重，§12）
+  const DECAY_AFTER_DAYS = 60;
+  const DECAY_PER_30D = 0.03;
+  function decayPenalty(entry) {
+    const elapsed = Date.now() - (entry.lastSeen || entry.firstSeen || Date.now());
+    if (elapsed <= DECAY_AFTER_DAYS * 86400000) return 0;
+    const extra = Math.floor((elapsed - DECAY_AFTER_DAYS * 86400000) / (30 * 86400000));
+    return Math.min(0.30, extra * DECAY_PER_30D);
+  }
   function calcConfidence(entry) {
     const count = entry.count || 1;
     // 基础随次数：1→0.66, 2→0.74, 3→0.80, 5→0.87, 10→0.93
@@ -132,7 +190,9 @@
     const recency = (Date.now() - (entry.lastSeen || 0)) < 30 * 86400000 ? 0.03 : 0;
     // 被拒绝降权（V4：用户明确拒绝过的记忆置信下调）
     const rejected = (entry.rejected_count || 0) > 0 ? 0.15 : 0;
-    return Math.min(0.99, Math.round((base + srcBonus + recency - rejected) * 100) / 100);
+    // 时间衰减（长期未使用）
+    const decay = decayPenalty(entry);
+    return Math.min(0.99, Math.round((base + srcBonus + recency - rejected - decay) * 100) / 100);
   }
 
   // ---- 记忆强度（V4 §16）：candidate → weak → medium → strong ----
@@ -214,6 +274,8 @@
         else if (phraseKey && key.includes(phraseKey)) { score = 0.80; how = 'contains'; }
         else if (phraseKey && phraseKey.includes(key)) { score = 0.70; how = 'substring'; }
         if (!score) continue;
+        // V4 Negative Memory：用户明确阻止过该映射 → 跳过
+        if (isBlocked(e.phrase, e.target, o.field, o.context)) continue;
         const strength = memoryStrength(e);
         // 置信度 = 记忆置信 × 匹配方式（强度不压低命中值，只用于候选竞争排序）
         const conf = Math.min(1, Math.round((e.confidence || 0.5) * score * 100) / 100);
@@ -247,6 +309,8 @@
       else if (phraseKey && key.includes(phraseKey)) { score = 0.80; how = 'contains'; }
       else if (phraseKey && phraseKey.includes(key)) { score = 0.70; how = 'substring'; }
       if (!score) continue;
+      // V4 Negative Memory：用户明确阻止过该映射 → 跳过
+      if (isBlocked(e.phrase, e.target, o.field, o.context)) continue;
       const strength = memoryStrength(e);
       const conf = Math.min(1, Math.round((e.confidence || 0.5) * score * 100) / 100);
       const sortVal = conf * (STRENGTH_WEIGHT[strength] || 0.5);
@@ -355,7 +419,8 @@
   function warmup() { return loadAll().then(() => true).catch(() => false); }
 
   global.PersonalVoiceMemory = {
-    ENTITY_TYPES, learn, reject, resolve, resolveSync, list, remove, clearAll, exportJSON, importJSON, warmup,
+    ENTITY_TYPES, learn, reject, block, unblock, isBlocked, listBlocked,
+    resolve, resolveSync, list, remove, clearAll, exportJSON, importJSON, warmup,
     memoryStrength, norm, MAX_ENTRIES,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
