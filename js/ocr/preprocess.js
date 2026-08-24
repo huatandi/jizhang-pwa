@@ -510,9 +510,31 @@
     return canvas.toDataURL(type || 'image/jpeg', quality == null ? 0.9 : quality);
   }
 
+  // ---- 多版本预处理（V5 §20-22）：淡字/模糊/低对比票据一次生成多增强版本 ----
+  // 返回 [ { name, canvas } ]：original / contrast / grayscale / sharpen / binarize
+  // 供 EvidenceFusion 逐版本 OCR 后选择最佳（淡字增强：提升对比 + 锐化；热敏：二值化）
+  function multipass(canvas, opts) {
+    const o = opts || {};
+    const versions = [{ name: 'original', canvas }];
+    try { versions.push({ name: 'contrast', canvas: enhance(canvas, 'high_contrast') }); } catch (e) { /* ignore */ }
+    try { versions.push({ name: 'grayscale', canvas: toGrayscale(cloneCanvas(canvas)) }); } catch (e) { /* ignore */ }
+    try { versions.push({ name: 'sharpen', canvas: convolve(cloneCanvas(canvas), [0, -1, 0, -1, 5, -1, 0, -1, 0], 1) }); } catch (e) { /* ignore */ }
+    if (o.includeBinarize !== false) {
+      try { versions.push({ name: 'binarize', canvas: binarize(cloneCanvas(canvas)) }); } catch (e) { /* ignore */ }
+    }
+    return versions;
+  }
+
+  function cloneCanvas(src) {
+    const out = document.createElement('canvas');
+    out.width = src.width; out.height = src.height;
+    out.getContext('2d').drawImage(src, 0, 0);
+    return out;
+  }
+
   global.OcrKit = global.OcrKit || {};
   Object.assign(global.OcrKit, {
     preprocess: { PROFILES, loadImage, smartResize, rotate, rotateCanvas, estimateDeskew, reduceGlare, toGrayscale, enhance, binarize, pipeline, toImageData, toDataUrl,
-      perspectiveCorrection, detectDocumentQuad, warpQuad },
+      perspectiveCorrection, detectDocumentQuad, warpQuad, multipass, cloneCanvas },
   });
 })(typeof window !== 'undefined' ? window : globalThis);

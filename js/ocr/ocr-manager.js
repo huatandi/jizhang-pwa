@@ -121,11 +121,25 @@
         if (!result) throw new Error('OCR 主引擎与回退引擎均失败');
       }
 
-      // 3) 低置信 → 回退 Tesseract，对比合并
+      // 3) 低置信 → 多版本增强重试（V5 §20-22）+ Tesseract 对比合并
       if (primaryName !== global.OcrKit.ENGINES.TESSERACT) {
         const avgConf = avgConfidence(result);
         if (avgConf < o.fallbackThreshold) {
-          console.warn(`[ocr] 主引擎置信度偏低(${avgConf.toFixed(1)}%)，触发 Tesseract 二次识别`);
+          console.warn(`[ocr] 主引擎置信度偏低(${avgConf.toFixed(1)}%)，多版本增强重试`);
+          // 3a) 淡字/模糊 → 增强版本重试主引擎（对比度/二值化可能显著提升）
+          let best = result;
+          try {
+            const versions = global.OcrKit.preprocess.multipass(input, {});
+            for (const v of versions) {
+              if (v.name === 'original') continue;
+              try {
+                const vr = await primary.engine.recognize(v.canvas, primary.opts);
+                if (vr && avgConfidence(vr) > avgConfidence(best)) best = vr;
+              } catch (e2) { /* 单版本失败继续 */ }
+            }
+            if (best !== result) { result = best; result._multipass = true; }
+          } catch (e3) { /* multipass 失败不影响 */ }
+          // 3b) Tesseract 二次识别对比合并
           const fb = await this._fallback(input, primaryName);
           if (fb) result = mergeResults(result, fb);
         }

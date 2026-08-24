@@ -216,6 +216,31 @@
         return fmtDate(d);
       }
     }
+    // 星期计算（V5 §32）：本周X / 下X / 下星期X / 周X / 星期X / 礼拜X → 真实日期
+    //   今天=周日时："星期一"→明天、"星期三"→3天后；"本周三"→本周三（已过则下周）
+    const wd = (t.match(/(?:周|星期|礼拜|週|礼拜天)\s*([一二三四五六日天])/) || [])[1];
+    if (wd) {
+      const wdMap = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 0, 天: 0 };
+      const target = wdMap[wd];
+      if (target !== undefined) {
+        const today = now.getDay(); // 0=周日
+        const isNext = /下(?:周|星期|礼拜)/.test(t);
+        const isThis = /本(?:周|星期|礼拜)/.test(t);
+        // 距下一个 target 的天数（0-6）
+        let diff = (target - today + 7) % 7;
+        if (isNext) {
+          // "下周一"：今天周日(0)→目标周一(1)，diff=1，但"下周"指 7 天后那一周 → +7
+          diff = diff + 7;
+        } else if (isThis) {
+          // "本周三"：diff 即本周距天数（0=今天）；已过则为 0（今天同日）
+        } else {
+          // 纯"星期X"：最近未来（0-6 天）；今天同日 → 7 天后
+          diff = diff === 0 ? 7 : diff;
+        }
+        const d = new Date(y, now.getMonth(), now.getDate() + diff);
+        return fmtDate(d);
+      }
+    }
     // 完整日期：2026年8月13日 / 2026-08-13 / 2026/8/13
     let m = t.match(/(20\d{2})\s*[年\/\-.]\s*(\d{1,2})\s*[月\/\-.]\s*(\d{1,2})\s*[日号]?/);
     if (m) return `${m[1]}-${p2(m[2])}-${p2(m[3])}`;
@@ -497,6 +522,32 @@
   function parseAccount(text, accounts) {
     const t = String(text || '');
     const low = t.toLowerCase();
+    // -3) 用户定义编号（V5 §5）："账户2"/"账户 2"/"第二个账户"/"用第一个"/"1号账户"/"银行1"
+    //     → 按账户列表顺序取第 N 个（1=列表第 1 项）。通用机制，未来可复用于分类/客户等。
+    try {
+      if (accounts && accounts.length) {
+        const accList = accounts.map(a => String(a || '').trim()).filter(Boolean);
+        // 中文序号：第一个/第二个/第三个…、第1个、1号账户、账户1、账户二
+        const zhNum = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+        let n = null;
+        let m = t.match(/(?:第|用第|选第)\s*([一二三四五六七八九十\d]{1,2})\s*(?:个|号|个账户)/);
+        if (m) n = /^\d+$/.test(m[1]) ? Number(m[1]) : zhNum[m[1]];
+        if (n == null) {
+          m = t.match(/(?:账户|账号|银行|卡)\s*[:：]?\s*([一二三四五六七八九十\d]{1,2})\s*(?:号|个)?/);
+          if (m) n = /^\d+$/.test(m[1]) ? Number(m[1]) : zhNum[m[1]];
+        }
+        if (n == null) {
+          m = t.match(/([一二三四五六七八九十\d]{1,2})\s*(?:号|个)\s*(?:账户|账号|银行|卡)/);
+          if (m) n = /^\d+$/.test(m[1]) ? Number(m[1]) : zhNum[m[1]];
+        }
+        if (n == null) {
+          // "账户二"：账户词 + 中文序号（label 提取可能只给"二"，这里处理完整串）
+          m = t.match(/(?:账户|账号|银行|卡)\s*[:：]?\s*([一二三四五六七八九十]{1,2})$/);
+          if (m) n = zhNum[m[1]];
+        }
+        if (n != null && n >= 1 && n <= accList.length) return accList[n - 1];
+      }
+    } catch (e) { /* 编号解析失败不影响 */ }
     // -2) PvM 个人记忆优先（用户亲自确认过的账户/实体简称，覆盖系统词库）
     //     "三坦德"→Santander（用户纠错学习）、"店里"→账户（若用户这样定义）
     try {
@@ -763,6 +814,12 @@
             continue;
           }
           let resolved = accVal;
+          // 编号账户："账户二" label 只捕获"二" → 补回"账户"前缀让编号解析生效
+          if (/^[一二三四五六七八九十]{1,2}$/.test(accVal)) {
+            const withPrefix = '账户' + accVal;
+            const numbered = parseAccount(withPrefix, accounts || optsAccounts());
+            if (numbered) resolved = numbered;
+          }
           const parsedAcc = parseAccount(accVal, accounts || optsAccounts());
           if (parsedAcc) resolved = parsedAcc;
           if (resolved) labels.account = { value: resolved, consumed };

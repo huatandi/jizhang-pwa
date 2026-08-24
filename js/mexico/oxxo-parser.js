@@ -77,6 +77,23 @@
       const mt = seg.match(/\bTOTAL\b[^\d]*\$?\s*([\d.,-]+)/i);
       if (mt && mt[1]) doc.total = money(mt[1]);
     }
+    // V5 §12-16：货币符号智能推断（$→5 修复 + EFECTIVO-CAMBIO=TOTAL / Subtotal+IVA=TOTAL 数学校验）
+    try {
+      const ce = M.currencyEvidence;
+      if (ce && ce.resolveMoney && typeof ce.extractCashFields === 'function') {
+        const cash = ce.extractCashFields(fullText);
+        const resolved = ce.resolveMoney(
+          { subtotal: doc.subtotal, iva: doc.iva, efectivo: cash.efectivo, cambio: cash.cambio, total: doc.total, discount: doc.discount },
+          fullText
+        );
+        if (resolved && resolved.corrected && resolved.total != null) {
+          doc.total = resolved.total;
+          doc.moneySource = resolved.reason; // 'efectivo-cambio' | 'subtotal-iva' | 'split-symbol'
+          doc.moneyConfidence = resolved.confidence;
+          doc.moneyCorrected = true;
+        }
+      }
+    } catch (e) { /* 推断失败不影响 */ }
 
     return doc;
   }
