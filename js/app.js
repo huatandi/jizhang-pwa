@@ -142,9 +142,17 @@ function updatePageModeBadge() {
   const old = h2.querySelector('.page-mode-badge');
   if (old) old.remove();
   const isFamily = settings && settings.scene === 'family';
-  const badge = document.createElement('span');
+  const badge = document.createElement('button');
   badge.className = 'page-mode-badge' + (isFamily ? ' family' : ' business');
+  badge.type = 'button';
   badge.textContent = isFamily ? '🏠 家庭模式' : '🏪 开店模式';
+  badge.title = '点击切换模式';
+  badge.setAttribute('aria-label', badge.textContent);
+  // 点击徽章 → 在开店/家庭之间一键切换（所有页面标题旁都可点）
+  badge.onclick = (e) => {
+    e.stopPropagation();
+    if (typeof quickSwitchMode === 'function') quickSwitchMode();
+  };
   h2.appendChild(badge);
 }
 // 导航点击后刷新徽章

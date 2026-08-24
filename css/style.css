@@ -220,7 +220,7 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
 .page-header h2 { font-size: 24px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-/* 页面顶栏模式徽章：提示当前登录模式（开店/家庭），一眼可辨 */
+/* 页面顶栏模式徽章：提示当前登录模式（开店/家庭），点击可一键切换（所有页面） */
 .page-mode-badge {
   display: inline-flex;
   align-items: center;
@@ -231,7 +231,18 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
   border-radius: 999px;
   white-space: nowrap;
   vertical-align: middle;
+  border: none;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
 }
+.page-mode-badge::after {
+  content: ' ⇄';
+  margin-left: 4px;
+  opacity: .75;
+  font-weight: 600;
+}
+.page-mode-badge:hover { transform: scale(1.04); }
+.page-mode-badge:active { transform: scale(.96); }
 .page-mode-badge.business {
   background: linear-gradient(135deg, #ffb020, #f59e0b);
   color: #fff;
