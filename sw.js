@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v94';
+const CACHE_NAME = 'jizhang-pwa-v95';
 const APP_SHELL = [
   './',
   './index.html',
@@ -62,6 +62,12 @@ const APP_SHELL = [
   './js/ai/ai-workbench.js',
   './js/ai/engine-manager.js',
   './js/ai/multimodal.js',
+  './js/ai/ai-provider.js',
+  './js/ai/ai-privacy.js',
+  './js/ai/ai-cache.js',
+  './js/ai/ai-validator.js',
+  './js/ai/ai-router.js',
+  './js/ai/ai-manager.js',
   // 手机端下拉刷新
   './js/pull-refresh.js',
   // 参考汇率工具（Exchange Rate Engine）
