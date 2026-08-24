@@ -2850,6 +2850,17 @@ select option {
   gap: 14px;
   max-width: 640px;
 }
+/* PC 端铺满桌面（与明细查询/收入支出一致）：放开 640px 限制 */
+@media (min-width: 901px) {
+  .quick-page-body {
+    max-width: 100%;
+    width: 100%;
+  }
+  /* 宽屏下表单两列排列，充分利用桌面宽度 */
+  .quick-page-form .form-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
 .quick-page-form {
   background: var(--surface2);
   border: 1px solid var(--border);
