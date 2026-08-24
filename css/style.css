@@ -1466,6 +1466,34 @@ select option {
   .page-header { margin-bottom: 16px; }
   .page-header h2 { font-size: 20px; }
 
+  /* 移动端顶部模式切换条：家庭/开店一键切换 */
+  .mobile-modebar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 99;
+    padding: 6px 10px;
+    background: #0d1526;
+    border-bottom: 1px solid var(--border);
+    padding-top: calc(6px + env(safe-area-inset-top, 0));
+  }
+  .mobile-modebar-label { font-size: 11px; color: var(--text-2); margin-right: 2px; white-space: nowrap; }
+  .mobile-mode-btn {
+    flex: 1;
+    padding: 5px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-2);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .mobile-mode-btn.active { background: linear-gradient(135deg, #ffb020, #f59e0b); color: #fff; border-color: transparent; font-weight: 700; }
+  /* 顶栏被模式条占位：主内容下移避免遮挡 */
+  .main { padding-top: 52px; }
+
   .mobile-nav {
     display: flex;
     position: fixed;

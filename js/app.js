@@ -1842,12 +1842,20 @@ function quickSwitchMode() {
   applyScenePreset(next, null, true);
 }
 
-// 同步 logo 旁模式按钮文案
+// 同步 logo 旁模式按钮文案 + 移动端模式条激活态
 function syncModeSwitch() {
   const btn = document.getElementById('modeSwitch');
-  if (!btn) return;
-  btn.textContent = settings.scene === 'family' ? '🏠 家庭' : '🏪 开店';
-  btn.classList.toggle('family', settings.scene === 'family');
+  if (btn) {
+    btn.textContent = settings.scene === 'family' ? '🏠 家庭' : '🏪 开店';
+    btn.classList.toggle('family', settings.scene === 'family');
+  }
+  // 移动端模式切换条：高亮当前模式
+  const bar = document.getElementById('mobileModeBar');
+  if (bar) {
+    bar.querySelectorAll('.mobile-mode-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.scene === settings.scene);
+    });
+  }
 }
 
 /* ================== 周期记账 ================== */

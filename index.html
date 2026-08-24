@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=61">
+  <link rel="stylesheet" href="css/style.css?v=62">
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -1098,6 +1098,13 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- 移动端顶部模式切换条（手机端侧边栏隐藏，需在此切换家庭/开店模式） -->
+  <div class="mobile-modebar" id="mobileModeBar" style="display:none">
+    <span class="mobile-modebar-label">📋 模式</span>
+    <button class="mobile-mode-btn" data-scene="business" onclick="applyScenePreset('business', this, true)">🏪 开店模式</button>
+    <button class="mobile-mode-btn" data-scene="family" onclick="applyScenePreset('family', this, true)">🏠 家庭模式</button>
+  </div>
 
   <!-- 移动端底部导航 -->
   <nav class="mobile-nav" id="mobileNav">
