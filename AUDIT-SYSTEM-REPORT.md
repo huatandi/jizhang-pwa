@@ -40,14 +40,15 @@ Honest scope note: these are findings I could **reproduce / verify statically + 
 |---|---|---|---|---|---|
 | AUD-A1 privacy bypass | `allowOnline` default true; multimodal forced `allowOnline:true`; no privacy check at ASR layer | `js/asr/asr-manager.js`, `js/voice/voice-sr.js` | `AsrManager._privacyAllowsOnline()` gates both WebSpeech fallbacks; voice-sr default derives from `AIPrivacy.getMode()`; `err.privacyBlocked` surfaced | `_test_voice_runtime.cjs` (23/23) | PASS |
 | AUD-A2 PvM pollution | single correction treated as `weak` (overridable); consumers ran with `>=0.60/0.70` only | `js/voice/personal-voice-memory.js`, `js/voice-engine.js` | single ⇒ `candidate`; promote ≥2/≥3/≥6; `failureCount` + `markFailure()`; `status` field; override gates require `strength!=='candidate'` | `_test_voice_pvm.cjs` (14/14) | PASS |
+| AUD-B1 Whisper ORT wasm mismatch | vendored `transformers.js` 4.2.0 `versions.web = 1.26.0-dev.20260416`, but wasmPaths pointed to `vendor/onnx` (1.24.3) | `js/asr/whisper-engine.js`, `vendor/onnx-whisper/*`, `sw.js` | vendored onnxruntime-web@1.26.0-dev wasm set into `vendor/onnx-whisper/` (wasm binary confirmed 1.26.0), whisper wasmPaths → that dir; Paddle keeps 1.24.3 | `node --check` + 22/22 suites | PASS (device verify pending) |
 
-Commit stream: `d0cb503` (privacy gate), `550204b` (PvM trust).
+Commit stream: `d0cb503` (privacy gate), `550204b` (PvM trust), `367e8be` (AUD-B1 wasm).
 
 ---
 
 ## 3) REGRESSION REPORT
 
-Ran all 19 Node suites after both fixes — **0 failures**:
+Ran all 22 Node suites across the audit/fix + AUD-B1 — **0 failures** (parser/unit level; device WASM not covered):
 
 ```
 PASS  _test_fx.cjs                 PASS  _test_ocr_regions.cjs
@@ -70,15 +71,15 @@ Caveat (same as the user's own warning): these are **unit/parser suites**, not e
 ### Fixed (verified)
 - P0 voice-online privacy bypass (AUD-A1).
 - P0 PvM single-correction pollution (AUD-A2).
+- **AUD-B1 Whisper ORT wasm mismatch** — fixed by vendoring the matching `onnxruntime-web@1.26.0-dev` wasm into an independent `vendor/onnx-whisper/` dir (Paddle stays 1.24.3). **Pending on-device WASM verify** (see below). Also removed the dead `vendor/onnx/ort.all.min.mjs` (1.27.0) from cache/app.
 
 ### Temporarily mitigated / flagged (needs decision)
-- **AUD-B1 · Whisper ORT 1.26.0-dev × 1.24.3 wasm mismatch** — confirmed inconsistency, likely P1; **needs architectural approval** (align Wasm-version or split asset tree). This is the highest-confidence unresolved runtime defect I found.
+- None currently open from the P0/P1 audit (device-side verification remains).
 
 ### Architectural (require approval — NOT silently rewritten)
 - Parser triple-convergence: `voice-engine.js` + `voice-parser.js` + `reminders.js` `ReminderParser` → single `VoiceKit` core.
 - `SessionHandle`/`AbortController` (replace `mgr.cb = null` cancellation).
 - Dynamic `EvidenceEngine` policy (replace static `voice 0.90 > ocr 0.85` — for the multimodal evidence function, NOT the single-source parser gates).
-- Paddle / transformers major-version upgrade (would also resolve AUD-B1).
 - IndexedDB schema migration.
 
 ### Browser / platform limited (unverifiable in Node, must be checked on device)
