@@ -13,6 +13,9 @@
 (function (global) {
 let quickType = 'expense';
 let quickCategory = '';
+// V4.5 字段状态：已确认字段不被低置信新段覆盖（连续语音"后面内容框乱掉"修复）
+// { amount: true, account: true, ... } — true = 用户确认过/改口过，常规解析不再覆盖
+let voiceFieldConfirmed = {};
 
 // 渲染分类下拉（支出/收入共用，跟随 quickType）
 function renderQuickCatSelect() {
@@ -269,6 +272,7 @@ function startVoiceSession() {
   voiceBuffer = '';
   voiceMultiEntries = [];
   voiceFieldHistory = []; // 新会话：清空字段历史（撤销栈）
+  voiceFieldConfirmed = {}; // 新会话：清空字段确认状态
   voiceSessionActive = true;
   setVoiceBtnState('listening');
   renderVoicePreview();
@@ -876,6 +880,7 @@ function applyVoiceFieldOverride(field, value, oldValue) {
     const n = Number(value);
     if (isNaN(n) || n <= 0) return false;
     writeVoiceField('amount', n);
+    voiceFieldConfirmed.amount = true; // 用户明确改口 → 确认该字段
     return true;
   }
   if (field === 'account' || field === 'category') {
@@ -888,6 +893,7 @@ function applyVoiceFieldOverride(field, value, oldValue) {
     const sel = document.getElementById(field === 'account' ? 'qAccount' : 'qCategory');
     if (sel && [...sel.options].some(o => o.value === target)) {
       writeVoiceField(field, target);
+      voiceFieldConfirmed[field] = true; // 用户明确改口 → 确认该字段
       // 用户学习（V3 银行增强 ④）：改口确认"不是三坦德，是桑坦德" →
       // 记录 oldValue(三坦德,ASR/普通话音译词) → 标准银行(Santander)，
       // 下次同样的普通话叫法/ASR 错误词直接识别。
@@ -910,9 +916,14 @@ function applyVoiceFieldOverride(field, value, oldValue) {
     // 日期改口：交给 VoiceParser 解析自然语言（"后天"→ YYYY-MM-DD）
     const d = window.VoiceParser && VoiceParser.parseDate ? VoiceParser.parseDate(value) : null;
     writeVoiceField('date', d || value);
+    voiceFieldConfirmed.date = true; // 用户明确改口 → 确认该字段
     return true;
   }
-  if (field === 'remark' || field === 'note' || field === 'merchant') { writeVoiceField('remark', value); return true; }
+  if (field === 'remark' || field === 'note' || field === 'merchant') {
+    writeVoiceField('remark', value);
+    voiceFieldConfirmed.remark = true;
+    return true;
+  }
   return false;
 }
 
@@ -927,6 +938,7 @@ function applyVoiceText(buffer) {
         if (voiceFieldHistory.length) {
           const last = voiceFieldHistory.pop();
           restoreVoiceField(last.field, last.oldValue);
+          voiceFieldConfirmed[last.field] = false; // 撤销 → 该字段回到可被常规解析更新状态
           renderVoicePreview();
           const undoMsg = voiceLang === 'es-MX' ? ('Deshecho: ' + fieldLabel(last.field)) : voiceLang === 'en-US' ? ('Undid ' + fieldLabel(last.field)) : '已撤销' + fieldLabel(last.field);
           showToast(undoMsg + ' ↩️'); speak(undoMsg);
@@ -1075,11 +1087,20 @@ function applyVoiceText(buffer) {
   }
 
   // 2) 常规填充（经 writeVoiceField 记录历史 → 支持"撤销"）
-  if (parsed.amount != null) {
+  // V4.5 字段保护：已确认字段（用户改口/手动改过）不被后续新段覆盖
+  const shouldSkip = (field, newVal) => {
+    if (!voiceFieldConfirmed[field]) return false;
+    const cur = readVoiceField(field);
+    // 值相同 → 无冲突，正常（重复确认）
+    if (cur && String(cur) === String(newVal)) return false;
+    // 已确认且值不同 → 跳过覆盖（除非用户说"改成X"走改口分支，那里会清 confirmed）
+    return true;
+  };
+  if (parsed.amount != null && !shouldSkip('amount', parsed.amount)) {
     writeVoiceField('amount', parsed.amount);
     filled = true;
   }
-  if (parsed.category) {
+  if (parsed.category && !shouldSkip('category', parsed.category)) {
     const sel = document.getElementById('qCategory');
     if (sel && [...sel.options].some(o => o.value === parsed.category)) {
       writeVoiceField('category', parsed.category);
@@ -1089,10 +1110,10 @@ function applyVoiceText(buffer) {
       showToast('⚠️ 分类「' + parsed.category + '」不在列表中', 'error');
     }
   }
-  if (parsed.date) {
+  if (parsed.date && !shouldSkip('date', parsed.date)) {
     writeVoiceField('date', parsed.date);
   }
-  if (parsed.account) {
+  if (parsed.account && !shouldSkip('account', parsed.account)) {
     const sel = document.getElementById('qAccount');
     if (sel && [...sel.options].some(o => o.value === parsed.account)) {
       // 记录 ASR 原始账户词（供"不是X是Y"改口学习：若原词非标准名 → learn 到标准银行）
@@ -1110,7 +1131,7 @@ function applyVoiceText(buffer) {
       showToast('⚠️ 账户「' + parsed.account + '」不在列表中，请到设置添加', 'error');
     }
   }
-  if (parsed.remark) writeVoiceField('remark', parsed.remark);
+  if (parsed.remark && !shouldSkip('remark', parsed.remark)) writeVoiceField('remark', parsed.remark);
 
   renderVoicePreview();
   setVoiceBtnState('done');

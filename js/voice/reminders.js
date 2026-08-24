@@ -19,6 +19,8 @@ let reminderVoiceSessionActive = false;
 let reminderVoiceBuffer = '';
 let reminderVoiceTimer = null;
 let currentNotifyReminder = null;
+// V4.5 字段状态：已确认字段（用户改口/手动改过）不被低置信新段覆盖
+let reminderFieldConfirmed = {};
 
 // 默认提醒语音语言：优先用户已保存，其次浏览器语言（global-config 检测），最后中文
 function defaultReminderLang() {
@@ -568,6 +570,7 @@ function startReminderVoice() {
   window.__reminderVoiceRetryCount = 0;
   reminderVoiceBuffer = '';
   reminderFieldHistory = []; // 新会话：清空字段历史（撤销栈）
+  reminderFieldConfirmed = {}; // 新会话：清空字段确认状态
   setReminderVoiceBtnState('listening');
   reminderVoiceSessionActive = true;
   resetReminderIdleTimer(); // 60 秒无有效语音自动停止
@@ -718,6 +721,7 @@ function applyReminderVoiceText(buffer) {
         if (reminderFieldHistory.length) {
           const last = reminderFieldHistory.pop();
           restoreReminderField(last.field, last.oldValue);
+          reminderFieldConfirmed[last.field] = false; // 撤销 → 字段回到可更新状态
           renderReminderVoicePreview();
           showToast('已撤销' + reminderFieldLabel(last.field) + ' ↩️');
         } else {
@@ -740,16 +744,16 @@ function applyReminderVoiceText(buffer) {
       if (corr.field === 'time' || corr.field === 'date' || corr.field === 'advance') {
         // 时间/日期/提前：交给 ReminderParser 从"新值"解析
         const sub = ReminderParser.parse(corr.value);
-        if (corr.field === 'time' && sub.datetime) { writeReminderField('rAt', sub.datetime); ok = true; }
-        else if (corr.field === 'date' && sub.datetime) { writeReminderField('rAt', sub.datetime); ok = true; }
-        else if (corr.field === 'advance' && sub.advance_minutes) { writeReminderField('rAdvance', String(sub.advance_minutes)); ok = true; }
-        else { writeReminderField(corr.field === 'time' ? 'rAt' : corr.field === 'advance' ? 'rAdvance' : 'rAt', corr.value); ok = true; }
+        if (corr.field === 'time' && sub.datetime) { writeReminderField('rAt', sub.datetime); reminderFieldConfirmed.time = true; ok = true; }
+        else if (corr.field === 'date' && sub.datetime) { writeReminderField('rAt', sub.datetime); reminderFieldConfirmed.time = true; ok = true; }
+        else if (corr.field === 'advance' && sub.advance_minutes) { writeReminderField('rAdvance', String(sub.advance_minutes)); reminderFieldConfirmed.advance = true; ok = true; }
+        else { writeReminderField(corr.field === 'time' ? 'rAt' : corr.field === 'advance' ? 'rAdvance' : 'rAt', corr.value); reminderFieldConfirmed.time = true; ok = true; }
       } else if (corr.field === 'location') {
-        writeReminderField('rLocation', corr.value); ok = true;
+        writeReminderField('rLocation', corr.value); reminderFieldConfirmed.location = true; ok = true;
       } else if (corr.field === 'content') {
-        writeReminderField('rContent', corr.value); ok = true;
+        writeReminderField('rContent', corr.value); reminderFieldConfirmed.content = true; ok = true;
       } else if (corr.field === 'note') {
-        writeReminderField('rNote', corr.value); ok = true;
+        writeReminderField('rNote', corr.value); reminderFieldConfirmed.note = true; ok = true;
       }
       renderReminderVoicePreview();
       showToast(ok ? ('✔ ' + label + '已改为 ' + corr.value) : label + '未识别', ok ? undefined : 'error');
@@ -766,11 +770,18 @@ function applyReminderVoiceText(buffer) {
   const clean = String(buffer || '').replace(FINAL_RE, ' ').replace(/\s+/g, ' ').trim();
   const parsed = ReminderParser.parse(clean);
   const filled = [];
-  if (parsed.datetime) { writeReminderField('rAt', parsed.datetime); filled.push('时间'); }
-  if (parsed.location) { writeReminderField('rLocation', parsed.location); filled.push('地点'); }
-  if (parsed.content) { writeReminderField('rContent', parsed.content); filled.push('事项'); }
-  if (parsed.advance_minutes) { writeReminderField('rAdvance', String(parsed.advance_minutes)); filled.push('提前'); }
-  if (parsed.note) { writeReminderField('rNote', parsed.note); filled.push('备注'); }
+  // V4.5 字段保护：已确认字段不被后续新段覆盖（除非改口分支）
+  const skipField = (field, newVal) => {
+    if (!reminderFieldConfirmed[field]) return false;
+    const cur = readReminderField(field === 'time' || field === 'date' ? 'rAt' : field === 'location' ? 'rLocation' : field === 'content' ? 'rContent' : field === 'advance' ? 'rAdvance' : field === 'note' ? 'rNote' : null);
+    if (cur && String(cur) === String(newVal)) return false;
+    return true;
+  };
+  if (parsed.datetime && !skipField('time', parsed.datetime)) { writeReminderField('rAt', parsed.datetime); filled.push('时间'); }
+  if (parsed.location && !skipField('location', parsed.location)) { writeReminderField('rLocation', parsed.location); filled.push('地点'); }
+  if (parsed.content && !skipField('content', parsed.content)) { writeReminderField('rContent', parsed.content); filled.push('事项'); }
+  if (parsed.advance_minutes && !skipField('advance', parsed.advance_minutes)) { writeReminderField('rAdvance', String(parsed.advance_minutes)); filled.push('提前'); }
+  if (parsed.note && !skipField('note', parsed.note)) { writeReminderField('rNote', parsed.note); filled.push('备注'); }
   if (parsed.repeat && parsed.repeat !== 'none') {
     const rp = document.getElementById('rRepeat');
     if (rp && [...rp.options].some(o => o.value === parsed.repeat)) { rp.value = parsed.repeat; filled.push('重复'); }
