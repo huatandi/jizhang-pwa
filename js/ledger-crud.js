@@ -68,13 +68,19 @@ async function renderIncome() {
 
 let editingIncomeId = null;
 // 把任意日期归一化为 yyyy-MM-dd（供 date 输入框）；无法解析 → 用今天。避免把 OCR 等非纯日期塞进日期框显示成 □□□
+// V5：改为"在字符串中找第一个合法日期"，可容忍 日期+时间无分隔拼接（如 2026-08-24000000 → 2026-08-24）。
 function normalizeDateForInput(val) {
-  const t = String(val || '').trim().split(/[\sT]/)[0]; // 只取日期部分（去掉时间）
-  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const t = String(val || '').trim();
+  if (!t) return global.todayLocal ? global.todayLocal() : '';
   const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  let m = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  // 1) 优先 YYYY-MM-DD
+  let m = t.match(/(\d{4})-(\d{2})-(\d{2})/);
   if (m) { const mo = +m[2], d = +m[3]; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return iso(+m[1], mo, d); }
-  m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  // 2) YYYY/MM/DD 或 YYYY.MM.DD
+  m = t.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if (m) { const mo = +m[2], d = +m[3]; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return iso(+m[1], mo, d); }
+  // 3) DD/MM/YYYY 或 MM/DD/YYYY（DD>12 自动交换）
+  m = t.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
   if (m) { let d = +m[1], mo = +m[2], y = +m[3]; if (mo > 12 && d <= 12) { const tmp = d; d = mo; mo = tmp; } if (y < 100) y += 2000; if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) return iso(y, mo, d); }
   return global.todayLocal ? global.todayLocal() : '';
 }
@@ -99,7 +105,7 @@ function editIncome(id) {
     const r = rows.find(x => x.id === id);
     if (!r) return;
     editingIncomeId = id;
-    document.getElementById('iDate').value = r.date;
+    document.getElementById('iDate').value = normalizeDateForInput(deJs(r.date));
     document.getElementById('iAmount').value = r.amount;
     document.getElementById('iDiscount').value = r.discount || '';
     document.getElementById('iHandler').value = r.handler || '';

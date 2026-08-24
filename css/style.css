@@ -3145,6 +3145,41 @@ select option {
 .reminder-voice-btn:hover { transform: scale(1.05); }
 .reminder-voice-btn .voice-btn-icon { font-size: 18px; line-height: 1; }
 .reminder-voice-btn .voice-btn-text { font-size: 9px; font-weight: 700; color: #fff; line-height: 1; }
+/* 日期/时间输入框：暗色主题 → 日历/时钟图标用白色渲染，否则深色看不见（V5） */
+input[type="date"], input[type="datetime-local"], input[type="time"], input[type="month"], input[type="week"] {
+  color-scheme: dark;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) grayscale(1) brightness(1.7);
+  opacity: 0.92;
+  cursor: pointer;
+}
+/* 收入/支出/进货 弹窗底部：话筒与「保存」同尺寸/圆角/琥珀渐变（V5） */
+.quick-footer .voice-btn {
+  padding: 11px 20px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #ffb020, #f59e0b);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px rgba(255, 176, 32, 0.25);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.quick-footer .voice-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(255, 176, 32, 0.35); }
+.quick-footer .voice-btn .voice-btn-icon { font-size: 17px; line-height: 1; }
+.quick-footer .voice-btn .voice-btn-text { font-size: 13px; font-weight: 600; color: #fff; }
+.quick-footer .voice-btn.listening { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.25); }
+.quick-footer .voice-btn.done { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 14px rgba(34, 197, 94, 0.4); }
+.quick-footer .voice-btn.error { background: linear-gradient(135deg, #f59e0b, #d97706); }
 .reminder-voice-btn.listening {
   background: linear-gradient(135deg, #ef4444, #f59e0b);
   animation: voicePulse 1.2s infinite;
