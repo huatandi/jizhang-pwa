@@ -13,12 +13,17 @@
  */
 (function (global) {
   // 字段 → 标签词（区域定位用）。支持中/西/英。
+  // V5 §34：全字段化 —— amount/date/merchant/tax_id/folio/reference/account_last4
   const FIELD_LABELS = {
     amount: [/total/i, /importe\s*total/i, /gran\s*total/i, /subtotal/i, /monto/i, /importe/i, /金额/i, /总计/i, /amount/i],
     date: [/fecha/i, /date/i, /fechade/i, /日期/i, /emision/i],
     tax: [/iva/i, /impuesto/i, /tax/i, /税额/i],
     merchant: [/tienda/i, /store/i, /merchant/i, /商户/i, /店/i, /establecimiento/i],
     rfc: [/rfc/i, /cfdi/i, /folio\s*fiscal/i],
+    tax_id: [/rfc/i, /tax\s*id/i, /ein/i, /税号/i, /统一社会信用代码/i],
+    folio: [/folio/i, /参考号/i, /referencia/i, /reference/i],
+    reference: [/referencia/i, /reference/i, /clave\s*de\s*rastreo/i, /跟踪号/i, /流水号/i],
+    account_last4: [/terminaci[oó]n/i, /尾号/i, /last\s*4/i, /ending\s*in/i, /card\s*ending/i],
   };
 
   // 区域文本提取正则（字段专用，容忍 $/空格/千分位）
@@ -29,6 +34,10 @@
     tax: /(?:^|[^0-9])(\d{1,3}(?:[.,]\d{3})*(?:\.\d{2})?|\d+[.,]\d{2}|\d+)/i,
     merchant: /(?:tienda|store|merchant|establecimiento|商户|店)\s*[:：]?\s*([A-Za-zÁÉÍÓÚÑü0-9&.\- ]{2,30})/i,
     rfc: /([A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3})/i,
+    tax_id: /([A-ZÑ&0-9]{6,20})/i,
+    folio: /([A-Z0-9]{4,14})/i,
+    reference: /([A-Z0-9\-]{6,18})/i,
+    account_last4: /(\d{4})/i,
   };
 
   /** 找某字段的标签行 bbox（返回行对象；无则 null） */

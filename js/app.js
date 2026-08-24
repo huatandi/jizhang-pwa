@@ -2955,7 +2955,8 @@ async function initAfterLogin() {
       if (badge) badge.textContent = '🧠 ' + window.AIKit.capabilityBadge(cap);
       const ocrPlan = window.AIKit.ocrPlan(cap);
       const wbHint = document.getElementById('wbLocalOcrBtn');
-      if (wbHint) wbHint.title = '本地识别：' + ocrPlan.reason + '（Paddle → Tesseract → 服务器）';
+      // V5 §75 文案修正：本地链路为 Paddle → Tesseract；服务器提取是独立功能，不宣称自动回退
+      if (wbHint) wbHint.title = '本地识别：' + ocrPlan.reason + '（Paddle → Tesseract，本地；服务器提取为独立功能）';
     }).catch(() => {});
   }
   // 语音提醒：加载列表 + 启动到期检测

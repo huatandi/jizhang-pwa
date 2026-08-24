@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v104';
+const CACHE_NAME = 'jizhang-pwa-v108';
 const APP_SHELL = [
   './',
   './index.html',
@@ -18,11 +18,17 @@ const APP_SHELL = [
   './js/validation/confidence.js',
   './js/validation/transaction.js',
   './js/ocr/ocr-types.js',
+  './js/ocr/image-quality.js',
   './js/ocr/preprocess.js',
   './js/ocr/tesseract-engine.js',
   './js/ocr/paddle-engine.js',
   './js/ocr/ocr-manager.js',
+  './js/ocr/ocr-job-manager.js',
+  './js/ocr/execution-planner.js',
+  './js/ocr/server-engine.js',
+  './js/ocr/preprocess-worker.js',
   './js/ocr/region-retry.js',
+  './js/ocr/ocr-candidate-pool.js',
   './js/mexico/money.js',
   './js/mexico/field-normalizer.js',
   './js/mexico/currency-evidence.js',
@@ -31,6 +37,9 @@ const APP_SHELL = [
   './js/mexico/spei-parser.js',
   './js/mexico/oxxo-parser.js',
   './js/mexico/parser.js',
+  './js/regions/router.js',
+  './js/regions/mx.js',
+  './js/regions/cn.js',
   './js/asr/asr-types.js',
   // RecognitionCore：本地知识库/实体解析/银行词典/置信度/QR（语音+OCR 共享）
   './js/recognition/knowledge-base.js',
@@ -53,6 +62,12 @@ const APP_SHELL = [
   './js/voice/personal-voice-memory.js',
   './js/intelligence/evidence-engine.js',
   './js/intelligence/conflict-resolver.js',
+  './js/intelligence/constraint-engine.js',
+  './js/intelligence/ocr-confusion-model.js',
+  './js/intelligence/ocr-memory-store.js',
+  './js/intelligence/document-fingerprint.js',
+  './js/intelligence/template-engine.js',
+  './js/intelligence/correction-learner.js',
   './js/learning/learning-engine.js',
   // app.js 拆分模块（app.js v69 拆分）
   './js/voice/reminders.js',
