@@ -164,10 +164,11 @@
       if (val > 0) return { value: val, consumed: m[0], weight: 4 };
     }
     // e) 3位以上阿拉伯数字（无单位）：仅当 >=100 或带小数，避免"50斤米"的50、日期"8月15"的15
-    m = t.match(/(?<![\d.])(\d{3,}(?:\.\d{1,2})?|\d+\.\d{1,2})(?![\d.])/);
+    // ⚠️ 不用 lookbehind（iOS Safari<16.4 不支持 → 抛 SyntaxError），改由匹配后校验前导字符
+    m = t.match(/(^|[^\d.])(\d{3,}(?:\.\d{1,2})?|\d+\.\d{1,2})(?![\d.])/);
     if (m) {
-      const val = Number(m[1]);
-      if (val >= 100 || /\.\d/.test(m[1])) return { value: val, consumed: m[0], weight: 1 };
+      const val = Number(m[2]);
+      if (val >= 100 || /\.\d/.test(m[2])) return { value: val, consumed: m[2], weight: 1 };
     }
     // e2) 金额动词后的纯数字（"花了/买了/付了/付/共/合计" + 50）：口语常省略单位，金额语境明确
     m = t.match(/(?:花了|买了|付了|支付了|付|共花了|共|合计|金额|为)\s*[:：]?\s*(?:¥|￥|\$)?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2})(?![\d.])/);

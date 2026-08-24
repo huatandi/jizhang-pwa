@@ -58,9 +58,8 @@ async function aiUploadFiles(files) {
   const btn = document.getElementById('aiDropzone');
   if (btn) btn.style.opacity = '0.6';
   try {
-    const res = await fetch('/api/ai/documents', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '上传失败');
+    // 审计修复：FormData 上传带鉴权（此前 401）
+    const data = await (typeof apiForm === 'function' ? apiForm('/ai/documents', fd) : fetch('/api/ai/documents', { method: 'POST', body: fd }).then(r => r.json()));
     let msg = `已上传 ${data.count} 张单据`;
     const dups = data.documents.filter(d => d.duplicate).length;
     if (dups) msg += `，其中 ${dups} 张是重复文件已跳过`;
@@ -439,7 +438,7 @@ function aiReviewCard(r) {
         ${r.transaction_type === 'income' ? '💰 收入' : (r.transaction_type === 'expense' ? '💸 支出' : '❓ 未知')}
       </span>
       <span class="ai-conf-badge ${confCls}">可信度 ${conf}%</span>
-      ${r.languages && r.languages !== 'auto' ? `<span class="ai-lang-badge">🌐 ${({ spa: 'Español', eng: 'English', chi_sim: '中文', 'spa+eng': 'Español+English' })[r.languages] || r.languages}</span>` : ''}
+      ${r.languages && r.languages !== 'auto' ? `<span class="ai-lang-badge">🌐 ${escapeHtml(({ spa: 'Español', eng: 'English', chi_sim: '中文', 'spa+eng': 'Español+English' })[r.languages] || r.languages)}</span>` : ''}
       <span class="ai-doc-name">${escapeHtml(r.file_name || '')}</span>
       <button class="ai-toggle-btn" data-id="${r.id}">${Number(aiReviewExpanded) === Number(r.id) ? '收起 ▲' : '确认 ▼'}</button>
     </div>
@@ -605,9 +604,14 @@ function aiToggle(id) {
 // 确认入账
 async function aiConfirm(id) {
   const edits = {};
-  for (const f of ['date', 'amount', 'party', 'company', 'bank_payer', 'bank_receiver', 'account', 'tax', 'account_tail', 'reference', 'tracking_key', 'concept', 'remark']) {
-    const el = document.getElementById(`c${f[0].toUpperCase() + f.slice(1)}-${id}`);
-    if (el) edits[f] = el.value;
+  // 修复：卡片输入框 ID 与字段名不一致（cTail- 而非 cAccount_tail- / cTracking- 而非 cTracking_key-），
+  // 统一用 data-field 收集，避免账户尾号/Clave rastreo 修正值被静默丢弃
+  const card = document.getElementById(`aiDetail-${id}`);
+  if (card) {
+    card.querySelectorAll('input[data-field], select[data-field]').forEach((el) => {
+      const f = el.getAttribute('data-field');
+      if (f && el.value != null) edits[f] = el.value;
+    });
   }
   const categoryEl = document.getElementById(`cCategory-${id}`);
   const category = categoryEl ? categoryEl.value : '';
@@ -618,6 +622,11 @@ async function aiConfirm(id) {
       const el = document.getElementById(`c${f[0].toUpperCase() + f.slice(1)}-${id}`);
       if (el && el.value !== '' && el.value != null) chosen[f] = el.value;
     }
+    // 账户尾号/Clave rastreo 的 ID 与字段名不一致 → 单独补到 chosen
+    const tailEl = document.getElementById(`cTail-${id}`);
+    if (tailEl && tailEl.value !== '') chosen.account_tail = tailEl.value;
+    const trackEl = document.getElementById(`cTracking-${id}`);
+    if (trackEl && trackEl.value !== '') chosen.tracking_key = trackEl.value;
     if (category) chosen.expense_category = category;
     const r = await api('/ai/confirm', 'POST', { extractionId: id, edits, category, chosen });
     showToast('已入账 ✅');
@@ -651,7 +660,7 @@ async function aiRefreshTemplates() {
     }
     list.innerHTML = tpls.slice(0, 30).map(t => `
       <div class="ai-tpl-item">
-        <span class="ai-tpl-name">${t.template_name || t.document_type}</span>
+        <span class="ai-tpl-name">${escapeHtml(t.template_name || t.document_type || '未知模板')}</span>
         <span class="ai-tpl-meta">见过 ${t.sample_count} 次 · ${(t.last_seen_at || '').slice(0, 10)}</span>
       </div>`).join('');
   } catch (e) { /* ignore */ }
@@ -703,7 +712,11 @@ async function aiRefreshDocs() {
 async function aiDeleteDoc(id) {
   if (!confirm('确定删除这张单据？\n其识别结果（含待确认账务）和原始文件也会一并删除。')) return;
   try {
-    const r = await fetch('/api/ai/documents/' + id, { method: 'DELETE' });
+    // 审计修复：DELETE 带鉴权（此前 401）
+    const r = await fetch('/api/ai/documents/' + id, {
+      method: 'DELETE',
+      headers: (() => { const a = typeof currentAuth === 'function' ? currentAuth() : null; return a && a.token ? { 'Authorization': 'Bearer ' + a.token } : {}; })(),
+    });
     const ct = r.headers.get('content-type') || '';
     let data = null;
     if (ct.includes('application/json')) data = await r.json();
@@ -740,6 +753,7 @@ async function aiOpenWorkbench(id) {
   document.getElementById('wbTax').value = '';
   document.getElementById('wbReference').value = '';
   document.getElementById('wbTracking').value = '';
+  document.getElementById('wbRemark').value = ''; // 审计修复：缺清空导致跨单据备注残留
   document.getElementById('wbType').value = 'expense';
   try {
     fillSelect('wbCategory', (options && options.expense_categories) || [], true);
@@ -749,6 +763,8 @@ async function aiOpenWorkbench(id) {
   // 若已有待确认记录，预填已知字段
   try {
     const rows = await api('/ai/pending');
+    // 审计修复：await 期间用户可能已打开另一张单据 → 旧续体不得覆盖新表单
+    if (wbDocId !== id) return;
     const r = rows.find(x => Number(x.document_id) === Number(id));
     if (r) {
       if (r.date) document.getElementById('wbDate').value = r.date;
@@ -1060,13 +1076,8 @@ async function wbExtract(force) {
   btn.textContent = '⏳ 识别中…';
   const langSel = document.getElementById('aiOcrLang');
   try {
-    const r = await fetch('/api/ai/documents/' + wbDocId + '/extract', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ocrLang: langSel ? langSel.value : 'auto', force: !!force }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || '提取失败');
+    // 审计修复：裸 fetch 不带 Authorization（服务端模式下 401）→ 改用 api()（自动附加 token）
+    const data = await api('/ai/documents/' + wbDocId + '/extract', 'POST', { ocrLang: langSel ? langSel.value : 'auto', force: !!force });
     const tx = data.transaction || {};
     const cf = data.core_fields || {};   // 统一字段置信度（§二十八）
     // 默认展示"语义纠错 + 行重建"后的文本；无纠正时退回原始 OCR
@@ -1161,6 +1172,16 @@ async function wbExtract(force) {
 // PWA 本地图片识别（对号入座）：用本地 OCR 识别工作台图片，
 // 解析出 日期/金额/商户/公司/银行/尾号/税号/分类，按字段框自动填入（可修改后保存）
 // V2：优先 OcrKit（Paddle→Tesseract）+ MexicoParser 结构化解析；不可用则回退旧 OfflineOCR。
+// 本地 OCR 识别语言：跟随"识别语言"下拉 → tesseract.js 语言组合
+function wbOcrLang() {
+  const sel = document.getElementById('aiOcrLang');
+  const v = sel ? sel.value : 'auto';
+  if (v === 'chi_sim') return 'chi_sim';
+  if (v === 'eng') return 'eng';
+  if (v === 'spa') return 'spa';
+  return 'spa+eng'; // auto/默认：西语+英语（墨西哥票据）
+}
+
 async function wbLocalOcr() {
   const img = document.getElementById('wbImg');
   const btn = document.getElementById('wbLocalOcrBtn');
@@ -1211,6 +1232,7 @@ async function wbLocalOcr() {
     showToast('正在本地识别（首次需加载语言包，约10-30秒）…');
     const resOld = await window.OfflineOCR.recognize(dataUrl, {
       categories: (options && options.expense_categories) || [],
+      language: wbOcrLang(), // 审计修复：本地识别跟随"识别语言"下拉（此前恒为 spa+eng）
     });
     // 显示识别文本
     showWbOcr(resOld.text);
@@ -1570,6 +1592,7 @@ async function wbSmartRecognize() {
       showToast('① 正在本地识别（旧引擎）…');
       res = await window.OfflineOCR.recognize(dataUrl, {
         categories: (options && options.expense_categories) || [],
+        language: wbOcrLang(), // 审计修复：跟随语言下拉
       });
     }
     showWbOcr(res.text);
@@ -1824,12 +1847,16 @@ function wbToggleCandPop(btn, key, field) {
 
 // 选中候选：填入字段 + 高亮原图 bbox
 function wbPickCandidate(key, cand, label) {
+  // 审计修复：补齐 company_name/folio/tracking_number/remark（此前缺失导致点击候选无效却提示成功）
   const idMap = {
-    date: 'wbDate', amount: 'wbAmount', merchant_name: 'wbMerchant', expense_category: 'wbCategory',
-    payer_bank: 'wbBankPayer', receiver_bank: 'wbBankReceiver', account_tail: 'wbTail', rfc: 'wbTax',
+    date: 'wbDate', amount: 'wbAmount', merchant_name: 'wbMerchant', company_name: 'wbCompany',
+    expense_category: 'wbCategory', payer_bank: 'wbBankPayer', receiver_bank: 'wbBankReceiver',
+    account_tail: 'wbTail', rfc: 'wbTax', folio: 'wbReference', tracking_number: 'wbTracking',
+    income_expense: 'wbType', remark: 'wbRemark',
   };
   const el = document.getElementById(idMap[key]);
-  if (el) el.value = cand.value;
+  if (!el) { showToast('该字段暂不支持点击填入', 'error'); return; }
+  el.value = cand.value;
   // 高亮 bbox
   if (cand.bbox && Array.isArray(cand.bbox) && cand.bbox.length === 4) {
     wbHighlightBbox(cand.bbox);

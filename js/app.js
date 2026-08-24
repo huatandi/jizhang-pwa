@@ -280,6 +280,20 @@ async function api(path, method = 'GET', body = null) {
   return res.json();
 }
 
+// FormData 上传（带鉴权）：api() 强制 JSON，FormData 需单独处理（审计修复：AI 单据上传 401）
+async function apiForm(path, fd, method = 'POST') {
+  const opts = { method, body: fd };
+  const auth = currentAuth();
+  if (auth && auth.token) opts.headers = { 'Authorization': 'Bearer ' + auth.token };
+  const res = await fetch('/api' + path, opts);
+  if (!res.ok) {
+    let msg = '请求失败: ' + res.status;
+    try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (e) { /* ignore */ }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
 async function loadOptions() {
   try {
     options = await api('/options');

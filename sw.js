@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v95';
+const CACHE_NAME = 'jizhang-pwa-v96';
 const APP_SHELL = [
   './',
   './index.html',
@@ -121,25 +121,35 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   // API 请求不缓存（走 IndexedDB 伪后端，本地 fetch 已被劫持，SW 只处理真实网络资源）
   if (url.pathname.startsWith('/api/')) return;
+  // 缓存键统一用"去 query 的规范化 URL"：boot.js 加载 app.js?v=100、index.html 加载 css?v=46，
+  // 若按完整 URL（含 query）匹配，离线时会 miss 并 fallback 到 index.html 导致启动崩溃。
+  // 版本更新靠 CACHE_NAME 换代（install 预缓存新资源 + activate 清旧缓存），query 仅作在线强刷信号。
+  const cacheKey = url.origin + url.pathname;
+  const cacheRequest = new Request(cacheKey, { method: 'GET', mode: e.request.mode });
   // 语言包（大文件）缓存优先
   if (url.pathname.includes('traineddata') || url.pathname.includes('wasm')) {
     e.respondWith(
-      caches.match(e.request).then((c) => c || fetch(e.request).then((res) => {
+      caches.match(cacheRequest).then((c) => c || fetch(e.request).then((res) => {
         const clone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        caches.open(CACHE_NAME).then((cache) => cache.put(cacheRequest, clone));
         return res;
       }))
     );
     return;
   }
-  // 其余：网络优先，缓存回退
+  // 其余：网络优先，缓存回退（回退按 pathname 匹配，避免离线把 index.html 当脚本返回）
   e.respondWith(
     fetch(e.request).then((res) => {
       if (res && res.status === 200 && (res.type === 'basic' || res.type === 'default')) {
         const clone = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        caches.open(CACHE_NAME).then((cache) => cache.put(cacheRequest, clone));
       }
       return res;
-    }).catch(() => caches.match(e.request).then((c) => c || caches.match('./index.html')))
+    }).catch(() => caches.match(cacheRequest).then((c) => {
+      if (c) return c;
+      // 精确 pathname miss：仅当请求是 HTML 才 fallback index.html（避免 JS/CSS 拿到 HTML 崩溃）
+      const isHtml = url.pathname === '/' || url.pathname.endsWith('.html') || !/\.[a-z0-9]+$/i.test(url.pathname);
+      return isHtml ? caches.match('./index.html') : Response.error();
+    }))
   );
 });

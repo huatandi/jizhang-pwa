@@ -38,8 +38,12 @@
     return 'spa+eng';
   }
 
+  // 按语言缓存 worker（审计修复：此前只建一个 worker，切换语言被静默忽略）
+  const workers = new Map(); // lang → worker
+
   async function getWorker(lang) {
-    if (worker) return worker;
+    const key = lang || resolveOcrLang();
+    if (workers.has(key)) return workers.get(key);
     if (typeof Tesseract === 'undefined') {
       throw new Error('Tesseract 未加载（vendor/tesseract/tesseract.min.js）');
     }
@@ -55,13 +59,14 @@
       corePath = CDN_CORE_PATH + (supportsSimd() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
       langPath = CDN_LANG_PATH;
     }
-    worker = await Tesseract.createWorker(lang || resolveOcrLang(), 1, {
+    const w = await Tesseract.createWorker(key, 1, {
       workerPath: 'vendor/tesseract/worker.min.js',
       langPath,
       corePath,
       logger: () => {},
     });
-    return worker;
+    workers.set(key, w);
+    return w;
   }
 
   /**
@@ -117,19 +122,21 @@
       if (m) out.amount = parseFloat(m[1].replace(/,/g, ''));
     }
     if (!out.amount) {
-      // 兜底：文本中最大金额
-      const all = t.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
-      if (all) out.amount = Math.max(...all.map(x => parseFloat(x.replace(/,/g, ''))));
+      // 兜底：文本中最大金额（审计修复：①用 reduce 避免超长票据 spread 栈溢出 ②剔除日期碎片如 12.03.2024 / 2024-05-06）
+      const cleaned = t.replace(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/g, ' ').replace(/\b\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}\b/g, ' ');
+      const all = cleaned.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
+      if (all) out.amount = all.reduce((mx, x) => { const n = parseFloat(x.replace(/,/g, '')); return n > mx ? n : mx; }, 0);
     }
 
     // ---- 商户/公司 ----
-    // BANCO BENEFICIARIO / BANCO ORDENANTE 属于银行字段，必须用 lookbehind 排除，
-    // 否则 "BANCO BENEFICIARIO: BBVA" 会被 merchant 标签抢走。
+    // BANCO BENEFICIARIO / BANCO ORDENANTE 属于银行字段，不能当商户/公司抢走。
+    // ⚠️ iOS Safari <16.4 不支持 lookbehind（(?<!BANCO\s) 会抛 SyntaxError 使本地识别整体崩溃），
+    // 改为：先删除 BANCO 前缀的标签行，再用普通正则匹配（等价且全平台安全）。
     const merchantTags = ['NOMBRE', 'RAZON SOCIAL', 'BENEFICIARIO', 'ORDENANTE', 'PROVEEDOR', '商户', '公司', '销售方', '收款方', '付款方', 'MERCHANT'];
+    // 剔除银行专属标签行（BANCO BENEFICIARIO: BBVA → 不参与商户/公司匹配）
+    let mText = t.replace(/\bBANCO\s+(?:BENEFICIARIO|ORDENANTE)\s*[:：]?\s*[^\n]*/gi, '\n');
     for (const tag of merchantTags) {
-      // 银行专属标签排除 BANCO 前缀
-      const guard = (tag === 'BENEFICIARIO' || tag === 'ORDENANTE' || tag === 'PROVEEDOR') ? '(?<!BANCO\\s)' : '';
-      m = t.match(new RegExp(guard + tag + '\\s*[:：]?\\s*([A-ZÁÉÍÓÚÑÜ][A-Za-zÁÉÍÓÚÑÜü0-9.& ]{2,40})', 'i'));
+      m = mText.match(new RegExp(tag + '\\s*[:：]?\\s*([A-ZÁÉÍÓÚÑÜ][A-Za-zÁÉÍÓÚÑÜü0-9.& ]{2,40})', 'i'));
       if (m && m[1] && !/^\d/.test(m[1])) {
         if (!out.company) out.company = m[1].trim();
         else if (!out.merchant) out.merchant = m[1].trim();

@@ -180,8 +180,23 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
       try {
         const data = db.export();
         idbSave(DB_KEY, data);
-      } catch (e) { /* ignore */ }
+      } catch (e) { console.warn('[db] 保存失败:', e); }
     }, 200);
+  }
+
+  // 立即落盘（页面隐藏/关闭前 flush，避免防抖窗口内数据丢失）
+  function flush() {
+    if (!db) return;
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    try {
+      const data = db.export();
+      idbSave(DB_KEY, data);
+    } catch (e) { console.warn('[db] flush 保存失败:', e); }
+  }
+  // PWA 切后台/关闭前立即写 IndexedDB（审计修复：防抖 200ms 窗口内丢失最后操作）
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+    window.addEventListener('pagehide', flush);
   }
 
   // ---------- node:sqlite 兼容的 prepare 接口 ----------
