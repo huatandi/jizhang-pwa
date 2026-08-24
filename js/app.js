@@ -737,7 +737,7 @@ function fillQuickTemplates(type) {
 async function saveQuickTemplate(type) {
   const fields = type === 'income' ? {
     project: document.getElementById('iProject').value,
-    pay_method: document.getElementById('iPayMethod').value,
+    pay_method: '', // 收款方式已从界面移除
     account: document.getElementById('iAccount').value,
     card_pending_account: document.getElementById('iCardPending').value,
     handler: document.getElementById('iHandler').value,
@@ -745,6 +745,7 @@ async function saveQuickTemplate(type) {
   } : {
     category: document.getElementById('eCategory').value,
     account: document.getElementById('eAccount').value,
+    payee: document.getElementById('ePayee') ? document.getElementById('ePayee').value : '',
     handler: document.getElementById('eHandler').value,
     remark: document.getElementById('eRemark').value
   };
@@ -785,6 +786,7 @@ function applyQuickTemplate(type, name) {
   } else {
     if (f.category && document.getElementById('eCategory')) document.getElementById('eCategory').value = f.category;
     if (f.account && document.getElementById('eAccount')) document.getElementById('eAccount').value = f.account;
+    if (f.payee && document.getElementById('ePayee')) document.getElementById('ePayee').value = f.payee;
     if (f.handler) document.getElementById('eHandler').value = f.handler;
     if (f.remark) document.getElementById('eRemark').value = f.remark;
   }

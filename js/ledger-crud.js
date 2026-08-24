@@ -75,7 +75,6 @@ function openIncomeModal(prefillDate) {
   document.getElementById('iHandler').value = '';
   document.getElementById('iRemark').value = '';
   fillSelect('iProject', options.departments, true);
-  fillSelect('iPayMethod', options.pay_methods, true);
   fillAccountSelect ? fillAccountSelect('iAccount', true) : fillSelect('iAccount', options.accounts, true);
   fillSelect('iCardPending', options.discount_accounts, true);
   // 功能补充 P5：填充快捷模板下拉
@@ -94,11 +93,9 @@ function editIncome(id) {
     document.getElementById('iHandler').value = r.handler || '';
     document.getElementById('iRemark').value = r.remark || '';
     fillSelect('iProject', options.departments, true);
-    fillSelect('iPayMethod', options.pay_methods, true);
     fillAccountSelect ? fillAccountSelect('iAccount', true) : fillSelect('iAccount', options.accounts, true);
     fillSelect('iCardPending', options.discount_accounts, true);
     document.getElementById('iProject').value = r.project;
-    document.getElementById('iPayMethod').value = r.pay_method;
     document.getElementById('iAccount').value = r.account;
     document.getElementById('iCardPending').value = r.card_pending_account || '';
     // 功能补充 P4：编辑时金额已是基准币种，币种固定为基准（避免二次换算误导）
@@ -122,10 +119,10 @@ async function saveIncome() {
   const d = {
     date: document.getElementById('iDate').value,
     project: document.getElementById('iProject').value,
-    pay_method: document.getElementById('iPayMethod').value,
+    pay_method: '', // 收款方式已从界面移除（V5）
     account: document.getElementById('iAccount').value,
     amount: document.getElementById('iAmount').value,
-    discount: document.getElementById('iDiscount').value,
+    discount: document.getElementById('iDiscount').value, // 未入金额（刷卡未入账户的金额）
     card_pending_account: document.getElementById('iCardPending').value,
     handler: document.getElementById('iHandler').value,
     remark: document.getElementById('iRemark').value,
@@ -466,6 +463,7 @@ function openExpenseModal(prefillDate) {
   editingExpenseId = null;
   document.getElementById('eDate').value = deJs(prefillDate) || todayLocal();
   document.getElementById('eAmount').value = '';
+  document.getElementById('ePayee').value = '';
   document.getElementById('eHandler').value = '';
   document.getElementById('eRemark').value = '';
   fillSelect('eCategory', options.expense_categories, true);
@@ -482,6 +480,7 @@ function editExpense(id) {
     editingExpenseId = id;
     document.getElementById('eDate').value = r.date;
     document.getElementById('eAmount').value = r.amount;
+    document.getElementById('ePayee').value = r.payee || '';
     document.getElementById('eHandler').value = r.handler || '';
     document.getElementById('eRemark').value = r.remark || '';
     fillSelect('eCategory', options.expense_categories, true);
@@ -498,6 +497,7 @@ async function saveExpense() {
     category: document.getElementById('eCategory').value,
     amount: document.getElementById('eAmount').value,
     account: document.getElementById('eAccount').value,
+    payee: document.getElementById('ePayee').value,
     handler: document.getElementById('eHandler').value,
     remark: document.getElementById('eRemark').value,
     currency: (document.getElementById('eCurrency') || {}).value || BASE_CURRENCY()
