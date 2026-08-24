@@ -49,7 +49,7 @@
   const GENERIC_PROFILE = {
     code: 'GENERIC', lang: 'en', currency: null,
     labels: {
-      TOTAL_AMOUNT: [/\btotal\b/i, /\btotal\s*a\s*pagar\b/i, /\bgrand\s*total\b/i],
+      TOTAL_AMOUNT: [/\btotal\b/i, /\btotal\s*a\s*pagar\b/i, /\btotal\s*a\s*cobrar\b/i, /\bimporte\s*cobrado\b/i, /\ba\s+cobrar\b/i, /\bgrand\s*total\b/i],
       SUBTOTAL: [/\bsubtotal\b/i, /\bsub\s*total\b/i],
       TAX: [/\btax\b/i, /\bvat\b/i, /\bgst\b/i],
       DISCOUNT: [/\bdiscount\b/i],

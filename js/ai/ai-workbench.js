@@ -1470,8 +1470,14 @@ function extractCommonFields(fullText, words) {
   const numMoney = (s) => Number(String(s).replace(/[,\s]/g, ''));
   f.amountSource = null;
   f.amountConfidence = 0;
-  m = t.match(new RegExp('(?:\\bTOTAL\\b(?!\\s*SUB)|total a pagar|gran total|合计|总计|金额|AMOUNT)\\s*[=:]?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
-  if (m) { f.amountSource = 'label'; f.amountConfidence = 0.90; }
+  // 优先：明确"应收/应支付"标签（TOTAL A COBRAR / IMPORTE COBRADO / TOTAL A PAGAR / A COBRAR）——高置信
+  m = t.match(new RegExp('\\b(?:TOTAL\\s+A\\s+COBRAR\\b|TOTAL\\s*A\\s*PAGAR\\b|IMPORTE\\s+COBRADO\\b|A\\s+COBRAR\\b)\\s*[=:]?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
+  if (m) { f.amountSource = 'label_total'; f.amountConfidence = 0.95; }
+  // 通用：TOTAL / IMPORTE / 合计 / AMOUNT（允许标签与金额之间有少量文字，如 "TOTAL A COBRAR" 也兼容）
+  if (!m) {
+    m = t.match(new RegExp('(?:\\bTOTAL\\b(?!\\s*SUB)|\\bIMPORTE\\b|合计|总计|金额|AMOUNT|Monto|MONTO)[^\\d$¥€£￥₩]{0,8}?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
+    if (m) { f.amountSource = 'label'; f.amountConfidence = 0.90; }
+  }
   if (!m) {
     m = t.match(new RegExp('(?:IMPORTE|Monto|MONTO)\\s*[=:]?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
     if (m) { f.amountSource = 'importe'; f.amountConfidence = 0.80; }
@@ -1491,7 +1497,7 @@ function extractCommonFields(fullText, words) {
   }
   // TOTAL 已匹配但金额恰为现金/找零（如 OCR 把 EFECTIVO 值排在 TOTAL 后）→ 显式重取 TOTAL 行
   if (f.amount != null && CASH_LABEL_RE.test(t)) {
-    const tot = t.match(new RegExp('(?:\\bTOTAL\\b(?!\\s*SUB)|total a pagar|gran total)\\s*[=:]?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
+    const tot = t.match(new RegExp('(?:\\bTOTAL\\b(?:\\s+A\\s+COBRAR\\b)?|\\bTOTAL\\s*A\\s*PAGAR\\b|\\bIMPORTE\\s+COBRADO\\b)[^\\d$¥€£￥₩]{0,8}?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
     if (tot && tot[1]) f.amount = String(numMoney(tot[1]));
   }
   // 商户：已知标签（排除银行专属标签；支持中文；捕获组不含 / : 以免吞掉日期；在日期/金额标签前截断）

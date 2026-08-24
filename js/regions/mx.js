@@ -12,7 +12,7 @@
     lang: 'es-MX',
     currency: 'MXN',
     labels: {
-      TOTAL_AMOUNT: [/\btotal\b(?!\s*sub)/i, /\btotal\s*a\s*pagar\b/i, /\bgran\s*total\b/i, /\bimporte\s*total\b/i],
+      TOTAL_AMOUNT: [/\btotal\b(?!\s*sub)/i, /\btotal\s*a\s*pagar\b/i, /\btotal\s*a\s*cobrar\b/i, /\bimporte\s*cobrado\b/i, /\ba\s+cobrar\b/i, /\bgran\s*total\b/i, /\bimporte\s*total\b/i],
       SUBTOTAL: [/\bsubtotal\b/i],
       TAX: [/\biva\b/i, /\bieps\b/i, /\bimpuesto\b/i],
       DISCOUNT: [/\bdescuento\b/i],
