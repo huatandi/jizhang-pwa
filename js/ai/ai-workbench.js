@@ -1066,7 +1066,7 @@ async function wbExtract(force) {
     } catch (e) {
       console.error('[ocr] 本地识别失败:', e);
       showWbOcr('');
-      showToast('本地识别失败: ' + e.message, 'error');
+      showToast(wbOcrFailMessage(e), 'error');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '🔍 提取文字'; }
     }
@@ -1174,22 +1174,35 @@ async function wbExtract(force) {
 // 解析出 日期/金额/商户/公司/银行/尾号/税号/分类，按字段框自动填入（可修改后保存）
 // V2：优先 OcrKit（Paddle→Tesseract）+ MexicoParser 结构化解析；不可用则回退旧 OfflineOCR。
 // 本地 OCR 识别语言：跟随"识别语言"下拉 → tesseract.js 语言组合
-// V5 §11 修复：auto 不再写死 spa+eng，改为 global-config 解析（地区 → 浏览器语言 → eng 兜底）
+// V5 §11 修复：auto 不再写死 spa+eng，改为 global-config 解析（地区 → 浏览器语言 → eng 兜底）；
+// 并收紧到本地已打包语言（spa/eng/chi_sim），避免解析到未打包语言导致 Tesseract 联网下载失败（回归防护）。
 function wbOcrLang() {
+  const sanitize = (l) => (window.OcrKit && window.OcrKit.tesseractSanitizeLang)
+    ? window.OcrKit.tesseractSanitizeLang(l) : l;
   const sel = document.getElementById('aiOcrLang');
   const v = sel ? sel.value : 'auto';
   if (v === 'chi_sim') return 'chi_sim';
   if (v === 'eng') return 'eng';
   if (v === 'spa') return 'spa';
-  // auto：跟随 global-config（本币地区 → 浏览器语言），如 CN → chi_sim+eng
   const gc = window.AIKit && window.AIKit.globalConfig;
   if (gc && gc.resolveOcrLang) {
     try {
       const l = gc.resolveOcrLang();
-      if (l) return l;
+      if (l) return sanitize(l);
     } catch (e) { /* ignore */ }
   }
-  return 'spa+eng'; // 兜底（与旧默认一致，仅当 global-config 不可用时）
+  return sanitize('spa+eng'); // 兜底
+}
+
+// 引擎失败 → 更可操作的提示（V5 §75：Paddle 首次需联网下载模型；语言包缺失已自动降级）
+function wbOcrFailMessage(e) {
+  if (e && e.name === 'OCR_ENGINE_FAIL') {
+    const hint = /language|traineddata|语言包/i.test(e.fallbackError || '')
+      ? '语言包缺失（已自动降级，可检查网络）'
+      : 'Paddle 首次需联网下载模型/语言包';
+    return '本地引擎初始化失败（' + hint + '），请检查网络后重试；如持续失败请查看控制台 [ocr] 日志';
+  }
+  return '本地识别失败: ' + ((e && e.message) || e);
 }
 
 async function wbLocalOcr() {
@@ -1270,7 +1283,7 @@ async function wbLocalOcr() {
     showToast('✅ 本地识别完成，已填入 ' + found.length + ' 个字段（可修改后保存）');
   } catch (e) {
     console.error('[ocr] 本地识别失败:', e);
-    showToast('本地识别失败: ' + e.message, 'error');
+    showToast(wbOcrFailMessage(e), 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '📷 本地识别'; }
   }

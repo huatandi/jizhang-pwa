@@ -136,7 +136,16 @@
         } catch (e) {
           console.warn('[ocr] 主引擎失败，尝试回退:', e);
           result = await this._fallback(input, primaryName);
-          if (!result) throw new Error('OCR 主引擎与回退引擎均失败');
+          if (!result) {
+            // V5：引擎层失败（初始化/模型加载/运行），带出具体原因便于诊断
+            const err = new Error('OCR 主引擎与回退引擎均失败');
+            err.name = 'OCR_ENGINE_FAIL';
+            err.primary = primaryName;
+            err.primaryError = (e && (e.message || String(e))) || 'unknown';
+            err.fallbackError = (this._fbErrors && this._fbErrors.length)
+              ? this._fbErrors.join('；') : '（无可用回退引擎或识别为空）';
+            throw err;
+          }
         }
       }
 
@@ -223,8 +232,10 @@
 
     /**
      * 回退：按注册顺序尝试除失败引擎外的所有引擎（V5 §75：Server 等新引擎自动入链）。
+     * 同时把各引擎失败原因记入 this._fbErrors，供上层诊断（引擎层失败原因透出）。
      */
     async _fallback(input, failedName) {
+      this._fbErrors = [];
       for (const name of this._initOrder) {
         if (name === failedName) continue;
         const e = this.engines[name];
@@ -233,7 +244,9 @@
           const r = await e.engine.recognize(input, e.opts);
           if (r && Array.isArray(r.words) && r.words.length) return r;
         } catch (e2) {
-          console.error('[ocr] 回退引擎失败:', name, e2 && e2.message);
+          const msg = name + ': ' + ((e2 && (e2.message || String(e2))) || 'unknown');
+          console.error('[ocr] 回退引擎失败:', name, e2);
+          this._fbErrors.push(msg);
         }
       }
       return null;

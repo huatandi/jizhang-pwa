@@ -29,6 +29,22 @@
     } catch (e) { return false; }
   }
 
+  // 本地已打包的语言包（vendor/tesseract/）。auto 解析到的语言若不在其中→自动降级，
+  // 避免 Tesseract 联网下载语言包失败导致整个 OCR 引擎不可用（V5 §11 回归防护）。
+  const VENDORED_LANGS = ['spa', 'eng', 'chi_sim'];
+
+  /** 把解析出的语言组合收紧到本地已打包集合；缺失则降级，并告警 */
+  function sanitizeLang(lang) {
+    const parts = String(lang || 'eng').split('+').map(s => s.trim()).filter(Boolean);
+    const ok = parts.filter(p => VENDORED_LANGS.includes(p));
+    const merged = ok.length ? ok : ['eng'];
+    const out = merged.join('+');
+    if (out !== String(lang || '')) {
+      console.warn('[ocr] 语言包本地缺失，自动降级 ' + lang + ' → ' + out + '（离线可用语言：' + VENDORED_LANGS.join('/') + '）');
+    }
+    return out;
+  }
+
   let worker = null;
   let initPromise = null;
 
@@ -71,7 +87,7 @@
             // 直接指定完整核心文件：SIMD 支持→simd-lstm；否则→lstm（跳过 worker 内 relaxed-simd 探测）
             coreUrl = corePath + (supportsSimd() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
           }
-          worker = await Tesseract.createWorker(this._resolveLang(), 1, {
+          worker = await Tesseract.createWorker(sanitizeLang(this._resolveLang()), 1, {
             workerPath: this.config.workerPath,
             langPath,
             corePath: coreUrl || corePath,
@@ -119,4 +135,5 @@
 
   global.OcrKit = global.OcrKit || {};
   global.OcrKit.TesseractEngine = TesseractEngine;
+  global.OcrKit.tesseractSanitizeLang = sanitizeLang;
 })(typeof window !== 'undefined' ? window : globalThis);
