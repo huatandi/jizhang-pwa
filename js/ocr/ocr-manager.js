@@ -128,6 +128,7 @@
       if (!primary) throw new Error('没有可用的 OCR 引擎（先 register）');
 
       let result;
+      let fromFallback = false;
       if (prep.longMode) {
         // V5 §17：长票据重叠切片识别（每片主引擎，失败逐片回退；不做 multipass——成本过高）
         result = await this._recognizeSlices(input, primary, primaryName, o);
@@ -138,6 +139,7 @@
         } catch (e) {
           console.warn('[ocr] 主引擎失败，尝试回退:', e);
           result = await this._fallback(input, primaryName);
+          fromFallback = true;
           if (!result) {
             // V5：引擎层失败（初始化/模型加载/运行），带出具体原因便于诊断
             const err = new Error('OCR 主引擎与回退引擎均失败');
@@ -152,7 +154,8 @@
       }
 
       // 3) 执行计划（V5 §68-70）：FAST 早退 / SMART 阈值 / RESCUE 强制重试
-      if (primaryName !== global.OcrKit.ENGINES.TESSERACT) {
+      //    若已回退（主引擎失败、用了 Tesseract 文本结果）则不再 multipass 重试，直接用回退结果
+      if (primaryName !== global.OcrKit.ENGINES.TESSERACT && !fromFallback) {
         global.OcrKit.preprocess.throwIfAborted(o.signal, 'enhance-retry');
         const avgConf = avgConfidence(result);
         const EP = global.OcrKit.executionPlanner;
@@ -245,7 +248,9 @@
         if (e.engine && e.engine._initFailed) continue; // 跳过初始化失败引擎（V5 §75）
         try {
           const r = await e.engine.recognize(input, e.opts);
-          if (r && Array.isArray(r.words) && r.words.length) return r;
+          // ✅ 关键修复：引擎可能只返回文本而无词级 bbox（如 Tesseract 对部分图），
+          //   "有文字"即视为有效结果；不能只认 words.length（否则有文字无词框会被误判为失败）
+          if (r && ((Array.isArray(r.words) && r.words.length) || r.text || r.fullText)) return r;
         } catch (e2) {
           const msg = name + ': ' + ((e2 && (e2.message || String(e2))) || 'unknown');
           console.error('[ocr] 回退引擎失败:', name, e2);
