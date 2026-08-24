@@ -39,9 +39,13 @@
   };
 
   let module = null;
-  let pipeline = null;
-  let initPromise = null;
+  // V5 Phase1：修假降级 —— pipeline 不再单例,按 (modelRepo+dtype+backend+lang) 键控,base/tiny 各真实实例。
+  let pipelines = new Map();       // key → Promise<pipeline>
   let currentBackend = null;
+
+  function pipelineKey(modelRepo, dtype, backend, lang) {
+    return [modelRepo, dtype, backend, lang].join('|');
+  }
 
   class WhisperEngine extends global.AsrKit.AsrEngineBase {
     constructor(config) {
@@ -117,9 +121,10 @@
     }
 
     async initialize() {
-      if (pipeline) return pipeline;
-      if (initPromise) return initPromise;
-      initPromise = (async () => {
+      const device = await this.detectBackend();
+      const key = pipelineKey(this.config.modelRepo, this.config.dtype, device, this._resolveLang());
+      if (pipelines.has(key)) return pipelines.get(key);
+      const p = (async () => {
         try {
           await this._ensureModelAvailable();
           const mod = await this._loadModule();
@@ -140,14 +145,13 @@
             env.backends.onnx.wasm.proxy = true;
           }
 
-          const device = await this.detectBackend();
           currentBackend = device;
           this.backend = device;
 
           const progressCb = (p) => {
             if (this.onProgress) this.onProgress(p.progress || 0, p.file || p.status || '');
           };
-          pipeline = await pipeFn(this.config.task, this.config.modelRepo, {
+          const pl = await pipeFn(this.config.task, this.config.modelRepo, {
             device,
             dtype: this.config.dtype,
             progress_callback: progressCb,
@@ -156,14 +160,15 @@
           });
           this.modelName = this.config.modelRepo;
           console.log('[asr-runtime] Whisper init SUCCESS model=' + this.config.modelRepo + ' device=' + device + ' dtype=' + this.config.dtype);
-          return pipeline;
+          return pl;
         } catch (e) {
-          initPromise = null;
+          pipelines.delete(key); // 失败允许重试;不同 key(base/tiny)互不影响
           console.warn('[asr-runtime] Whisper init FAILED model=' + this.config.modelRepo + ' device=' + this.backend + ' : ' + (e && e.message || e));
           throw e;
         }
       })();
-      return initPromise;
+      pipelines.set(key, p);
+      return p;
     }
 
     /**
@@ -218,7 +223,7 @@
     }
 
     async dispose() {
-      pipeline = null; initPromise = null; currentBackend = null; this.modelName = null;
+      currentBackend = null; this.modelName = null;
       try { if (module && module.env) { /* env 全局，无需释放 */ } } catch (e) {}
     }
   }

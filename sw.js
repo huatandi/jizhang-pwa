@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v122';
+const CACHE_NAME = 'jizhang-pwa-v123';
 const APP_SHELL = [
   './',
   './index.html',
@@ -41,6 +41,9 @@ const APP_SHELL = [
   './js/regions/mx.js',
   './js/regions/cn.js',
   './js/asr/asr-types.js',
+  './js/asr/voice-runtime-profile.js',
+  './js/asr/circuit-breaker.js',
+  './js/asr/audio-focus.js',
   // RecognitionCore：本地知识库/实体解析/银行词典/置信度/QR（语音+OCR 共享）
   './js/recognition/knowledge-base.js',
   './js/recognition/entity-resolver.js',

@@ -422,13 +422,17 @@ function speak(text, onend) {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = voiceLang === 'es-MX' ? 'es-MX' : voiceLang === 'en-US' ? 'en-US' : 'zh-CN';
     u.rate = 1;
-    if (typeof onend === 'function') {
-      let fired = false;
-      const fire = () => { if (!fired) { fired = true; try { onend(); } catch (e) {} } };
-      u.onend = fire;
-      // 兜底：某些 iOS 版本不触发 onend → 1.5 秒后无论如何执行
-      setTimeout(fire, 1500);
-    }
+    // V5 Phase1 保险6：TTS 说话时抑制 ASR,防 TTS 被麦克风再次收录
+    const af = window.AsrKit && window.AsrKit.audioFocus;
+    const suppress = (window.AsrKit && window.AsrKit.runtime && window.AsrKit.runtime.isEnabled('audioFocusV2')) ? true : false;
+    if (af && suppress) af.beginSpeaking();
+    let fired = false;
+    const fire = () => {
+      if (!fired) { fired = true; if (af && suppress) af.endSpeaking(); try { onend && onend(); } catch (e) {} }
+    };
+    u.onend = () => fire();
+    // 兜底：某些 iOS 版本不触发 onend → 1.5 秒后无论如何执行
+    setTimeout(fire, 1500);
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
   } catch (e) { if (onend) setTimeout(onend, 300); }

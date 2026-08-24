@@ -1306,13 +1306,17 @@
   <script src="js/regions/mx.js?v=2"></script>
   <script src="js/regions/cn.js?v=1"></script>
   <script src="js/asr/asr-types.js?v=39"></script>
+  <!-- V5 Phase1 Runtime Foundation: 能力门控/设备熔断/音频焦点 -->
+  <script src="js/asr/voice-runtime-profile.js?v=1"></script>
+  <script src="js/asr/circuit-breaker.js?v=1"></script>
+  <script src="js/asr/audio-focus.js?v=1"></script>
   <!-- audio-processor.js 由 audioWorklet.addModule('js/asr/audio-processor.js') 动态加载，不在主线程执行 -->
   <script src="js/asr/audio-capture.js?v=39"></script>
   <script src="js/asr/vad.js?v=39"></script>
-  <script src="js/asr/whisper-engine.js?v=57"></script>
+  <script src="js/asr/whisper-engine.js?v=58"></script>
   <script src="js/asr/webspeech-engine.js?v=42"></script>
-  <script src="js/asr/model-manager.js?v=55"></script>
-  <script src="js/asr/asr-manager.js?v=57"></script>
+  <script src="js/asr/model-manager.js?v=56"></script>
+  <script src="js/asr/asr-manager.js?v=58"></script>
   <script src="js/voice/voice-parser.js?v=39"></script>
   <script src="js/voice/voice-sr.js?v=57"></script>
   <script src="js/voice/voice-qa.js?v=40"></script>
@@ -1331,7 +1335,7 @@
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
   <script src="js/voice/reminders.js?v=71"></script>
   <script src="js/voice/correction-engine.js?v=1"></script>
-  <script src="js/voice/quick-voice.js?v=70"></script>
+  <script src="js/voice/quick-voice.js?v=71"></script>
   <script src="js/ledger-crud.js?v=42"></script>
   <script src="js/ai/ai-workbench.js?v=76"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
