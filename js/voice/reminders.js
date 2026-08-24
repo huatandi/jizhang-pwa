@@ -297,7 +297,7 @@ async function renderReminders() {
     const adv = Number(r.advance_minutes) || 0;
     const advTxt = adv === 0 ? '准时' : adv >= 1440 && adv % 1440 === 0 ? `提前${adv / 1440}天` : adv >= 60 ? `提前${adv / 60}小时` : `提前${adv}分钟`;
     const loc = r.location ? `<span class="reminder-loc">📍 ${escapeHtml(r.location)}</span>` : '';
-    const method = r.remind_method === 'voice' ? '<span class="reminder-tag voice">🎙️ 语音</span>' : '<span class="reminder-tag">✍️ 手动</span>';
+    const method = remindModeLabel(r.remind_method);
     // 功能补充 P3：重复规则徽标 + 关联账务
     const repeatTxt = { daily: '🔁 每天', weekly: '🔁 每周', monthly: '🔁 每月' }[r.repeat] || '';
     const repeatBadge = repeatTxt ? `<span class="reminder-tag repeat">${repeatTxt}${r.repeat === 'weekly' ? '·' + (WEEKDAYS_CN[Number(r.repeat_day)] || '') : r.repeat === 'monthly' ? '·' + (r.repeat_day || '') + '号' : ''}</span>` : '';
@@ -346,6 +346,43 @@ function syncRepeatDayUI() {
   }
 }
 
+// 提醒方式：三开关（语音播报/响铃/震动）⇄ 存储值。
+// 存储格式：逗号串如 "speak,ring,vibrate"；兼容旧值 voice（=全开）与 manual（=仅响铃，隐私）。
+function parseRemindMode(v) {
+  const s = String(v || '').trim();
+  if (s === 'voice' || s === '' || s === null) return { speak: true, ring: true, vibrate: true };
+  if (s === 'manual') return { speak: false, ring: true, vibrate: true };
+  const set = s.split(',').map(x => x.trim()).filter(Boolean);
+  return {
+    speak: set.includes('speak'),
+    ring: set.includes('ring'),
+    vibrate: set.includes('vibrate'),
+  };
+}
+function readRemindMode() {
+  const g = (id) => { const el = document.getElementById(id); return el ? el.checked : true; };
+  const parts = [];
+  if (g('rModeSpeak')) parts.push('speak');
+  if (g('rModeRing')) parts.push('ring');
+  if (g('rModeVibrate')) parts.push('vibrate');
+  return parts.length ? parts.join(',') : 'manual'; // 全关 = 手动（仅弹卡片）
+}
+function setRemindModeUI(v) {
+  const m = parseRemindMode(v);
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val; };
+  set('rModeSpeak', m.speak);
+  set('rModeRing', m.ring);
+  set('rModeVibrate', m.vibrate);
+}
+function remindModeLabel(v) {
+  const m = parseRemindMode(v);
+  const parts = [];
+  if (m.speak) parts.push('🎙️ 语音');
+  if (m.ring) parts.push('🔊 响铃');
+  if (m.vibrate) parts.push('📳 震动');
+  return parts.length ? parts.join(' ') : '🔕 仅卡片';
+}
+
 // 打开提醒弹窗（mode='voice' 时打开后自动开始语音监听）
 function openReminderModal(mode) {
   editingReminderId = null;
@@ -353,7 +390,7 @@ function openReminderModal(mode) {
   document.getElementById('rLocation').value = '';
   document.getElementById('rNote').value = '';
   document.getElementById('rAt').value = '';
-  document.getElementById('rMethod').value = 'manual';
+  setRemindModeUI('voice'); // 默认：语音播报+响铃+震动
   document.getElementById('rAdvance').value = '0';
   document.getElementById('rRepeat').value = 'none';
   document.getElementById('rLinkType').value = '';
@@ -381,7 +418,7 @@ function editReminder(id) {
   document.getElementById('rLocation').value = r.location || '';
   document.getElementById('rNote').value = r.note || '';
   document.getElementById('rAt').value = r.remind_at ? r.remind_at.slice(0, 16) : '';
-  document.getElementById('rMethod').value = r.remind_method || 'manual';
+  setRemindModeUI(r.remind_method || 'voice');
   document.getElementById('rAdvance').value = String(r.advance_minutes || 0);
   document.getElementById('rRepeat').value = r.repeat || 'none';
   syncRepeatDayUI();
@@ -399,7 +436,7 @@ async function saveReminder() {
   const content = document.getElementById('rContent').value.trim();
   const rAt = document.getElementById('rAt').value;
   const location = document.getElementById('rLocation').value.trim();
-  const method = document.getElementById('rMethod').value;
+  const method = readRemindMode();
   const advance = Number(document.getElementById('rAdvance').value) || 0;
   const note = document.getElementById('rNote').value.trim();
   const repeat = document.getElementById('rRepeat').value || 'none';
@@ -724,7 +761,7 @@ function applyReminderVoiceText(buffer) {
     if (rp && [...rp.options].some(o => o.value === parsed.repeat)) { rp.value = parsed.repeat; filled.push('重复'); }
     if (typeof syncRepeatDayUI === 'function') syncRepeatDayUI();
   }
-  document.getElementById('rMethod').value = parsed.method || 'voice';
+  setRemindModeUI(parsed.method === 'manual' ? 'manual' : 'voice'); // 语音说"手动"→仅响铃；默认全开
   renderReminderVoicePreview();
   setReminderVoiceBtnState('done');
   if (reminderVoiceLang === 'es-MX') showToast(filled.length ? '✔ Reconocido: ' + filled.join(', ') : 'Texto reconocido, di la hora');
@@ -832,8 +869,10 @@ async function checkRemindersDue() {
         `;
       }
       openModal('reminderNotifyModal');
-      // 先语音播报，播报完成后启动持续闹铃（用户要求：语音提示完成后必须有铃声，持续直到手动取消/确认）
-      scheduleAlarmRetries();
+      // 提醒方式：三开关（语音播报/响铃/震动），兼容旧值 voice（全开）/ manual（仅响铃+震动，隐私）
+      const mode = parseRemindMode(r.remind_method);
+      // 渐进式重响（10/20/30 分钟）：按提醒方式传递震动开关
+      scheduleAlarmRetries(mode.vibrate);
       // 其余到期提醒：toast 提示，避免静默丢失
       if (data.reminders.length > 1) {
         const others = data.reminders.slice(1).map(x => x.content).filter(Boolean).join('、');
@@ -849,25 +888,40 @@ async function checkRemindersDue() {
           n.onclick = () => { window.focus(); closeModal('reminderNotifyModal'); };
         }
       } catch (e) { /* 通知失败不影响 */ }
-      // TTS 语音播报：仅"语音自动"提醒播报内容（隐私保护：手动提醒不播报内容，只响铃+卡片）
-      // 播完（约数秒）后启动持续闹铃
+      // TTS 语音播报：按提醒方式执行
       const ttsText = `${r.content}${r.location ? '，地点' + r.location : ''}，时间到了`;
-      const doSpeak = String(r.remind_method || 'manual') !== 'manual';
-      if (doSpeak) {
+      // 震动：立即 + 循环（与响铃节奏同步，由 stopAlarm 统一停止）
+      if (mode.vibrate) {
+        try {
+          if (navigator.vibrate) navigator.vibrate([1000, 500, 1000, 500, 1000]);
+        } catch (e) { /* iOS 不支持 vibrate 忽略 */ }
+      }
+      if (mode.speak) {
+        // 语音播报：播完后启动持续响铃（若开启）
         speak(ttsText, () => {
           const ov = document.getElementById('reminderNotifyModal');
           if (ov && ov.classList.contains('active') && currentNotifyReminder) {
-            startAlarm();
+            if (mode.ring) startAlarm(0, { vibrate: mode.vibrate });
+            else if (mode.vibrate) { try { if (navigator.vibrate) navigator.vibrate([1000, 500, 1000]); } catch (e) {} }
           }
         });
-      } else {
-        // 手动提醒：不播报内容（隐私），稍后直接持续响铃
+      } else if (mode.ring) {
+        // 仅响铃（不播报内容，隐私）：稍后直接持续响铃
         setTimeout(() => {
           const ov = document.getElementById('reminderNotifyModal');
           if (ov && ov.classList.contains('active') && currentNotifyReminder) {
-            startAlarm();
+            startAlarm(0, { vibrate: mode.vibrate });
           }
         }, 800);
+      } else {
+        // 仅震动/仅卡片：单独循环震动（响铃关闭时）
+        if (mode.vibrate) {
+          try {
+            if (navigator.vibrate) {
+              window.__reminderVibrateTimer = setInterval(() => { try { navigator.vibrate([1000, 500, 1000]); } catch (e) {} }, 3000);
+            }
+          } catch (e) { /* ignore */ }
+        }
       }
     }
   } catch (e) { /* 静默失败，不影响其他功能 */ }

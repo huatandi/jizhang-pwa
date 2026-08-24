@@ -568,10 +568,12 @@ async function removeCustomTone() {
 
 // 开始响铃（默认持续响直到 stopAlarm 被调用；用户要求"跟手机一样，不关闭永远闹响"）
 // 注意：请勿传短时长——持续响铃由关闭卡片时的 stopAlarm() 停止
-function startAlarm(durationMs = 0) {
+// opts.vibrate: false 时跳过震动（提醒方式可单独关闭震动）
+function startAlarm(durationMs = 0, opts) {
   stopAlarm();
   const cfg = getAlarmSettings();
   const vol = Math.min(1, Math.max(0, cfg.volume));
+  const allowVibrate = !opts || opts.vibrate !== false;
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (AC && cfg.tone !== 'silent') {
@@ -711,8 +713,8 @@ function startAlarm(durationMs = 0) {
       const intervalMs = cfg.tone === 'urgent' ? 1500 : (cfg.tone === 'digital' ? 900 : 2000);
       alarmBeepTimer = setInterval(() => { try { beep(cfg.tone); } catch (e) {} }, intervalMs);
     }
-    // 震动（Android 支持）
-    if (navigator.vibrate) {
+    // 震动（Android 支持；提醒方式关闭震动时跳过）
+    if (allowVibrate && navigator.vibrate) {
       navigator.vibrate([1000, 500, 1000, 500, 1000]);
       alarmVibrateTimer = setInterval(() => { try { navigator.vibrate([1000, 500, 1000]); } catch (e) {} }, 3000);
     }
@@ -743,20 +745,23 @@ function stopAlarm() {
   try { if (alarmCustomSrc) { alarmCustomSrc.stop(); alarmCustomSrc = null; } } catch (e) {}
   try { if (alarmCtx) alarmCtx.close(); } catch (e) {}
   alarmCtx = null; alarmBeepTimer = null; alarmStopTimer = null; alarmVibrateTimer = null;
+  // 仅震动模式的循环定时器（提醒方式：不响铃但震动时使用）
+  try { if (window.__reminderVibrateTimer) { clearInterval(window.__reminderVibrateTimer); window.__reminderVibrateTimer = null; } } catch (e) {}
   try { if (navigator.vibrate) navigator.vibrate(0); } catch (e) {}
   alarmRetryTimers.forEach(t => clearTimeout(t));
   alarmRetryTimers = [];
 }
 
 // 渐进式重复：若弹窗仍开着（用户未处理），10/20/30 分钟后重新持续响铃（直到关闭）
-function scheduleAlarmRetries() {
+// vibrate: 是否允许震动（提醒方式单独关闭震动时传 false）
+function scheduleAlarmRetries(vibrate) {
   alarmRetryTimers.forEach(t => clearTimeout(t));
   alarmRetryTimers = [];
   [10, 20, 30].forEach(min => {
     const t = setTimeout(() => {
       const ov = document.getElementById('reminderNotifyModal');
       if (ov && ov.classList.contains('active') && currentNotifyReminder) {
-        startAlarm();
+        startAlarm(0, { vibrate: vibrate !== false });
       }
     }, min * 60000);
     alarmRetryTimers.push(t);

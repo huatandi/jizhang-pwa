@@ -996,11 +996,12 @@
           <label class="full">📝 什么事情 <input type="text" id="rContent" placeholder="提醒事项" required></label>
           <label>📅 提醒时间 <input type="datetime-local" id="rAt" required></label>
           <label>📍 地点 <input type="text" id="rLocation" placeholder="地点"></label>
-          <label>🔔 到期播报
-            <select id="rMethod">
-              <option value="voice">语音播报内容</option>
-              <option value="manual">仅响铃（不播报，保护隐私）</option>
-            </select>
+          <label class="full">🔔 提醒方式 <span class="settings-sub">可多选</span>
+            <span class="remind-mode-row">
+              <label class="switch-row" style="border:none;padding:4px 0"><span>🗣 语音播报</span><input type="checkbox" id="rModeSpeak" checked></label>
+              <label class="switch-row" style="border:none;padding:4px 0"><span>🔊 响铃</span><input type="checkbox" id="rModeRing" checked></label>
+              <label class="switch-row" style="border:none;padding:4px 0"><span>📳 震动</span><input type="checkbox" id="rModeVibrate" checked></label>
+            </span>
           </label>
           <label>⏱ 提前提醒节点
             <select id="rAdvance">
@@ -1254,9 +1255,9 @@
        顺序说明：静态脚本先于 boot.js 动态加载的 app.js 执行。
        reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
-  <script src="js/voice/reminders.js?v=67"></script>
+  <script src="js/voice/reminders.js?v=68"></script>
   <script src="js/voice/correction-engine.js?v=1"></script>
-  <script src="js/voice/quick-voice.js?v=65"></script>
+  <script src="js/voice/quick-voice.js?v=66"></script>
   <script src="js/ledger-crud.js?v=38"></script>
   <script src="js/ai/ai-workbench.js?v=61"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->

@@ -136,10 +136,13 @@
         const nn = norm(n);
         if (nn.length >= 3 && nn !== key && normTranscript.includes(nn)) bump(ent.id, ent.canonical, 0.86, 'alias-contain');
       });
-      // 3) 编辑距离 ≤2（BBA→BBVA；对 3 字以上候选）
-      if (key.length >= 3) {
+      // 3) 编辑距离 ≤2（BBA→BBVA；对 3 字以上候选）。
+      //    ⚠️ 仅对拉丁字母候选做编辑距离：中文词间距离意义小且易误判
+      //    （"现金" vs "桑坦" 距离 2 会误配）。中文走 alias/chinese/pinyin 精确路径。
+      if (key.length >= 3 && /[a-záéíóúñü]/.test(key)) {
         const allCands = dict.flattenCandidates(ent);
         for (const cand of allCands) {
+          if (!/[a-záéíóúñü]/.test(cand)) continue; // 跳过中文候选
           if (Math.abs(cand.length - key.length) <= 2 && editDist(cand, key) <= 2) {
             bump(ent.id, ent.canonical, 0.85, 'fuzzy');
             break;
@@ -177,5 +180,56 @@
     return found;
   }
 
-  global.BankResolver = { resolve, learn, extractCandidates, editDist };
+  /**
+   * 解析到"账户列表项"（V3 银行增强）：账户列表常用缩写（SAND/HSBS/CITB/SANTANDE/BANREJIO），
+   * 而词典 canonical 是全名（Scotiabank/HSBC/Citibanamex/Santander/Banregio）。
+   * 流程：先解析出标准银行 → 在账户列表中找 精确/别名/缩写/编辑距离≤2 的项；
+   * 找不到再尝试"账户列表项 直接反向匹配"（用户可能直接说账户缩写"SAND"）。
+   */
+  function resolveToAccount(input, accounts, opts) {
+    const dict = global.MXBankDictionary;
+    if (!dict || !Array.isArray(accounts) || !accounts.length) return null;
+    const accList = accounts.map(a => String(a || '').trim()).filter(Boolean);
+    const norm = dict.normalize;
+    const o = opts || {};
+    const ctx = o.context || 'account';
+
+    // 1) 标准解析（普通话叫法/中文音译/拼音 → canonical）
+    const r = resolve(input, { transcript: o.transcript || input, context: ctx });
+    if (r) {
+      const rn = norm(r.canonical);
+      // 在账户列表中精确/别名/缩写匹配 canonical
+      const hit = accList.find(a => {
+        const an = norm(a);
+        if (!an) return false;
+        if (an === rn) return true;                       // 精确（BBVA→BBVA）
+        // canonical 与账户名缩写编辑距离 ≤2（Santander vs SANTANDE）——仅拉丁词
+        if (/[a-záéíóúñü]/.test(an) && /[a-záéíóúñü]/.test(rn) && Math.abs(an.length - rn.length) <= 2 && editDist(an, rn) <= 2) return true;
+        // 词典候选词与账户名精确匹配（SAND/HSBS/CITB/SANTANDE 已收录为别名）
+        const ent = dict.banks.find(b => b.id === r.id);
+        if (ent) {
+          for (const cand of dict.flattenCandidates(ent)) {
+            if (cand === an) return true;
+          }
+        }
+        return false;
+      });
+      if (hit) return hit;
+    }
+
+    // 2) 反向：账户列表项直接作为输入解析（用户直接说账户缩写"SAND"）
+    const key = norm(input);
+    if (key.length >= 3) {
+      for (const acc of accList) {
+        const an = norm(acc);
+        if (!an) continue;
+        if (an === key) return acc;
+        // 模糊匹配仅拉丁词（中文账户名与中文输入不做编辑距离，避免"现金"误配）
+        if (/[a-záéíóúñü]/.test(an) && /[a-záéíóúñü]/.test(key) && Math.abs(an.length - key.length) <= 2 && editDist(an, key) <= 2) return acc;
+      }
+    }
+    return null;
+  }
+
+  global.BankResolver = { resolve, resolveToAccount, learn, extractCandidates, editDist };
 })(typeof window !== 'undefined' ? window : globalThis);

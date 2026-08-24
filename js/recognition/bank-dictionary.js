@@ -28,7 +28,7 @@
     {
       id: 'banorte', canonical: 'Banorte', type: 'bank',
       names: ['Banorte', 'Banorte México', 'Banorte Mexico'],
-      aliases: ['Banorte银行', 'ban norte', 'banorte banco', 'BANORTE'],
+      aliases: ['Banorte银行', 'ban norte', 'banorte banco', 'BANORTE', 'BANORT'],
       chinese: ['班诺特', '巴诺特', '班诺', '巴诺', '班诺得', '班诺特银行'],
       pinyin: ['bannuote', 'banuote', 'banno', 'banuo', 'bannuode'],
       asrErrors: ['banorte', 'bannote', 'banort', 'bannorte'],
@@ -36,7 +36,7 @@
     {
       id: 'santander', canonical: 'Santander', type: 'bank',
       names: ['Santander', 'Banco Santander'],
-      aliases: ['Santander银行', 'santa n', 'santander banco'],
+      aliases: ['Santander银行', 'santa n', 'santander banco', 'SANTANDE', 'santande'],
       chinese: ['桑坦德', '桑坦得', '桑丹德', '三坦德', '桑坦戴', '桑坦德银行', '桑坦'],
       pinyin: ['sangtande', 'sangtande', 'sangdande', 'santande', 'sangtandai', 'sangtan'],
       asrErrors: ['Santa', 'santader', 'sandander', 'santender'],
@@ -44,7 +44,7 @@
     {
       id: 'hsbc', canonical: 'HSBC', type: 'bank',
       names: ['HSBC', 'HSBC México', 'HSBC Mexico'],
-      aliases: ['H S B C', 'HSBC银行'],
+      aliases: ['H S B C', 'HSBC银行', 'HSBS'],
       chinese: ['汇丰', '汇丰银行', '埃奇艾斯比西', '艾尺艾斯比西'],
       pinyin: ['huifeng', 'huifengyinhang', 'aiqiaisibixi'],
       asrErrors: ['HSB', 'HSBC', 'h s b c', 'ASBC'],
@@ -52,17 +52,17 @@
     {
       id: 'scotiabank', canonical: 'Scotiabank', type: 'bank',
       names: ['Scotiabank', 'Scotiabank México', 'Scotiabank Mexico'],
-      aliases: ['Scotiabank银行', 'scotia', 'scotia bank'],
-      chinese: ['斯科夏', '斯科特', '苏格夏', '斯科夏银行', '斯科西亚'],
-      pinyin: ['sikexia', 'sikete', 'sugexia', 'sikexiya'],
-      asrErrors: ['scotiabank', 'scotia bank', 'scotabank', 'scotiabanc'],
+      aliases: ['Scotiabank银行', 'scotia', 'scotia bank', 'SAND'],
+      chinese: ['斯科夏', '斯科特', '苏格夏', '斯科夏银行', '斯科西亚', '斯科地亚'],
+      pinyin: ['sikexia', 'sikete', 'sugexia', 'sikexiya', 'sikediya'],
+      asrErrors: ['scotiabank', 'scotia bank', 'scotabank', 'scotiabanc', 'sand'],
     },
     {
       id: 'banamex', canonical: 'Citibanamex', type: 'bank',
       names: ['Citibanamex', 'Banamex', 'Citibanamex México'],
-      aliases: ['Citibanamex银行', 'banamex', 'citibanamex'],
-      chinese: ['花旗', '花旗银行', '巴纳梅克斯', '西提银行'],
-      pinyin: ['huaqi', 'huaqiyinhang', 'banameikesi', 'xiti'],
+      aliases: ['Citibanamex银行', 'banamex', 'citibanamex', 'CITB'],
+      chinese: ['花旗', '花旗银行', '巴纳梅克斯', '西提银行', '西提巴纳美'],
+      pinyin: ['huaqi', 'huaqiyinhang', 'banameikesi', 'xiti', 'xitibanamei'],
       asrErrors: ['banamex', 'citibanamex', 'citibaname', 'bananex'],
     },
     {
@@ -84,10 +84,10 @@
     {
       id: 'banregio', canonical: 'Banregio', type: 'bank',
       names: ['Banregio', 'Banregio México'],
-      aliases: ['Banrejio', 'ban regio'],
-      chinese: ['班雷吉奥', '班雷希奥', '班瑞吉奥'],
-      pinyin: ['banleijiao', 'banleixiao', 'banruijiao'],
-      asrErrors: ['banregio', 'banrejio', 'banrigio'],
+      aliases: ['Banrejio', 'ban regio', 'BANREJIO', 'BANREJO'],
+      chinese: ['班雷吉奥', '班雷希奥', '班瑞吉奥', '班瑞希奥'],
+      pinyin: ['banleijiao', 'banleixiao', 'banruijiao', 'banruixiao'],
+      asrErrors: ['banregio', 'banrejio', 'banrigio', 'banrejo'],
     },
     {
       id: 'inbursa', canonical: 'Inbursa', type: 'bank',

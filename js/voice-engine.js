@@ -498,9 +498,13 @@
     const low = t.toLowerCase();
     // -1) BankResolver 优先（V3 银行专有词：普通话中文音译/拼音 → 标准银行名）
     //     例："桑坦德"→Santander、"贝贝瓦"→BBVA、"班诺特"→Banorte
+    //     resolveToAccount 额外处理账户缩写（SAND→Scotiabank、SANTANDE→Santander）
     try {
       const br = typeof window !== 'undefined' ? window.BankResolver : (typeof globalThis !== 'undefined' ? globalThis.BankResolver : null);
-      if (br && typeof br.resolve === 'function' && accounts && accounts.length) {
+      if (br && typeof br.resolveToAccount === 'function' && accounts && accounts.length) {
+        const hit = br.resolveToAccount(t, accounts, { transcript: t, context: 'account' });
+        if (hit) return hit;
+      } else if (br && typeof br.resolve === 'function' && accounts && accounts.length) {
         const r = br.resolve(t, { transcript: t, context: 'account' });
         if (r && r.confidence >= 0.75) {
           // 解析出的标准银行名须在账户列表中（用户可能改名/缩写）
