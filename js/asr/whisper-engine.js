@@ -132,10 +132,11 @@
 
           // wasm 路径与单线程（Pages 无 COOP/COEP）
           if (env && env.backends && env.backends.onnx) {
-            // 本地 vendor/onnx 优先；未配置时回退 jsdelivr CDN
+            // 本地 vendor/onnx-whisper 优先（V5 AUD-B1：与 transformers.js 捆绑的 ORT 版本严格一致）；
+            // 未配置时回退 jsdelivr CDN
             const localWasm = (() => {
-              try { return new URL('vendor/onnx/', global.location && global.location.href).href; }
-              catch (e) { return 'vendor/onnx/'; }
+              try { return new URL('vendor/onnx-whisper/', global.location && global.location.href).href; }
+              catch (e) { return 'vendor/onnx-whisper/'; }
             })();
             env.backends.onnx.wasm.wasmPaths = this.config.wasmPaths || localWasm;
             env.backends.onnx.wasm.numThreads = 1;   // 关键：Pages 无 COEP，强制单线程

@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v127';
+const CACHE_NAME = 'jizhang-pwa-v128';
 const APP_SHELL = [
   './',
   './index.html',
@@ -115,11 +115,15 @@ const APP_SHELL = [
   './vendor/transformers/transformers.min.js',
   './vendor/transformers/transformers.js',
   './vendor/transformers/transformers.web.min.js',
-  './vendor/onnx/ort.all.min.mjs',
   './vendor/onnx/ort-wasm-simd-threaded.wasm',
   './vendor/onnx/ort-wasm-simd-threaded.mjs',
   './vendor/onnx/ort-wasm-simd-threaded.asyncify.mjs',
   './vendor/onnx/ort-wasm-simd-threaded.asyncify.wasm',
+  // Whisper 专用 ORT wasm（AUD-B1：与 transformers.js 捆绑的 ORT 1.26.0-dev 严格一致，独立于 Paddle 的 1.24.3）
+  './vendor/onnx-whisper/ort-wasm-simd-threaded.wasm',
+  './vendor/onnx-whisper/ort-wasm-simd-threaded.mjs',
+  './vendor/onnx-whisper/ort-wasm-simd-threaded.asyncify.mjs',
+  './vendor/onnx-whisper/ort-wasm-simd-threaded.asyncify.wasm',
   './vendor/paddleocr/index.mjs',
   './vendor/paddleocr/assets/worker-entry-C9UNuyOJ.js',
   './vendor/sqljs/sql-wasm.js',
