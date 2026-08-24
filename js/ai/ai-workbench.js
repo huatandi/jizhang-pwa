@@ -1194,13 +1194,18 @@ function wbOcrLang() {
   return sanitize('spa+eng'); // 兜底
 }
 
-// 引擎失败 → 更可操作的提示（V5 §75：Paddle 首次需联网下载模型；语言包缺失已自动降级）
+// 引擎失败 → 把具体引擎错误带到界面（便于直接定位根因，V5 §75）
 function wbOcrFailMessage(e) {
   if (e && e.name === 'OCR_ENGINE_FAIL') {
-    const hint = /language|traineddata|语言包/i.test(e.fallbackError || '')
-      ? '语言包缺失（已自动降级，可检查网络）'
-      : 'Paddle 首次需联网下载模型/语言包';
-    return '本地引擎初始化失败（' + hint + '），请检查网络后重试；如持续失败请查看控制台 [ocr] 日志';
+    const fb = String(e.fallbackError || '');
+    const pe = String(e.primaryError || '');
+    // 归因：优先说清是哪个引擎、什么原因；默认给出可直接到控制台的关键词
+    let reason;
+    if (/未加载|tesseract\.min|Tesseract 未加载/i.test(fb)) reason = 'Tesseract 模块未加载（vendor/tesseract/tesseract.min.js）';
+    else if (/语言包|traineddata|local core missing/i.test(fb)) reason = 'Tesseract 语言包/核心加载失败';
+    else if (/import|模块|加载失败|初始化失败|create|wasm|fetch|网络|network|Failed to fetch/i.test(pe)) reason = 'PaddleOCR 初始化或模型加载失败（首次需联网下载模型）';
+    else reason = (fb || pe || '').slice(0, 70) || '引擎初始化失败';
+    return 'OCR 引擎失败(Paddle/Tesseract)：' + reason + '；请查看控制台 [ocr] 日志获取完整原因';
   }
   return '本地识别失败: ' + ((e && e.message) || e);
 }

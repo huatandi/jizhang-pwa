@@ -56,13 +56,15 @@
       const head = await fetch(corePath + 'tesseract-core-simd-lstm.wasm.js', { method: 'HEAD' });
       if (!head.ok) throw new Error('local core missing');
     } catch (e) {
-      corePath = CDN_CORE_PATH + (supportsSimd() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
+      corePath = CDN_CORE_PATH;
       langPath = CDN_LANG_PATH;
     }
+    // 始终显式指定完整核心文件 URL（本地或 CDN），跳过 worker 内的 relaxed-simd 探测（该文件已移除）
+    const coreUrl = corePath + (supportsSimd() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
     const w = await Tesseract.createWorker(key, 1, {
       workerPath: 'vendor/tesseract/worker.min.js',
       langPath,
-      corePath,
+      corePath: coreUrl,
       logger: () => {},
     });
     workers.set(key, w);

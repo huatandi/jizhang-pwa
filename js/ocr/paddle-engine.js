@@ -97,6 +97,7 @@
           return ocr;
         } catch (e) {
           initPromise = null; // 允许重试
+          this._initFailed = true; // V5 §75：引擎初始化失败（模型/wasm 缺失等）→ 标记永久不可用，后续识别跳过，避免反复初始化耗时
           throw new Error('PaddleOCR 初始化失败: ' + (e && e.message || e));
         }
       })();

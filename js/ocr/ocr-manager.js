@@ -70,8 +70,10 @@
 
     async _resolveEngine(name) {
       if (!name || name === 'auto') {
-        // 优先 Paddle；若不可用（未注册/加载失败）则 Tesseract
-        if (this.engines[global.OcrKit.ENGINES.PADDLE]) return global.OcrKit.ENGINES.PADDLE;
+        // 优先 Paddle；若不可用（未注册/加载失败/已标记永久失败）则 Tesseract
+        const pd = this.engines[global.OcrKit.ENGINES.PADDLE];
+        // V5 §75：跳过初始化失败引擎（如模型/wasm 缺失），避免每次识别都先失败再回退
+        if (pd && !pd.engine._initFailed) return global.OcrKit.ENGINES.PADDLE;
         return global.OcrKit.ENGINES.TESSERACT;
       }
       return name;
@@ -240,6 +242,7 @@
         if (name === failedName) continue;
         const e = this.engines[name];
         if (!e) continue;
+        if (e.engine && e.engine._initFailed) continue; // 跳过初始化失败引擎（V5 §75）
         try {
           const r = await e.engine.recognize(input, e.opts);
           if (r && Array.isArray(r.words) && r.words.length) return r;

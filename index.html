@@ -21,6 +21,18 @@
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
   <link rel="stylesheet" href="css/style.css?v=62">
+  <!-- PaddleOCR SDK 裸模块 import map（V5 §75 尽力修复：vendor/paddleocr/index.mjs 内的
+       js-yaml / clipper-lib / @techstark/opencv-js 是裸 ESM，浏览器需 import map 才能解析；
+       映射到 jsdelivr +esm。若任一 404，Paddle 失败已安全回退到 Tesseract。 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "js-yaml": "https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/+esm",
+      "clipper-lib": "https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/+esm",
+      "@techstark/opencv-js": "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/+esm"
+    }
+  }
+  </script>
   <!-- 本地化依赖（离线可用）：echarts + tesseract + sql.js -->
   <script src="vendor/echarts/echarts.min.js"></script>
   <script src="vendor/tesseract/tesseract.min.js"></script>
@@ -1258,7 +1270,7 @@
   <script src="js/voice-engine.js?v=49"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
   <script src="js/ai/global-config.js?v=39"></script>
-  <script src="js/offline-ocr.js?v=39"></script>
+  <script src="js/offline-ocr.js?v=40"></script>
   <!-- AI 引擎层（OcrKit / MexicoParser / ValidateKit / AsrKit / VoiceKit） -->
   <script src="js/validation/validators.js?v=38"></script>
   <script src="js/validation/confidence.js?v=38"></script>
@@ -1267,9 +1279,9 @@
   <!-- V5 P3：图像质量分析（preprocess 的 auto 增强依赖，必须先加载） -->
   <script src="js/ocr/image-quality.js?v=1"></script>
   <script src="js/ocr/preprocess.js?v=41"></script>
-  <script src="js/ocr/tesseract-engine.js?v=39"></script>
-  <script src="js/ocr/paddle-engine.js?v=44"></script>
-  <script src="js/ocr/ocr-manager.js?v=50"></script>
+  <script src="js/ocr/tesseract-engine.js?v=40"></script>
+  <script src="js/ocr/paddle-engine.js?v=45"></script>
+  <script src="js/ocr/ocr-manager.js?v=51"></script>
   <!-- V5 P3：可中止 OCR 任务管理 -->
   <script src="js/ocr/ocr-job-manager.js?v=1"></script>
   <!-- V5 P6：执行计划（FAST/SMART/RESCUE） -->
@@ -1319,7 +1331,7 @@
   <script src="js/voice/correction-engine.js?v=1"></script>
   <script src="js/voice/quick-voice.js?v=70"></script>
   <script src="js/ledger-crud.js?v=40"></script>
-  <script src="js/ai/ai-workbench.js?v=69"></script>
+  <script src="js/ai/ai-workbench.js?v=70"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=38"></script>
   <!-- ===== 参考汇率工具（Exchange Rate Engine V1.0）=====

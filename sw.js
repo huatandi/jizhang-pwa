@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v109';
+const CACHE_NAME = 'jizhang-pwa-v110';
 const APP_SHELL = [
   './',
   './index.html',
@@ -135,6 +135,8 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
+  // 只处理 http/https；忽略 chrome-extension 等不支持的 scheme（避免 Cache.put 抛错）
+  if (!/^https?:$/.test(url.protocol)) return;
   // API 请求不缓存（走 IndexedDB 伪后端，本地 fetch 已被劫持，SW 只处理真实网络资源）
   if (url.pathname.startsWith('/api/')) return;
   // 缓存键统一用"去 query 的规范化 URL"：boot.js 加载 app.js?v=100、index.html 加载 css?v=46，

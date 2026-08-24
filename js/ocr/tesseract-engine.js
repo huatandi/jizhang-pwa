@@ -77,20 +77,21 @@
           //    该文件在 tesseract.js-core@5.x 已移除 → 必须直接给完整核心 URL 跳过探测。
           let corePath = this.config.corePath;
           let langPath = this.config.langPath;
-          let coreUrl = null;
           try {
             const head = await fetch(corePath + 'tesseract-core-simd-lstm.wasm.js', { method: 'HEAD' });
             if (!head.ok) throw new Error('local core missing');
           } catch (e) {
             corePath = this.config.cdnCorePath;
             langPath = this.config.cdnLangPath;
-            // 直接指定完整核心文件：SIMD 支持→simd-lstm；否则→lstm（跳过 worker 内 relaxed-simd 探测）
-            coreUrl = corePath + (supportsSimd() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
           }
+          // 始终显式指定完整核心文件 URL（本地或 CDN）：SIMD 支持→simd-lstm；否则→lstm。
+          // 关键修复：即使本地核心存在，也必须传完整 URL，否则 worker 仍会做 wasm-feature-detect
+          // 并请求已移除的 relaxed-simd 文件 → 404。离线可用。
+          const coreUrl = corePath + (supportsSimd() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
           worker = await Tesseract.createWorker(sanitizeLang(this._resolveLang()), 1, {
             workerPath: this.config.workerPath,
             langPath,
-            corePath: coreUrl || corePath,
+            corePath: coreUrl,
             logger: () => {},
           });
           return worker;
