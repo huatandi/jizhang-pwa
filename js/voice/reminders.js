@@ -974,7 +974,7 @@ function startReminderChecker() {
         `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #f0f0f0">
           <span style="flex:0 0 40px;opacity:.7">${pvmTypeLabel[e.type] || e.type}</span>
           <span style="flex:1">“${escapeHtml(e.phrase)}” → <b>${escapeHtml(e.target)}</b></span>
-          <span style="opacity:.6;font-size:11px">${pvm.memoryStrength ? pvm.memoryStrength(e) : ''} ${Math.round((e.confidence || 0) * 100)}%</span>
+          <span style="opacity:.6;font-size:11px">${pvm.memoryStrength ? pvm.memoryStrength(e) : ''} ${Math.round((e.confidence || 0) * 100)}%${pvm.memoryScore ? ' · 分' + Math.round((pvm.memoryScore(e) || 0) * 100) : ''}</span>
           <button class="btn-small" onclick="pvmRemove('${e.id.replace(/'/g, '')}')">✕</button>
         </div>`).join('');
   }

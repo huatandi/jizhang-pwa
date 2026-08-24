@@ -242,6 +242,7 @@
           type: o.type || 'OTHER', field: o.field || '', context: o.context || '',
           source: o.source || 'AUTO_INFERRED',
           count: 1, firstSeen: now, lastSeen: now,
+          usageCount: 0, successCount: 0, contributionCount: 0,
         };
         list.push(entry);
       }
@@ -250,6 +251,49 @@
       if (trimmed !== list) memCache = trimmed;
       return persistAll(trimmed || list).then(() => entry);
     });
+  }
+
+  // ---- Memory Score（V4.5 §三）：成功率/使用频率/最近使用/确认/反例/贡献度 ----
+  // 综合 0~1：成功率主导 + 频率/贡献/确认加成 - 反例/衰减惩罚
+  function memoryScore(entry) {
+    if (!entry) return 0;
+    const usage = entry.usageCount || 0;
+    const success = entry.successCount || 0;
+    const contribution = entry.contributionCount || 0;
+    const rejected = entry.rejected_count || 0;
+    // 成功率（无使用记录时按置信度估算）
+    let rate = usage > 0 ? success / usage : (entry.confidence || 0.5);
+    let score = rate * 0.6;
+    // 使用频率
+    score += Math.min(0.15, (usage || 0) * 0.015);
+    // 贡献度（记忆实际改变/主导识别的次数）
+    score += Math.min(0.10, contribution * 0.02);
+    // 用户确认加成
+    if (entry.source === 'USER_MANUAL') score += 0.06;
+    else if (entry.source === 'USER_CONFIRM') score += 0.04;
+    // 反例惩罚
+    score -= Math.min(0.20, rejected * 0.10);
+    // 时间衰减
+    score -= decayPenalty(entry) * 0.5;
+    return Math.max(0, Math.min(1, Math.round(score * 100) / 100));
+  }
+
+  /**
+   * Memory Correction（V4.5 §五 反学习）：用户纠正系统自己的学习。
+   * "公司卡→account" 用户说"公司卡不是账户，是备注" →
+   *   旧字段 account 加 block（X ≠ account）+ 新字段 note 学 learn（X → note）
+   * @returns {Promise<{blocked:boolean, learned:boolean}>}
+   */
+  function redirect(phrase, fromField, toField, toTarget, opts) {
+    const cleanPhrase = String(phrase || '').trim();
+    if (!cleanPhrase || !toField || !toTarget) return Promise.resolve({ blocked: false, learned: false });
+    const o = opts || {};
+    // 1) 阻止旧映射（X ≠ fromField）
+    block(cleanPhrase, toTarget, { field: fromField, context: o.context, reason: 'user_correction' });
+    // 2) 同时阻止旧字段上任何指向旧 target 的映射（若调用方给出）
+    if (o.oldTarget) block(cleanPhrase, o.oldTarget, { field: fromField, context: o.context, reason: 'user_correction' });
+    // 3) 新字段学习
+    return learn(cleanPhrase, toTarget, { field: toField, context: o.context, source: 'USER_CORRECTION', type: o.type }).then(() => ({ blocked: true, learned: true }));
   }
 
   // ---- 解析：输入文本 → 候选记忆（精确/归一化/包含；返回最高分）----
@@ -283,10 +327,12 @@
         const sortVal = conf * (STRENGTH_WEIGHT[strength] || 0.5);
         if (!best || sortVal > bestSort) {
           bestSort = sortVal;
-          best = { phrase: e.phrase, target: e.target, type: e.type, field: e.field,
+          best = { id: e.id, phrase: e.phrase, target: e.target, type: e.type, field: e.field,
             confidence: conf, source: e.source, matchedBy: how, count: e.count, strength };
         }
       }
+      // Memory Contribution：命中即记录使用（V4.5 §二 学习验证）
+      if (best && best.id) markUsed(best.id);
       return best;
     });
   }
@@ -316,12 +362,39 @@
       const sortVal = conf * (STRENGTH_WEIGHT[strength] || 0.5);
       if (!best || sortVal > bestSort) {
         bestSort = sortVal;
-        best = { phrase: e.phrase, target: e.target, type: e.type, field: e.field,
+        best = { id: e.id, phrase: e.phrase, target: e.target, type: e.type, field: e.field,
           confidence: conf, source: e.source, matchedBy: how, count: e.count, strength };
       }
     }
+    // Memory Contribution：命中即记录使用（同步路径）
+    if (best && best.id) markUsed(best.id);
     return best;
   }
+
+  // ---- Memory Contribution 统计（V4.5 §二）：usage / success / contribution ----
+  function _bump(id, key) {
+    if (!id || !memCache) return;
+    const e = memCache.find(x => x.id === id);
+    if (!e) return;
+    if (key === 'usage') e.usageCount = (e.usageCount || 0) + 1;
+    else if (key === 'success') e.successCount = (e.successCount || 0) + 1;
+    else if (key === 'contribution') e.contributionCount = (e.contributionCount || 0) + 1;
+    e.lastSeen = Date.now();
+    // 异步持久化（best-effort）
+    openDB().then((db) => {
+      if (!db) { try { localStorage.setItem(LS_KEY, JSON.stringify(memCache)); } catch (err) {} return; }
+      try {
+        const tx = db.transaction('memory', 'readwrite');
+        tx.objectStore('memory').put(e);
+      } catch (err) { /* ignore */ }
+    });
+  }
+  /** 记录一次使用（resolve 已自动调用；业务层可显式补记） */
+  function markUsed(id) { _bump(id, 'usage'); }
+  /** 记录一次成功（用户未纠正/确认了该值） */
+  function markSuccess(id) { _bump(id, 'success'); }
+  /** 记录一次"记忆贡献"（该次识别因记忆而成功，规则无法单独完成） */
+  function markContribution(id) { _bump(id, 'contribution'); }
 
   /** 用户明确拒绝（V4 §16/§44）："不是X" → 该记忆降权；连续拒绝则降级强度 */
   function reject(phrase, target, opts) {
@@ -419,8 +492,9 @@
   function warmup() { return loadAll().then(() => true).catch(() => false); }
 
   global.PersonalVoiceMemory = {
-    ENTITY_TYPES, learn, reject, block, unblock, isBlocked, listBlocked,
+    ENTITY_TYPES, learn, reject, block, unblock, isBlocked, listBlocked, redirect,
     resolve, resolveSync, list, remove, clearAll, exportJSON, importJSON, warmup,
-    memoryStrength, norm, MAX_ENTRIES,
+    memoryStrength, memoryScore, markUsed, markSuccess, markContribution,
+    norm, MAX_ENTRIES,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
