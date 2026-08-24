@@ -10,9 +10,11 @@
  */
 (function (global) {
   let jsQRModule = null;
+  let _qrFailed = false; // 加载失败过 → 不再重复拉取（减少 404 噪音）
 
   function loadJsQR() {
     if (jsQRModule) return jsQRModule;
+    if (_qrFailed) return null;
     // 本地 vendor 优先（若已内置）；否则 CDN 回退（esm.run，与 paddle/whisper 一致）
     const local = (() => {
       try { return new URL('vendor/jsQR/jsQR.js', global.location && global.location.href).href; }
@@ -22,7 +24,7 @@
       .then((m) => { jsQRModule = m.default || m.jsQR || m; return jsQRModule; })
       .catch(() => import(/* @vite-ignore */ 'https://esm.run/jsqr')
         .then((m) => { jsQRModule = m.default || m.jsQR || m; return jsQRModule; })
-        .catch(() => { jsQRModule = null; return null; }));
+        .catch(() => { jsQRModule = null; _qrFailed = true; return null; }));
   }
 
   /** 检测浏览器 BarcodeDetector 可用性 */

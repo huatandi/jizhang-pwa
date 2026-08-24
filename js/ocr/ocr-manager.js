@@ -460,9 +460,19 @@
   function getManager(config) {
     if (_singleton) return _singleton;
     const mgr = new OcrManager(Object.assign({}, DEFAULT_MANAGER_CONFIG, config || {}));
+    // V5 §75：Paddle 的 onnx 是"线程版 wasm"，需要 SharedArrayBuffer/COOP-COEP 才能实例化。
+    // GitHub Pages 未开 COEP → SharedArrayBuffer 不可用 → Paddle 注定 initWasm 失败，
+    // 只会在每次识别时刷一堆 wasm 报错并拖慢。因此仅在环境支持线程时才注册 Paddle；
+    // 否则直接以 Tesseract 为主引擎（离线可用，无报错）。
+    const canThread = (function () {
+      try { return typeof SharedArrayBuffer !== 'undefined'; }
+      catch (e) { return false; }
+    })();
     try {
-      if (global.OcrKit.PaddleOcrEngine) {
+      if (canThread && global.OcrKit.PaddleOcrEngine) {
         mgr.register(new global.OcrKit.PaddleOcrEngine({ deviceProfile: 'balanced', numThreads: 1 }));
+      } else if (global.OcrKit.PaddleOcrEngine) {
+        console.warn('[ocr] 当前环境不支持线程(SharedArrayBuffer 不可用)，跳过 Paddle，使用 Tesseract 作为主引擎');
       }
     } catch (e) { console.warn('[ocr] 单例 Paddle 注册失败:', e); }
     try {
