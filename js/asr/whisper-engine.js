@@ -155,9 +155,11 @@
             chunk_length_s: this.config.chunkLengthSec,
           });
           this.modelName = this.config.modelRepo;
+          console.log('[asr-runtime] Whisper init SUCCESS model=' + this.config.modelRepo + ' device=' + device + ' dtype=' + this.config.dtype);
           return pipeline;
         } catch (e) {
           initPromise = null;
+          console.warn('[asr-runtime] Whisper init FAILED model=' + this.config.modelRepo + ' device=' + this.backend + ' : ' + (e && e.message || e));
           throw e;
         }
       })();
@@ -189,6 +191,7 @@
       }
       const ms = performance.now() - t0;
       const text = String(out && (out.text || out[0] && out[0].text) || '').trim();
+      console.log('[asr-runtime] Whisper transcribe ' + (text ? 'OK' : 'EMPTY') + ' model=' + this.modelName + ' device=' + (this.backend || '?') + ' time=' + Math.round(ms) + 'ms len=' + audio16k.length);
 
       // 分段（return_timestamps）
       let segments = [];

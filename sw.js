@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v121';
+const CACHE_NAME = 'jizhang-pwa-v122';
 const APP_SHELL = [
   './',
   './index.html',
@@ -115,6 +115,8 @@ const APP_SHELL = [
   './vendor/onnx/ort.all.min.mjs',
   './vendor/onnx/ort-wasm-simd-threaded.wasm',
   './vendor/onnx/ort-wasm-simd-threaded.mjs',
+  './vendor/onnx/ort-wasm-simd-threaded.asyncify.mjs',
+  './vendor/onnx/ort-wasm-simd-threaded.asyncify.wasm',
   './vendor/paddleocr/index.mjs',
   './vendor/paddleocr/assets/worker-entry-C9UNuyOJ.js',
   './vendor/sqljs/sql-wasm.js',

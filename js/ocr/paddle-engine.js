@@ -101,7 +101,7 @@
             || this.config.localWasmPath
             || localUrl('vendor/onnx/');
           const rt = this._detectRuntime();
-          console.warn('[ocr] PaddleOCR runtime: backend=', rt.backend, 'threads=', rt.numThreads, 'wasmPaths=', wasm);
+          console.warn('[ocr-runtime] Paddle init 尝试 backend=' + rt.backend + ' threads=' + rt.numThreads + ' wasmPaths=' + wasm + ' model=' + this.config.ocrVersion);
           ocr = await P.create({
             lang: this._resolveLang(),
             ocrVersion: this.config.ocrVersion,
@@ -115,10 +115,13 @@
               simd: this.config.simd,
             },
           });
+          this._runtime = { backend: rt.backend, threads: rt.numThreads, model: this.config.ocrVersion };
+          console.log('[ocr-runtime] Paddle init SUCCESS backend=' + rt.backend + ' threads=' + rt.numThreads + ' model=' + this.config.ocrVersion);
           return ocr;
         } catch (e) {
           initPromise = null; // 允许重试
           this._initFailed = true; // V5 §75：引擎初始化失败（模型/wasm 缺失等）→ 标记永久不可用，后续识别跳过，避免反复初始化耗时
+          console.warn('[ocr-runtime] Paddle init FAILED: ' + (e && e.message || e));
           throw new Error('PaddleOCR 初始化失败: ' + (e && e.message || e));
         }
       })();
@@ -131,6 +134,8 @@
       const t0 = performance.now();
       const raw = await inst.predict(input, opts || {});
       const ms = performance.now() - t0;
+      const rt = this._runtime || {};
+      console.log('[ocr-runtime] Paddle inference SUCCESS backend=' + (rt.backend || '?') + ' threads=' + (rt.threads || '?') + ' model=' + (rt.model || '?') + ' time=' + Math.round(ms) + 'ms');
       const width = (input.width != null) ? input.width : (input.naturalWidth || 0);
       const height = (input.height != null) ? input.height : (input.naturalHeight || 0);
 
