@@ -711,8 +711,41 @@ function reminderVoiceHandleResult(r) {
     }, 600);
   }
 }
+// 语音"清空/删除 某字段里面的内容"命令：清空 事项/地点/备注/时间 等字段。
+// 例："清空 地点里的内容、文字、数据" → 地点框清空；"清空 事项 框内数据" → 事项框清空。
+// 命中后清空并重置该字段"已确认"标记，随后新语句（"事项 更换轮胎"）可重新填充。
+function tryClearReminderField(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const CLEAR_RE = /(?:清空|清除|删除|删掉|删|去掉|清掉|擦除|擦掉|清|vaciar|borrar|eliminar|quitar)/i;
+  if (!CLEAR_RE.test(t)) return false;
+  // 特异性优先：地点/位置 > 事项 > 备注 > 时间/日期 > 提前；"内容/文字/数据"为泛化描述，缺省归事项
+  let field = null;
+  if (/(?:地点|位置|地方|哪里|在哪|location|lugar|ubicación|ubicacion|donde|dónde|dónde)/i.test(t)) field = 'location';
+  else if (/(?:事项|事情|做什么|content|asunto|que hacer)/i.test(t)) field = 'content';
+  else if (/(?:备注|附注|说明|note|nota|remark)/i.test(t)) field = 'note';
+  else if (/(?:时间|日期|几点|提醒时间|time|fecha|hora|date)/i.test(t)) field = 'time';
+  else if (/(?:提前|提早|advance)/i.test(t)) field = 'advance';
+  else if (/(?:内容|文字|数据|信息|东西|值)/i.test(t)) field = 'content';
+  if (!field) return false; // 没指明字段 → 不误清
+  const idMap = { content: 'rContent', location: 'rLocation', note: 'rNote', time: 'rAt', advance: 'rAdvance' };
+  const el = document.getElementById(idMap[field]);
+  if (!el) return false;
+  reminderFieldHistory.push({ field, oldValue: el.value }); // 可撤销
+  if (reminderFieldHistory.length > 10) reminderFieldHistory.shift();
+  el.value = '';
+  reminderFieldConfirmed[field] = false; // 重置已确认 → 允许后续新值重新填充
+  renderReminderVoicePreview();
+  showToast('已清空' + reminderFieldLabel(field) + ' 🧹');
+  if (window.speak) speak('已清空' + reminderFieldLabel(field));
+  setReminderVoiceBtnState('done');
+  setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
+  return true;
+}
 // 应用语音解析结果到提醒表单
 function applyReminderVoiceText(buffer) {
+  // 0.5) 语音"清空某字段"命令：最高优先级，命中即清空该字段并重开聆听
+  if (tryClearReminderField(String(buffer || ''))) { reminderVoiceBuffer = ''; return; }
   // 0) 说错改口（V3 Correction Engine）："不是明天是后天" / "不是办公室是银行" / "撤销"
   if (window.CorrectionEngine) {
     const corr = CorrectionEngine.parse(buffer);
@@ -1079,7 +1112,7 @@ function startReminderChecker() {
   }
 
   Object.assign(global, {
-    ReminderParser, normalizeRemindAt,
+    ReminderParser, normalizeRemindAt, tryClearReminderField,
     renderReminders, syncRepeatDayUI, openReminderModal, editReminder, saveReminder, deleteReminder,
     markReminderDone, snoozeReminder, dismissReminderNotify, switchReminderVoiceLang, syncReminderVoiceLangUI, getReminderVoiceLangMeta,
     toggleReminderVoice, startReminderVoice, stopReminderVoice, setReminderVoiceBtnState, reminderVoiceHandleResult,
