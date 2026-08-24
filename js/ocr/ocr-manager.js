@@ -29,6 +29,7 @@
   };
 
   const LOW_MEMORY_HINT = navigator.deviceMemory != null ? navigator.deviceMemory : 4;
+  let _ocrJobSeq = 0; // V5 Phase0 审计：OCR 执行轨迹 JOB 序号
 
   function detectProfile() {
     const ua = navigator.userAgent || '';
@@ -93,6 +94,15 @@
       // V5 §13/§14：enhanceMode 'auto' 交由 pipeline 内质量分析器决策（分析器缺失时回退启发式）
       const enhanceMode = o.enhanceMode;
 
+      // V5 Phase0 审计：OCR 执行轨迹（JOB/PASS/reason/engine）——让"为什么又跑了一次"可见
+      const jobId = 'JOB' + (++_ocrJobSeq);
+      const trace = [];
+      const mark = (pass, reason, engine) => {
+        trace.push({ jobId, pass, reason, engine, at: Date.now() });
+        console.log('[ocr-trace] ' + jobId + ' PASS=' + pass + ' reason=' + reason + ' engine=' + (engine || ''));
+      };
+      mark(0, 'initial', 'auto');
+
       // V4：先尝试 QR 检测（拿四点供透视矫正；CFDI/票据常见）。失败不影响主流程。
       let perspectivePoints = o.perspectivePoints || null;
       if (!perspectivePoints && o.qrFirst !== false) {
@@ -127,17 +137,22 @@
       const primary = this.engines[primaryName];
       if (!primary) throw new Error('没有可用的 OCR 引擎（先 register）');
 
+      let _p = 1;
+      const next = (reason, engine) => mark(_p++, reason, engine);
       let result;
       let fromFallback = false;
       if (prep.longMode) {
         // V5 §17：长票据重叠切片识别（每片主引擎，失败逐片回退；不做 multipass——成本过高）
         result = await this._recognizeSlices(input, primary, primaryName, o);
+        next('long-receipt-slices', primaryName);
       } else {
         global.OcrKit.preprocess.throwIfAborted(o.signal, 'primary');
         try {
+          next('primary', primaryName);
           result = await primary.engine.recognize(input, primary.opts);
         } catch (e) {
           console.warn('[ocr] 主引擎失败，尝试回退:', e);
+          next('primary-failed→fallback', null);
           result = await this._fallback(input, primaryName);
           fromFallback = true;
           if (!result) {
@@ -148,8 +163,10 @@
             err.primaryError = (e && (e.message || String(e))) || 'unknown';
             err.fallbackError = (this._fbErrors && this._fbErrors.length)
               ? this._fbErrors.join('；') : '（无可用回退引擎或识别为空）';
+            err.trace = trace;
             throw err;
           }
+          next('fallback-used', result.engine);
         }
       }
 
@@ -170,6 +187,7 @@
         }
         if (needRetry) {
           console.warn(`[ocr] 主引擎置信度偏低(${avgConf.toFixed(1)}%)，多版本增强重试`);
+          next('rescue-multipass', null);
           // 3a) 淡字/模糊 → 增强版本重试主引擎（对比度/二值化可能显著提升）
           let best = result;
           try {
@@ -178,6 +196,7 @@
               if (v.name === 'original') continue;
               global.OcrKit.preprocess.throwIfAborted(o.signal, 'enhance-retry:version');
               try {
+                next('multipass-v' + v.name, primaryName);
                 const vr = await primary.engine.recognize(v.canvas, primary.opts);
                 if (vr && avgConfidence(vr) > avgConfidence(best)) best = vr;
               } catch (e2) { /* 单版本失败继续 */ }
@@ -186,11 +205,13 @@
           } catch (e3) { /* multipass 失败不影响 */ }
           // 3b) Tesseract 二次识别对比合并
           global.OcrKit.preprocess.throwIfAborted(o.signal, 'fallback');
+          next('rescue-fallback-merge', null);
           const fb = await this._fallback(input, primaryName);
           if (fb) result = mergeResults(result, fb);
         }
       }
 
+      result._trace = trace; // 审计：执行轨迹（业务层/控制台可见）
       result.profile = profile;
       result.maxEdge = maxEdge;
       result.deskewAngle = prep.deskewAngle || 0;
