@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=65">
+  <link rel="stylesheet" href="css/style.css?v=66">
   <!-- PaddleOCR SDK 裸模块 import map（V5 §75：vendor/paddleocr/index.mjs 内的 js-yaml / clipper-lib /
        @techstark/opencv-js / onnxruntime-web 是裸 ESM，需 import map 解析。onnxruntime-web 必须与
        vendor/onnx 同版本(1.24.3)——此前误指 1.19.2 造成 JS glue 与 .wasm 版本错配 → function import requires a callable。 -->
@@ -1022,11 +1022,11 @@
       </div>
       <div class="modal-body">
         <div class="form-grid">
-          <label class="full">📝 事项 <input type="text" id="rContent" placeholder="例如：更换轮胎" required></label>
+          <label class="full">📝 事项 <input type="text" id="rContent" required></label>
           <label>📅 提醒时间 <input type="datetime-local" id="rAt" required></label>
-          <label>📍 地点 <input type="text" id="rLocation" placeholder="地点"></label>
+          <label>📍 地点 <input type="text" id="rLocation"></label>
           <label class="full">🔔 提醒方式 <span class="settings-sub">可多选</span>
-            <span class="remind-mode-row" style="display:flex;flex-direction:row;flex-wrap:wrap;gap:10px;align-items:center;margin-top:8px">
+            <span class="remind-mode-row" style="display:flex;flex-direction:row;flex-wrap:nowrap;gap:6px;align-items:center;margin-top:8px">
               <label class="switch-row" style="border:none;padding:4px 0"><span>🗣 语音播报</span><input type="checkbox" id="rModeSpeak" checked></label>
               <label class="switch-row" style="border:none;padding:4px 0"><span>🔊 响铃</span><input type="checkbox" id="rModeRing" checked></label>
               <label class="switch-row" style="border:none;padding:4px 0"><span>📳 震动</span><input type="checkbox" id="rModeVibrate" checked></label>

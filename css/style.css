@@ -2096,19 +2096,27 @@ select option {
 .switch-row input[type="checkbox"]:checked { background: linear-gradient(90deg, #ffb020, #f59e0b); }
 .switch-row input[type="checkbox"]:checked::after { transform: translateX(19px); }
 .switch-row input[type="checkbox"]:disabled { opacity: 0.55; cursor: not-allowed; }
-/* 提醒方式：3 个开关一行排列（V5 减少占用页面高度） */
+/* 提醒方式：3 个开关一行排列（V5 减少占用页面高度；窄屏不换行、三等分） */
 .remind-mode-row {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-wrap: nowrap;
+  gap: 6px;
   align-items: center;
   margin-top: 8px;
 }
 .remind-mode-row .switch-row {
-  flex: 1 1 auto;
-  min-width: 118px;
+  flex: 1 1 0;
+  min-width: 0;
   justify-content: space-between;
+  padding: 6px 8px;
+  font-size: 12px;
+  gap: 6px;
+}
+.remind-mode-row .switch-row span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 预算输入 */
