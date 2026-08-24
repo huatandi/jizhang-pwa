@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v119';
+const CACHE_NAME = 'jizhang-pwa-v120';
 const APP_SHELL = [
   './',
   './index.html',
@@ -106,6 +106,8 @@ const APP_SHELL = [
   './vendor/tesseract/spa.traineddata.gz',
   './vendor/tesseract/eng.traineddata.gz',
   './vendor/tesseract/chi_sim.traineddata.gz',
+  // V5 QR：jsQR（UMD 全局版，扫码解码）
+  './vendor/jsQR/jsQR.js',
   // 高级引擎本地自托管（Whisper ASR / PaddleOCR / ONNX Runtime）
   './vendor/transformers/transformers.min.js',
   './vendor/transformers/transformers.js',

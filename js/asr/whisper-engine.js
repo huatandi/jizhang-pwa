@@ -82,10 +82,15 @@
       return module;
     }
 
-    /** 探测后端：WebGPU 优先，WASM 兜底 */
+    /** 探测后端：WebGPU 优先，WASM 兜底；非隔离环境(无 SharedArrayBuffer/crossOriginIsolated) → 强制 WASM 单线程 *
+     *  （避免请求 WebGPU 的 ort-wasm-simd-threaded.jsep/asyncify.mjs 而 404，V5 §75 能力探测） */
     async detectBackend() {
       if (this.config.device !== 'auto') return this.config.device;
-      if (global.navigator && global.navigator.gpu) {
+      const isolated = (function () {
+        try { return typeof SharedArrayBuffer !== 'undefined' || (typeof global.crossOriginIsolated !== 'undefined' && global.crossOriginIsolated); }
+        catch (e) { return false; }
+      })();
+      if (isolated && global.navigator && global.navigator.gpu) {
         try {
           const adapter = await global.navigator.gpu.requestAdapter();
           if (adapter) return 'webgpu';

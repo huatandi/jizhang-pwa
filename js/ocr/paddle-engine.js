@@ -71,6 +71,25 @@
       return PaddleOCR;
     }
 
+    /**
+     * 能力探测（V5 §75）：不"无 COEP 就禁用 Paddle"，而是按运行时能力选择后端。
+     *   crossOriginIsolated(SharedArrayBuffer 可用) + WebGPU → 'webgpu'（jsep 构建）
+     *   否则 WASM 单线程（threaded=1；需 vendor 提供匹配的单线程 ort-wasm-simd 文件）
+     *   若探测到的后端缺对应 wasm 文件，仍会 init 失败 → 由 _initFailed 降级到 Tesseract。
+     * @returns {{backend:string, numThreads:number}}
+     */
+    _detectRuntime() {
+      const isolated = (function () {
+        try { return typeof SharedArrayBuffer !== 'undefined' || (typeof global.crossOriginIsolated !== 'undefined' && global.crossOriginIsolated); }
+        catch (e) { return false; }
+      })();
+      const cap = (global.AIKit && global.AIKit._cap) || null;
+      const webgpu = cap && cap.webgpu;
+      if (isolated && webgpu) return { backend: 'webgpu', numThreads: 2 };
+      // 非隔离环境：强制 WASM 单线程（避免请求 WebGPU 的 jsep/asyncify 构建 → 404）
+      return { backend: 'wasm', numThreads: 1, singleThread: true };
+    }
+
     async initialize() {
       if (ocr) return ocr;
       if (initPromise) return initPromise;
@@ -81,6 +100,8 @@
           const wasm = this.config.wasmPaths
             || this.config.localWasmPath
             || localUrl('vendor/onnx/');
+          const rt = this._detectRuntime();
+          console.warn('[ocr] PaddleOCR runtime: backend=', rt.backend, 'threads=', rt.numThreads, 'wasmPaths=', wasm);
           ocr = await P.create({
             lang: this._resolveLang(),
             ocrVersion: this.config.ocrVersion,
@@ -88,9 +109,9 @@
             textRecognitionBatchSize: 8,
             worker: this.config.worker,
             ortOptions: {
-              backend: 'auto',           // WebGPU 优先，WASM 兜底
+              backend: rt.backend,          // 按能力探测：webgpu | wasm（不再盲目 auto→jsep 404）
               wasmPaths: wasm,
-              numThreads: this.config.numThreads,
+              numThreads: rt.numThreads,
               simd: this.config.simd,
             },
           });
