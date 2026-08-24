@@ -1,0 +1,40 @@
+{
+  "$schema_note": "OCR 图片基准 fixture 清单 (V5 §81-87)。每个 fixture 对应 tests/ocr/fixtures/ 下的一张真实/脱敏票据图片。expected 字段为人工标注的正确答案;识别结果由浏览器捕获为 tests/ocr/results/<id>.json 后,用 node tests/ocr/benchmark.cjs 汇总 KPI。expected 中 null 表示该字段不适用/不评估。",
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "mx-cfdi-sample-001",
+      "file": "mx-cfdi-sample-001.jpg",
+      "documentType": "CFDI",
+      "region": "MX",
+      "difficulty": "normal",
+      "source": "user-provided",
+      "notes": "示例条目(占位):请放入一张脱敏 CFDI 图片并核对期望值。",
+      "expected": {
+        "amount": "656.38",
+        "date": "2026-08-01",
+        "merchant": null,
+        "taxId": "XAXX010101000",
+        "reference": null,
+        "payment": "EFECTIVO"
+      }
+    },
+    {
+      "id": "mx-retail-sample-002",
+      "file": "mx-retail-sample-002.jpg",
+      "documentType": "OXXO",
+      "region": "MX",
+      "difficulty": "hard",
+      "source": "user-provided",
+      "notes": "示例条目(占位):现金闭环场景(EFECTIVO 700 / CAMBIO 43.62 / TOTAL 656.38),用于验证 $→5 类金额错误检测。",
+      "expected": {
+        "amount": "60.00",
+        "date": "2026-08-02",
+        "merchant": "OXXO",
+        "taxId": null,
+        "reference": null,
+        "payment": null
+      }
+    }
+  ]
+}

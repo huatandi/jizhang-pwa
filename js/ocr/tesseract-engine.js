@@ -29,6 +29,22 @@
     } catch (e) { return false; }
   }
 
+  // 本地已打包的语言包（vendor/tesseract/）。auto 解析到的语言若不在其中→自动降级，
+  // 避免 Tesseract 联网下载语言包失败导致整个 OCR 引擎不可用（V5 §11 回归防护）。
+  const VENDORED_LANGS = ['spa', 'eng', 'chi_sim'];
+
+  /** 把解析出的语言组合收紧到本地已打包集合；缺失则降级，并告警 */
+  function sanitizeLang(lang) {
+    const parts = String(lang || 'eng').split('+').map(s => s.trim()).filter(Boolean);
+    const ok = parts.filter(p => VENDORED_LANGS.includes(p));
+    const merged = ok.length ? ok : ['eng'];
+    const out = merged.join('+');
+    if (out !== String(lang || '')) {
+      console.warn('[ocr] 语言包本地缺失，自动降级 ' + lang + ' → ' + out + '（离线可用语言：' + VENDORED_LANGS.join('/') + '）');
+    }
+    return out;
+  }
+
   let worker = null;
   let initPromise = null;
 
@@ -61,20 +77,21 @@
           //    该文件在 tesseract.js-core@5.x 已移除 → 必须直接给完整核心 URL 跳过探测。
           let corePath = this.config.corePath;
           let langPath = this.config.langPath;
-          let coreUrl = null;
           try {
             const head = await fetch(corePath + 'tesseract-core-simd-lstm.wasm.js', { method: 'HEAD' });
             if (!head.ok) throw new Error('local core missing');
           } catch (e) {
             corePath = this.config.cdnCorePath;
             langPath = this.config.cdnLangPath;
-            // 直接指定完整核心文件：SIMD 支持→simd-lstm；否则→lstm（跳过 worker 内 relaxed-simd 探测）
-            coreUrl = corePath + (supportsSimd() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
           }
-          worker = await Tesseract.createWorker(this._resolveLang(), 1, {
+          // 始终显式指定完整核心文件 URL（本地或 CDN）：SIMD 支持→simd-lstm；否则→lstm。
+          // 关键修复：即使本地核心存在，也必须传完整 URL，否则 worker 仍会做 wasm-feature-detect
+          // 并请求已移除的 relaxed-simd 文件 → 404。离线可用。
+          const coreUrl = corePath + (supportsSimd() ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
+          worker = await Tesseract.createWorker(sanitizeLang(this._resolveLang()), 1, {
             workerPath: this.config.workerPath,
             langPath,
-            corePath: coreUrl || corePath,
+            corePath: coreUrl,
             logger: () => {},
           });
           return worker;
@@ -119,4 +136,5 @@
 
   global.OcrKit = global.OcrKit || {};
   global.OcrKit.TesseractEngine = TesseractEngine;
+  global.OcrKit.tesseractSanitizeLang = sanitizeLang;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -10,19 +10,36 @@
  */
 (function (global) {
   let jsQRModule = null;
+  let _qrFailed = false; // 加载失败过 → 不再重复拉取（减少 404 噪音）
+
+  // jsQR 是 UMD 全局版（window.jsQR），用经典 <script> 注入而非动态 import（import() 拿不到它的导出）
+  function injectScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src; s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('load fail ' + src));
+      document.head.appendChild(s);
+    });
+  }
 
   function loadJsQR() {
-    if (jsQRModule) return jsQRModule;
-    // 本地 vendor 优先（若已内置）；否则 CDN 回退（esm.run，与 paddle/whisper 一致）
+    if (jsQRModule) return Promise.resolve(jsQRModule);
+    if (_qrFailed) return Promise.resolve(null);
+    if (typeof global.jsQR !== 'undefined') { jsQRModule = global.jsQR; return Promise.resolve(jsQRModule); }
+    // 本地 vendor 优先；否则 CDN 回退
     const local = (() => {
       try { return new URL('vendor/jsQR/jsQR.js', global.location && global.location.href).href; }
       catch (e) { return 'vendor/jsQR/jsQR.js'; }
     })();
-    return import(/* @vite-ignore */ local)
-      .then((m) => { jsQRModule = m.default || m.jsQR || m; return jsQRModule; })
-      .catch(() => import(/* @vite-ignore */ 'https://esm.run/jsqr')
-        .then((m) => { jsQRModule = m.default || m.jsQR || m; return jsQRModule; })
-        .catch(() => { jsQRModule = null; return null; }));
+    return injectScript(local)
+      .then(() => {
+        if (typeof global.jsQR !== 'undefined') { jsQRModule = global.jsQR; return jsQRModule; }
+        throw new Error('jsQR 未暴露全局');
+      })
+      .catch(() => injectScript('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js')
+        .then(() => { jsQRModule = (typeof global.jsQR !== 'undefined') ? global.jsQR : null; if (!jsQRModule) _qrFailed = true; return jsQRModule; })
+        .catch(() => { jsQRModule = null; _qrFailed = true; return null; }));
   }
 
   /** 检测浏览器 BarcodeDetector 可用性 */

@@ -142,9 +142,17 @@ function updatePageModeBadge() {
   const old = h2.querySelector('.page-mode-badge');
   if (old) old.remove();
   const isFamily = settings && settings.scene === 'family';
-  const badge = document.createElement('span');
+  const badge = document.createElement('button');
   badge.className = 'page-mode-badge' + (isFamily ? ' family' : ' business');
+  badge.type = 'button';
   badge.textContent = isFamily ? '🏠 家庭模式' : '🏪 开店模式';
+  badge.title = '点击切换模式';
+  badge.setAttribute('aria-label', badge.textContent);
+  // 点击徽章 → 在开店/家庭之间一键切换（所有页面标题旁都可点）
+  badge.onclick = (e) => {
+    e.stopPropagation();
+    if (typeof quickSwitchMode === 'function') quickSwitchMode();
+  };
   h2.appendChild(badge);
 }
 // 导航点击后刷新徽章
@@ -239,9 +247,11 @@ function closeModal(id) {
 }
 document.querySelectorAll('.modal-overlay').forEach(ov => {
   ov.addEventListener('click', (e) => {
-    if (e.target === ov) {
-      // 单据识别工作台：点击外围不关闭，只能通过「取消/保存」退出（用户明确要求）
-      if (ov.id === 'aiWorkbenchModal') return;
+    // 点击卡片外围（不在 .modal 卡片内）→ 关闭。用 closest 判定更稳，手机端点外围也能关。
+    if (!e.target.closest('.modal')) {
+      // 携带用户输入/识别结果的弹窗：点击外围不关闭（避免误关丢失已填/已识别数据，用户明确要求）
+      const protectedModals = ['aiWorkbenchModal', 'expenseModal', 'incomeModal', 'purchaseModal'];
+      if (protectedModals.includes(ov.id)) return;
       ov.classList.remove('active'); __unlockBodyScroll();
     }
   });
@@ -556,18 +566,22 @@ function escapeHtml(s) {
 // 审计 S3 修复：把字符串安全嵌入内联 onclick 的 JS 字符串字面量。
 // 将每个字符编码为 \xNN 十六进制转义——不含引号、尖括号、实体，HTML 属性解析与 JS 解析都安全。
 function escJs(s) {
+  // 用 \uHHHH(4 位十六进制)编码每个 UTF-16 单元，安全嵌入 onclick 单引号字符串，
+  // 覆盖中文/CJK(码点>0xFF)与 emoji(代理对)——旧 \xHH 只支持 2 位，中文会被截断成乱码。
   let out = '';
-  for (const ch of String(s == null ? '' : s)) {
-    out += '\\x' + ch.charCodeAt(0).toString(16).padStart(2, '0');
+  const str = String(s == null ? '' : s);
+  for (let i = 0; i < str.length; i++) {
+    out += '\\u' + str.charCodeAt(i).toString(16).padStart(4, '0');
   }
   return out;
 }
 
-// 解码 escJs 编码的字符串（onclick 接收端调用）
+// 解码 escJs 编码的字符串（onclick 接收端调用；兼容旧 \xHH 与 \uHHHH）
 function deJs(s) {
-  if (typeof s !== 'string' || !s.includes('\\x')) return s;
+  if (typeof s !== 'string' || (!s.includes('\\u') && !s.includes('\\x'))) return s;
   try {
-    return s.replace(/\\x([0-9a-fA-F]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+    return s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+            .replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
   } catch (e) { return s; }
 }
 
@@ -641,7 +655,6 @@ async function renderAccountMetaList() {
           <option value="liability" ${m.acc_type === 'liability' ? 'selected' : ''}>负债</option>
         </select>
         <input type="number" class="account-meta-input" data-acc="${escapeHtml(a)}" data-k="initial" value="${Number(m.initial_balance) || 0}" step="0.01" min="0" title="期初余额（基准币种）">
-        <button class="btn-small" onclick="saveAccountMeta('${escJs(a)}')" title="保存编号/期初余额与类型">💾</button>
         <button class="account-del-btn" onclick="removeAccountItem('${escJs(a)}')" title="删除账户 ${escapeHtml(a)}">×</button>
       </span>
     </div>`;
@@ -718,7 +731,35 @@ async function saveAccountMeta(nameEncoded) {
   } catch (e) { showToast('保存失败: ' + e.message, 'error'); }
 }
 
-// 功能补充 P5：快捷模板（常用账单一键复账）
+// 批量保存所有账户的 编号/期初余额/类型（原每账户 💾 已并入右下角"保存全部设置"）
+async function saveAllAccountMeta() {
+  const rows = document.querySelectorAll('#accountMetaList .rate-item');
+  if (!rows.length) return;
+  const numMap = Object.assign({}, (options && options.account_numbers) || {});
+  const metaP = [];
+  rows.forEach(row => {
+    const sel = row.querySelector('select[data-acc]');
+    if (!sel) return;
+    const name = sel.getAttribute('data-acc');
+    const accType = sel.value;
+    const initEl = row.querySelector('input[data-acc]');
+    const init = Number(initEl ? initEl.value : 0) || 0;
+    const numEl = row.querySelector('input[data-acc-num]');
+    const numRaw = numEl ? String(numEl.value).trim() : '';
+    const num = /^\d{1,2}$/.test(numRaw) ? Number(numRaw) : null;
+    // 清除该账户占用的旧编号，避免冲突
+    for (const k of Object.keys(numMap)) if (numMap[k] === name) delete numMap[k];
+    if (num) numMap[String(num)] = name;
+    metaP.push(api('/account-meta/' + encodeURIComponent(name), 'PUT', { initial_balance: Number.isFinite(init) ? init : 0, acc_type: accType }));
+  });
+  await api('/options/account_numbers', 'PUT', { value: numMap });
+  await Promise.all(metaP);
+  options = await api('/options');
+  if (window.VoiceEngine && typeof window.VoiceEngine.setOptions === 'function') {
+    window.VoiceEngine.setOptions({ expense_categories: options.expense_categories, departments: options.departments, accounts: options.accounts, account_numbers: options.account_numbers });
+  }
+  refreshDashboards();
+}
 const QUICK_TPL_KEY = 'quick_templates';
 function getQuickTemplates() {
   return (options && options.quick_templates && typeof options.quick_templates === 'object') ? options.quick_templates : { income: [], expense: [] };
@@ -1090,7 +1131,8 @@ function renderQueryResult(r) {
       ${it.kind === 'income' ? `<button class="action-btn" onclick="editIncome(${it.id})" title="编辑">✏️</button><button class="action-btn delete" onclick="deleteIncome(${it.id})" title="删除">🗑️</button>` : ''}
       ${it.kind === 'expense' ? `<button class="action-btn" onclick="editExpense(${it.id})" title="编辑">✏️</button><button class="action-btn delete" onclick="deleteExpense(${it.id})" title="删除">🗑️</button>` : ''}
       ${it.kind === 'purchase' ? `<button class="action-btn" onclick="editPurchase(${it.id})" title="编辑">✏️</button><button class="action-btn delete" onclick="deletePurchase(${it.id})" title="删除">🗑️</button>` : ''}`;
-    return `<span class="income-pair">
+    const dbl = (it.kind === 'income' ? `editIncome(${it.id})` : it.kind === 'expense' ? `editExpense(${it.id})` : it.kind === 'purchase' ? `editPurchase(${it.id})` : '');
+    return `<span class="income-pair" ondblclick="${dbl}" title="双击编辑">
       ${tag}
       ${catIconHtml(iconName, kindForIcon)}
       ${link}
@@ -1113,14 +1155,17 @@ function renderQueryResult(r) {
     if (queryType === 'supplier' && !dayTotal) {
       dayTotal = list.reduce((s, it) => s + (it.paid || 0), 0);
     }
+    // 双击日期/当日合计 → 编辑该日第一条记录（可在弹窗改数据与日期，便于纠正错误）
+    const first = list[0] || null;
+    const dblDay = first ? (first.kind === 'income' ? `editIncome(${first.id})` : first.kind === 'expense' ? `editExpense(${first.id})` : first.kind === 'purchase' ? `editPurchase(${first.id})` : '') : '';
     return `
     <tr>
       <td class="date-cell">
-        <span class="tag tag-blue">${fmtDate(date)}</span>
+        <span class="tag tag-blue" ondblclick="${dblDay}" title="双击编辑日期/内容">${fmtDate(date)}</span>
         <button class="action-btn add-btn" onclick="${queryType === 'supplier' ? `openPurchaseModal('${escJs(date)}')` : queryType === 'expense_category' ? `openExpenseModal('${escJs(date)}')` : queryType === 'income_category' ? `openIncomeModal('${escJs(date)}')` : `openQuickModal()`}" title="在此日期下添加记录">＋</button>
       </td>
       <td class="account-details">${list.map(chip).join('')}</td>
-      <td class="amount ${dayTotal >= 0 ? 'positive' : 'negative'}">${dayTotal ? (dayTotal >= 0 ? '¥' : '-¥') + fmtMoney(Math.abs(dayTotal)) : ''}</td>
+      <td class="amount ${dayTotal >= 0 ? 'positive' : 'negative'}" ondblclick="${dblDay}" title="双击编辑">${dayTotal ? (dayTotal >= 0 ? '¥' : '-¥') + fmtMoney(Math.abs(dayTotal)) : ''}</td>
     </tr>`;
   }).join('');
 }
@@ -1779,6 +1824,8 @@ async function saveSettings(close = true) {
     document.getElementById('rangeEnd').value = currentRange.end;
   }
   // 设置已改为独立页面：保存后停留页面并提示（不再关闭弹窗）
+  // 资产账户（编号/期初余额/类型）也一并保存（原每账户 💾 已移除）
+  try { await saveAllAccountMeta(); } catch (e) { console.warn('[settings] 账户元数据保存失败: ' + (e && e.message || e)); }
   showToast('设置已保存 ✅');
   return settings;
 }
@@ -2957,7 +3004,8 @@ async function initAfterLogin() {
       if (badge) badge.textContent = '🧠 ' + window.AIKit.capabilityBadge(cap);
       const ocrPlan = window.AIKit.ocrPlan(cap);
       const wbHint = document.getElementById('wbLocalOcrBtn');
-      if (wbHint) wbHint.title = '本地识别：' + ocrPlan.reason + '（Paddle → Tesseract → 服务器）';
+      // V5 §75 文案修正：本地链路为 Paddle → Tesseract；服务器提取是独立功能，不宣称自动回退
+      if (wbHint) wbHint.title = '本地识别：' + ocrPlan.reason + '（Paddle → Tesseract，本地；服务器提取为独立功能）';
     }).catch(() => {});
   }
   // 语音提醒：加载列表 + 启动到期检测

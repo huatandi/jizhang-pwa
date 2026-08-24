@@ -65,10 +65,14 @@
   class ModelManager {
     constructor() {
       this._db = null;
+      this._mem = new Map(); // 无 IndexedDB 环境(Node 测试)回退
     }
+
+    _memKey(plan) { return versionKey(plan.baseRepo); }
 
     async _openDb() {
       if (this._db) return this._db;
+      if (typeof indexedDB === 'undefined') { this._db = null; return null; } // 用内存回退
       this._db = await new Promise((resolve, reject) => {
         const req = indexedDB.open('asr-model-store', 1);
         req.onupgradeneeded = () => {
@@ -86,18 +90,26 @@
     /** 保存下载元数据（进度缓存用） */
     async putMeta(plan, meta) {
       const db = await this._openDb();
+      const key = versionKey(plan.baseRepo);
+      if (!db) {
+        const cur = this._mem.get(key) || {};
+        this._mem.set(key, Object.assign({}, cur, meta, { key }));
+        return true;
+      }
       return new Promise((resolve, reject) => {
         const tx = db.transaction('models', 'readwrite');
-        tx.objectStore('models').put(Object.assign({ key: versionKey(plan.baseRepo) }, meta));
+        tx.objectStore('models').put(Object.assign({ key }, meta));
         tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
       });
     }
 
     async getMeta(plan) {
       const db = await this._openDb();
+      const key = versionKey(plan.baseRepo);
+      if (!db) return this._mem.get(key) || null;
       return new Promise((resolve) => {
         const tx = db.transaction('models', 'readonly');
-        const req = tx.objectStore('models').get(versionKey(plan.baseRepo));
+        const req = tx.objectStore('models').get(key);
         req.onsuccess = () => resolve(req.result || null);
         req.onerror = () => resolve(null);
       });
@@ -116,6 +128,37 @@
       const needMb = MODEL_MEMORY_MB[plan.model] || 160;
       return needMb <= mem * 1024 * 0.6; // 最多用 60% 内存
     }
+
+    /** 模型健康状态(保险2): 不是只看 cached/not-cached */
+    async healthState(plan) {
+      const meta = await this.getMeta(plan);
+      if (!meta) return 'NOT_INSTALLED';
+      if (meta.status === 'BROKEN') return 'BROKEN';
+      if (meta.status === 'INCOMPATIBLE') return 'INCOMPATIBLE';
+      if (meta.status === 'OOM_RISK') return 'OOM_RISK';
+      if (meta.status === 'DISABLED') return 'DISABLED';
+      if (meta.status === 'DOWNLOADING') return 'DOWNLOADING';
+      if (meta.status === 'READY' && meta.selfTestPassed) return 'READY';
+      if (meta.done) {
+        // 缓存了但从未通过 Self-Test / 版本不符 → 视为待验证
+        return (meta.version === (MODEL_VERSIONS[plan.model] || 1)) ? 'INSTALLED_UNVERIFIED' : 'INCOMPATIBLE';
+      }
+      return meta.version === (MODEL_VERSIONS[plan.model] || 1) ? 'DOWNLOADING' : 'INCOMPATIBLE';
+    }
+
+    /** 更新模型健康状态 */
+    async markHealth(plan, status, extra) {
+      const meta = (await this.getMeta(plan)) || {};
+      Object.assign(meta, { status, updatedAt: Date.now() }, extra || {});
+      meta.stateStatus = status;
+      await this.putMeta(plan, meta);
+      return meta;
+    }
+
+    /** 标记该模型 Self-Test 通过(保险3) */
+    async markSelfTestPassed(plan, info) {
+      return this.markHealth(plan, 'READY', { selfTestPassed: true, selfTestAt: Date.now(), selfTestInfo: info || null });
+    }
   }
 
   global.AsrKit = global.AsrKit || {};
@@ -131,6 +174,9 @@
         isCached: inst.isCached.bind(inst),
         putMeta: inst.putMeta.bind(inst),
         getMeta: inst.getMeta.bind(inst),
+        healthState: inst.healthState.bind(inst),
+        markHealth: inst.markHealth.bind(inst),
+        markSelfTestPassed: inst.markSelfTestPassed.bind(inst),
       });
     })(),
   });

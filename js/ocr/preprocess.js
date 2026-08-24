@@ -26,14 +26,16 @@
         img.onload = () => resolve(img);
         img.onerror = () => reject(new Error('图片加载失败'));
         img.src = src;
-      } else if (src instanceof HTMLImageElement) {
+      } else if (typeof HTMLImageElement !== 'undefined' && src instanceof HTMLImageElement) {
         if (src.complete && src.naturalWidth > 0) resolve(src);
         else { src.onload = () => resolve(src); src.onerror = () => reject(new Error('图片加载失败')); }
-      } else if (src instanceof HTMLCanvasElement) {
+      } else if (typeof HTMLCanvasElement !== 'undefined' && src instanceof HTMLCanvasElement) {
         const img = new Image();
         img.onload = () => resolve(img);
         img.onerror = () => reject(new Error('Canvas 转图片失败'));
         img.src = src.toDataURL('image/jpeg', 0.92);
+      } else if (typeof OffscreenCanvas !== 'undefined' && src instanceof OffscreenCanvas) {
+        resolve(src);
       } else {
         reject(new Error('不支持的图像源'));
       }
@@ -174,25 +176,27 @@
     return canvas;
   }
 
-  /** 灰度化（返回新 canvas） */
+  /** 灰度化（V5 §8.1：非破坏性——克隆后处理，返回新 canvas，不修改入参） */
   function toGrayscale(canvas) {
-    const ctx = canvas.getContext('2d');
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const out = cloneCanvas(canvas);
+    const ctx = out.getContext('2d');
+    const imgData = ctx.getImageData(0, 0, out.width, out.height);
     const d = imgData.data;
     for (let i = 0; i < d.length; i += 4) {
       const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
       d[i] = d[i + 1] = d[i + 2] = g;
     }
     ctx.putImageData(imgData, 0, 0);
-    return canvas;
+    return out;
   }
 
-  // 3x3 卷积（锐化核等）
+  // 3x3 卷积（锐化核等）——非破坏性：克隆后处理，返回新 canvas
   function convolve(canvas, kernel, divisor) {
-    const ctx = canvas.getContext('2d');
-    const src = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const outCanvas = cloneCanvas(canvas);
+    const ctx = outCanvas.getContext('2d');
+    const src = ctx.getImageData(0, 0, outCanvas.width, outCanvas.height);
     const out = ctx.createImageData(src);
-    const w = canvas.width, h = canvas.height;
+    const w = outCanvas.width, h = outCanvas.height;
     const d = src.data, o = out.data;
     const k = 3;
     const off = Math.floor(k / 2);
@@ -216,7 +220,7 @@
       }
     }
     ctx.putImageData(out, 0, 0);
-    return canvas;
+    return outCanvas;
   }
 
   // Otsu 二值化（简化实现：灰度直方图自动阈值）
@@ -241,11 +245,11 @@
     return threshold;
   }
 
-  /** 二值化（先灰度再 Otsu） */
+  /** 二值化（先灰度再 Otsu）——非破坏性：返回新 canvas */
   function binarize(canvas) {
-    toGrayscale(canvas);
-    const ctx = canvas.getContext('2d');
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const out = toGrayscale(canvas); // toGrayscale 已非破坏性
+    const ctx = out.getContext('2d');
+    const imgData = ctx.getImageData(0, 0, out.width, out.height);
     const t = otsuThreshold(imgData.data);
     const d = imgData.data;
     for (let i = 0; i < d.length; i += 4) {
@@ -253,13 +257,14 @@
       d[i] = d[i + 1] = d[i + 2] = v;
     }
     ctx.putImageData(imgData, 0, 0);
-    return canvas;
+    return out;
   }
 
-  // 对比度/亮度调整（线性拉伸）
+  // 对比度/亮度调整（线性拉伸）——非破坏性：克隆后处理，返回新 canvas
   function contrast(canvas, amount) {
-    const ctx = canvas.getContext('2d');
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const out = cloneCanvas(canvas);
+    const ctx = out.getContext('2d');
+    const imgData = ctx.getImageData(0, 0, out.width, out.height);
     const d = imgData.data;
     const f = (255 * (amount || 1.4)) / 100;
     for (let i = 0; i < d.length; i += 4) {
@@ -268,7 +273,7 @@
       }
     }
     ctx.putImageData(imgData, 0, 0);
-    return canvas;
+    return out;
   }
 
   /**
@@ -277,6 +282,7 @@
    *   high_contrast → 对比度增强 + 锐化
    *   thermal     → 热敏纸：灰度 + Otsu 二值化 + 锐化
    *   low_light   → 对比度拉伸 + 锐化
+   * V5 §8.1：所有内部步骤均为非破坏性（克隆后处理），本函数绝不修改入参 canvas。
    */
   function enhance(canvas, mode) {
     const m = mode || 'normal';
@@ -468,16 +474,105 @@
     return [A * inv, D * inv, G * inv, B * inv, E * inv, H * inv, C * inv, F * inv, I * inv];
   }
 
+  /** V5 §73：AbortError（阶段间检查用） */
+  function abortError(phase) {
+    const e = new Error('OCR 已取消');
+    e.name = 'AbortError';
+    e.phase = phase || 'preprocess';
+    return e;
+  }
+  function throwIfAborted(signal, phase) {
+    if (signal && signal.aborted) throw abortError(phase);
+  }
+
+  /** 长票阈值：高/宽 > 2.5 且高度足够 → 切片模式（V5 §17） */
+  function isLongReceipt(w, h, maxEdge) {
+    const limit = maxEdge || PROFILES.balanced;
+    return h / w > 2.5 && h > limit * 1.3;
+  }
+
   /**
-   * 完整预处理管线：load → resize → perspective(QR/auto) → deskew → enhance。
-   * opts: { maxEdge, enhanceMode, rotateDeg, deskew, perspectivePoints, upscaleSmall }
-   * 返回 { canvas, width, height, scale, deskewAngle, perspectiveAngle }
+   * 长票据重叠切片（V5 §17）：把长画布切成重叠的等宽切片。
+   * @param {HTMLCanvasElement|OffscreenCanvas} canvas
+   * @param {Object} opts { maxSliceHeight=1800, overlapRatio=0.12 }
+   * @returns {Array<{name, canvas, startY, overlapPx}>} 切片（自上而下，startY=全图坐标偏移）
+   */
+  function longReceiptSlices(canvas, opts) {
+    const o = opts || {};
+    const maxSlice = o.maxSliceHeight || Math.round(PROFILES.balanced);
+    const ratio = o.overlapRatio != null ? o.overlapRatio : 0.12;
+    const W = canvas.width, H = canvas.height;
+    if (!W || !H) return [];
+    if (H <= maxSlice * 1.1) return [{ name: 'full', canvas, startY: 0, overlapPx: 0 }];
+    const overlapPx = Math.max(1, Math.round(maxSlice * ratio));
+    const step = maxSlice - overlapPx;
+    const slices = [];
+    let y = 0, i = 0;
+    while (y < H) {
+      const h = Math.min(maxSlice, H - y);
+      const c = document.createElement('canvas');
+      c.width = W; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, h);
+      ctx.drawImage(canvas, 0, y, W, h, 0, 0, W, h);
+      slices.push({ name: 'slice-' + i, canvas: c, startY: y, overlapPx: i > 0 ? overlapPx : 0 });
+      y += step;
+      i++;
+      if (i > 64) break; // 防御：极端长票
+    }
+    return slices;
+  }
+
+  /**
+   * 完整预处理管线：load → resize(长票保高) → autoRotate(轴向) → perspective(QR/auto)
+   *                → deskew → enhance(质量自适应) → glare。
+   * opts: { maxEdge, enhanceMode, rotateDeg, deskew, perspectivePoints, upscaleSmall,
+   *         rawCanvas, autoRotate, longReceipt, srcType, profileHint, signal, worker }
+   * 返回 { canvas, width, height, scale, deskewAngle, perspectiveAngle, longMode, glowUsed }
    */
   async function pipeline(src, opts) {
     const o = opts || {};
-    const img = await loadImage(src);
-    const { canvas, width, height, scale } = smartResize(img, o.maxEdge || PROFILES.balanced);
+    throwIfAborted(o.signal, 'preprocess:start');
+
+    // 长票判定（原始比例）：保宽缩放，高度封顶（防内存爆炸）
+    let canvas, scale = 1, longMode = false;
+    if (o.rawCanvas) {
+      canvas = o.rawCanvas;
+    } else {
+      const img = await loadImage(src);
+      throwIfAborted(o.signal, 'preprocess:load');
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      const limit = o.maxEdge || PROFILES.balanced;
+      if (o.longReceipt !== false && isLongReceipt(w, h, limit)) {
+        longMode = true;
+        const k = Math.min(1, limit / Math.max(1, w));
+        const tw = Math.max(1, Math.round(w * k));
+        const th = Math.min(Math.round(h * k), Math.round(limit * 4)); // 高度封顶 4×maxEdge
+        canvas = document.createElement('canvas');
+        canvas.width = tw; canvas.height = th;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, tw, th);
+        scale = k;
+      } else {
+        const r = smartResize(img, limit);
+        canvas = r.canvas; scale = r.scale;
+      }
+    }
     let c = canvas;
+
+    // V5 §16：轴向方向检测（0 vs 90；180/270 方向需 OSD/模板记忆，见 image-quality 注释）
+    if (o.autoRotate && !o.rotateDeg) {
+      try {
+        const q = global.OcrKit && global.OcrKit.imageQuality;
+        if (q && q.detectOrientation) {
+          if (q.detectOrientation(c) === 90) c = rotate(c, 90);
+        }
+      } catch (e) { /* 方向检测失败不阻塞 */ }
+    }
     if (o.rotateDeg) c = rotate(c, o.rotateDeg);
     // V4：透视矫正（斜拍/俯拍票据）——QR 四点优先，否则自动检测白纸边界；失败静默回退 deskew
     let perspectiveAngle = 0;
@@ -494,10 +589,34 @@
         c = rotateCanvas(c, d);
       }
     }
+    // V5 §13/§14：增强模式——质量自适应（分析器缺失时回退启发式）
+    let mode = o.enhanceMode;
+    let glowUsed = false;
+    if (mode === 'auto') {
+      const q = global.OcrKit && global.OcrKit.imageQuality;
+      if (q && q.analyze && q.pickPipeline) {
+        try {
+          const scores = q.analyze(c);
+          const p = q.pickPipeline(scores, o.srcType, o.profileHint);
+          mode = p.enhanceMode;
+          glowUsed = p.glowReduce;
+        } catch (e) { mode = fallbackEnhanceMode(o.srcType, o.profileHint); }
+      } else {
+        mode = fallbackEnhanceMode(o.srcType, o.profileHint);
+      }
+    }
     // V2：反光抑制（高光区域局部压暗，提升热敏纸/塑料卡面识别）
-    if (o.glowReduce) c = reduceGlare(c);
-    if (o.enhanceMode && o.enhanceMode !== 'none') c = enhance(c, o.enhanceMode);
-    return { canvas: c, width: c.width, height: c.height, scale, deskewAngle, perspectiveAngle };
+    if (o.glowReduce !== false || glowUsed) c = reduceGlare(c);
+    if (mode && mode !== 'none') c = enhance(c, mode);
+    return { canvas: c, width: c.width, height: c.height, scale, deskewAngle, perspectiveAngle, longMode, glowUsed };
+  }
+
+  /** 增强模式启发式回退（无质量分析器时；与旧 detectEnhanceMode 等价） */
+  function fallbackEnhanceMode(srcType, profileHint) {
+    if (srcType === 'thermal') return 'thermal';
+    if (srcType === 'low_light') return 'low_light';
+    if (profileHint === 'low') return 'high_contrast';
+    return 'normal';
   }
 
   // canvas → ImageData（送 OCR 引擎）
@@ -513,14 +632,16 @@
   // ---- 多版本预处理（V5 §20-22）：淡字/模糊/低对比票据一次生成多增强版本 ----
   // 返回 [ { name, canvas } ]：original / contrast / grayscale / sharpen / binarize
   // 供 EvidenceFusion 逐版本 OCR 后选择最佳（淡字增强：提升对比 + 锐化；热敏：二值化）
+  // V5 §8.1 修复：original 是源图的克隆（不被后续版本污染）；所有增强步骤非破坏性，
+  // 传入的源 canvas 在整个 multipass 过程中保持不变。
   function multipass(canvas, opts) {
     const o = opts || {};
-    const versions = [{ name: 'original', canvas }];
+    const versions = [{ name: 'original', canvas: cloneCanvas(canvas) }];
     try { versions.push({ name: 'contrast', canvas: enhance(canvas, 'high_contrast') }); } catch (e) { /* ignore */ }
-    try { versions.push({ name: 'grayscale', canvas: toGrayscale(cloneCanvas(canvas)) }); } catch (e) { /* ignore */ }
-    try { versions.push({ name: 'sharpen', canvas: convolve(cloneCanvas(canvas), [0, -1, 0, -1, 5, -1, 0, -1, 0], 1) }); } catch (e) { /* ignore */ }
+    try { versions.push({ name: 'grayscale', canvas: toGrayscale(canvas) }); } catch (e) { /* ignore */ }
+    try { versions.push({ name: 'sharpen', canvas: convolve(canvas, [0, -1, 0, -1, 5, -1, 0, -1, 0], 1) }); } catch (e) { /* ignore */ }
     if (o.includeBinarize !== false) {
-      try { versions.push({ name: 'binarize', canvas: binarize(cloneCanvas(canvas)) }); } catch (e) { /* ignore */ }
+      try { versions.push({ name: 'binarize', canvas: binarize(canvas) }); } catch (e) { /* ignore */ }
     }
     return versions;
   }
@@ -532,9 +653,76 @@
     return out;
   }
 
+  // ===== V5 §71：预处理 Worker 客户端（OffscreenCanvas） =====
+  // 特性开关：opts.worker === true 才走 Worker（默认关，真机验证后开启）；
+  // 任何失败 → 主线程 pipeline 回退（§71"不支持时 main thread fallback"）。
+  let _preprocessWorker = null;
+
+  function _ensureWorker() {
+    if (_preprocessWorker) return _preprocessWorker;
+    try {
+      _preprocessWorker = new Worker('js/ocr/preprocess-worker.js?v=1');
+    } catch (e) {
+      _preprocessWorker = null;
+      console.warn('[ocr] 预处理 Worker 创建失败，主线程回退:', e);
+    }
+    return _preprocessWorker;
+  }
+
+  async function _bitmapFrom(src) {
+    if (typeof createImageBitmap !== 'function') return null;
+    if (typeof ImageBitmap !== 'undefined' && src instanceof ImageBitmap) return src;
+    if (typeof HTMLImageElement !== 'undefined' && src instanceof HTMLImageElement) {
+      try { return await createImageBitmap(src); } catch (e) { return null; }
+    }
+    if (typeof HTMLCanvasElement !== 'undefined' && src instanceof HTMLCanvasElement) {
+      try { return await createImageBitmap(src); } catch (e) { return null; }
+    }
+    return null;
+  }
+
+  function _pipelineInWorker(bitmap, opts) {
+    return new Promise((resolve, reject) => {
+      const w = _ensureWorker();
+      if (!w) return reject(new Error('no worker'));
+      const id = 'pp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      const timer = setTimeout(() => reject(new Error('preprocess worker timeout')), 60000);
+      const onMsg = (ev) => {
+        const m = ev.data || {};
+        if (m.id !== id) return;
+        clearTimeout(timer);
+        w.removeEventListener('message', onMsg);
+        if (!m.ok) return reject(new Error(m.error || 'preprocess worker failed'));
+        // 返回的 canvas 是 OffscreenCanvas（transfer）
+        resolve({ canvas: m.canvas, width: m.canvas.width, height: m.canvas.height, deskewAngle: m.deskewAngle || 0, perspectiveAngle: m.perspectiveAngle || 0, longMode: !!m.longMode, worker: true });
+      };
+      w.addEventListener('message', onMsg);
+      w.postMessage({ id, bitmap, opts }, [bitmap]);
+    });
+  }
+
+  /**
+   * 预处理统一入口：Worker 优先（特性开关 + 能力检测），否则主线程。
+   * @param {ImageSource} src
+   * @param {Object} opts pipeline opts + { worker?: boolean }
+   */
+  async function runPipeline(src, opts) {
+    const o = opts || {};
+    if (o.worker === true && typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+      try {
+        const bitmap = await _bitmapFrom(src);
+        if (bitmap) {
+          try { return await _pipelineInWorker(bitmap, o); } catch (e) { console.warn('[ocr] worker 预处理失败，主线程回退:', e); }
+        }
+      } catch (e) { /* 回退 */ }
+    }
+    return pipeline(src, o);
+  }
+
   global.OcrKit = global.OcrKit || {};
   Object.assign(global.OcrKit, {
-    preprocess: { PROFILES, loadImage, smartResize, rotate, rotateCanvas, estimateDeskew, reduceGlare, toGrayscale, enhance, binarize, pipeline, toImageData, toDataUrl,
-      perspectiveCorrection, detectDocumentQuad, warpQuad, multipass, cloneCanvas },
+    preprocess: { PROFILES, loadImage, smartResize, rotate, rotateCanvas, estimateDeskew, reduceGlare, toGrayscale, enhance, binarize, pipeline, runPipeline, toImageData, toDataUrl,
+      perspectiveCorrection, detectDocumentQuad, warpQuad, multipass, cloneCanvas,
+      longReceiptSlices, isLongReceipt, abortError, throwIfAborted, fallbackEnhanceMode },
   });
 })(typeof window !== 'undefined' ? window : globalThis);

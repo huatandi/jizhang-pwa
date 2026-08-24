@@ -196,22 +196,33 @@
   }
 
   // ---- 记忆强度（V4 §16）：candidate → weak → medium → strong ----
+  // P0 信任修正：单次纠正（count=1）绝不自动成为"强规则"。
+  // 单个纠正只是 candidate（候选），需≥2 次同向证据升 weak，≥3 medium，≥6 strong。
+  // 有失败计数（failureCount）时升级门槛再提高——避免"一次误听纠错"长期覆盖权威词库。
   function memoryStrength(entry) {
     if (!entry) return 'candidate';
     const src = entry.source || 'AUTO_INFERRED';
     if (src === 'USER_MANUAL') return 'strong';
     const count = entry.count || 1;
+    const failures = entry.failureCount || 0;
     const conf = calcConfidence(entry);
+    // 失败会拉低强度：有失败时要求更多同向证据才升档
+    const threshold = failures > 0 ? 2 : 0;
     if (src === 'USER_CONFIRM' || src === 'USER_CORRECTION') {
-      // count 主导：5 次稳定 → strong；3 次 → medium；否则 weak
-      if (count >= 5) return 'strong';
+      if (count >= 6 + threshold) return 'strong';
       if (count >= 3) return 'medium';
-      return 'weak';
+      if (count >= 2) return 'weak';
+      return 'candidate'; // 单次纠正：仅候选，不自动覆盖权威来源
     }
     // 自动推断/系统：更保守
     if (count >= 8 && conf >= 0.85) return 'medium';
     if (count >= 3) return 'weak';
     return 'candidate';
+  }
+
+  /** 生命周期状态（供 UI / 覆盖权限判定）：由强度推导 */
+  function statusOf(entry) {
+    return memoryStrength(entry);
   }
 
   // 记忆权重（V4 §27）：用于候选排序
@@ -242,11 +253,12 @@
           type: o.type || 'OTHER', field: o.field || '', context: o.context || '',
           source: o.source || 'AUTO_INFERRED',
           count: 1, firstSeen: now, lastSeen: now,
-          usageCount: 0, successCount: 0, contributionCount: 0,
+          usageCount: 0, successCount: 0, failureCount: 0, contributionCount: 0,
         };
         list.push(entry);
       }
       entry.confidence = calcConfidence(entry);
+      entry.status = memoryStrength(entry);
       const trimmed = trim(list);
       if (trimmed !== list) memCache = trimmed;
       return persistAll(trimmed || list).then(() => entry);
@@ -328,7 +340,8 @@
         if (!best || sortVal > bestSort) {
           bestSort = sortVal;
           best = { id: e.id, phrase: e.phrase, target: e.target, type: e.type, field: e.field,
-            confidence: conf, source: e.source, matchedBy: how, count: e.count, strength };
+            confidence: conf, source: e.source, matchedBy: how, count: e.count, strength,
+            status: strength, failureCount: e.failureCount || 0 };
         }
       }
       // Memory Contribution：命中即记录使用（V4.5 §二 学习验证）
@@ -363,7 +376,8 @@
       if (!best || sortVal > bestSort) {
         bestSort = sortVal;
         best = { id: e.id, phrase: e.phrase, target: e.target, type: e.type, field: e.field,
-          confidence: conf, source: e.source, matchedBy: how, count: e.count, strength };
+          confidence: conf, source: e.source, matchedBy: how, count: e.count, strength,
+          status: strength, failureCount: e.failureCount || 0 };
       }
     }
     // Memory Contribution：命中即记录使用（同步路径）
@@ -379,7 +393,9 @@
     if (key === 'usage') e.usageCount = (e.usageCount || 0) + 1;
     else if (key === 'success') e.successCount = (e.successCount || 0) + 1;
     else if (key === 'contribution') e.contributionCount = (e.contributionCount || 0) + 1;
+    else if (key === 'failure') e.failureCount = (e.failureCount || 0) + 1;
     e.lastSeen = Date.now();
+    e.status = memoryStrength(e);
     // 异步持久化（best-effort）
     openDB().then((db) => {
       if (!db) { try { localStorage.setItem(LS_KEY, JSON.stringify(memCache)); } catch (err) {} return; }
@@ -393,6 +409,8 @@
   function markUsed(id) { _bump(id, 'usage'); }
   /** 记录一次成功（用户未纠正/确认了该值） */
   function markSuccess(id) { _bump(id, 'success'); }
+  /** 记录一次失败（用户纠正/否定了该记忆命中的值）→ 增加失败计数并降档 */
+  function markFailure(id) { _bump(id, 'failure'); }
   /** 记录一次"记忆贡献"（该次识别因记忆而成功，规则无法单独完成） */
   function markContribution(id) { _bump(id, 'contribution'); }
 
@@ -494,7 +512,7 @@
   global.PersonalVoiceMemory = {
     ENTITY_TYPES, learn, reject, block, unblock, isBlocked, listBlocked, redirect,
     resolve, resolveSync, list, remove, clearAll, exportJSON, importJSON, warmup,
-    memoryStrength, memoryScore, markUsed, markSuccess, markContribution,
+    memoryStrength, memoryScore, statusOf, markUsed, markSuccess, markFailure, markContribution,
     norm, MAX_ENTRIES,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

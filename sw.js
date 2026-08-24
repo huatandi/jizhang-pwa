@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v105';
+const CACHE_NAME = 'jizhang-pwa-v141';
 const APP_SHELL = [
   './',
   './index.html',
@@ -18,11 +18,17 @@ const APP_SHELL = [
   './js/validation/confidence.js',
   './js/validation/transaction.js',
   './js/ocr/ocr-types.js',
+  './js/ocr/image-quality.js',
   './js/ocr/preprocess.js',
   './js/ocr/tesseract-engine.js',
   './js/ocr/paddle-engine.js',
   './js/ocr/ocr-manager.js',
+  './js/ocr/ocr-job-manager.js',
+  './js/ocr/execution-planner.js',
+  './js/ocr/server-engine.js',
+  './js/ocr/preprocess-worker.js',
   './js/ocr/region-retry.js',
+  './js/ocr/ocr-candidate-pool.js',
   './js/mexico/money.js',
   './js/mexico/field-normalizer.js',
   './js/mexico/currency-evidence.js',
@@ -31,7 +37,13 @@ const APP_SHELL = [
   './js/mexico/spei-parser.js',
   './js/mexico/oxxo-parser.js',
   './js/mexico/parser.js',
+  './js/regions/router.js',
+  './js/regions/mx.js',
+  './js/regions/cn.js',
   './js/asr/asr-types.js',
+  './js/asr/voice-runtime-profile.js',
+  './js/asr/circuit-breaker.js',
+  './js/asr/audio-focus.js',
   // RecognitionCore：本地知识库/实体解析/银行词典/置信度/QR（语音+OCR 共享）
   './js/recognition/knowledge-base.js',
   './js/recognition/entity-resolver.js',
@@ -53,6 +65,12 @@ const APP_SHELL = [
   './js/voice/personal-voice-memory.js',
   './js/intelligence/evidence-engine.js',
   './js/intelligence/conflict-resolver.js',
+  './js/intelligence/constraint-engine.js',
+  './js/intelligence/ocr-confusion-model.js',
+  './js/intelligence/ocr-memory-store.js',
+  './js/intelligence/document-fingerprint.js',
+  './js/intelligence/template-engine.js',
+  './js/intelligence/correction-learner.js',
   './js/learning/learning-engine.js',
   // app.js 拆分模块（app.js v69 拆分）
   './js/voice/reminders.js',
@@ -91,13 +109,24 @@ const APP_SHELL = [
   './vendor/tesseract/spa.traineddata.gz',
   './vendor/tesseract/eng.traineddata.gz',
   './vendor/tesseract/chi_sim.traineddata.gz',
+  // V5 QR：jsQR（UMD 全局版，扫码解码）
+  './vendor/jsQR/jsQR.js',
   // 高级引擎本地自托管（Whisper ASR / PaddleOCR / ONNX Runtime）
   './vendor/transformers/transformers.min.js',
   './vendor/transformers/transformers.js',
   './vendor/transformers/transformers.web.min.js',
-  './vendor/onnx/ort.all.min.mjs',
   './vendor/onnx/ort-wasm-simd-threaded.wasm',
   './vendor/onnx/ort-wasm-simd-threaded.mjs',
+  './vendor/onnx/ort-wasm-simd-threaded.asyncify.mjs',
+  './vendor/onnx/ort-wasm-simd-threaded.asyncify.wasm',
+  // WebGPU/JSEP 试验构建（与 onnxruntime-web 1.24.3 版本匹配；实验 flag 默认关闭时才按需加载）
+  './vendor/onnx/ort-wasm-simd-threaded.jsep.mjs',
+  './vendor/onnx/ort-wasm-simd-threaded.jsep.wasm',
+  // Whisper 专用 ORT wasm（AUD-B1：与 transformers.js 捆绑的 ORT 1.26.0-dev 严格一致，独立于 Paddle 的 1.24.3）
+  './vendor/onnx-whisper/ort-wasm-simd-threaded.wasm',
+  './vendor/onnx-whisper/ort-wasm-simd-threaded.mjs',
+  './vendor/onnx-whisper/ort-wasm-simd-threaded.asyncify.mjs',
+  './vendor/onnx-whisper/ort-wasm-simd-threaded.asyncify.wasm',
   './vendor/paddleocr/index.mjs',
   './vendor/paddleocr/assets/worker-entry-C9UNuyOJ.js',
   './vendor/sqljs/sql-wasm.js',
@@ -120,6 +149,8 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
+  // 只处理 http/https；忽略 chrome-extension 等不支持的 scheme（避免 Cache.put 抛错）
+  if (!/^https?:$/.test(url.protocol)) return;
   // API 请求不缓存（走 IndexedDB 伪后端，本地 fetch 已被劫持，SW 只处理真实网络资源）
   if (url.pathname.startsWith('/api/')) return;
   // 缓存键统一用"去 query 的规范化 URL"：boot.js 加载 app.js?v=100、index.html 加载 css?v=46，

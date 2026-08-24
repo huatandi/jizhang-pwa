@@ -562,9 +562,9 @@
     try {
       const pvm = typeof window !== 'undefined' ? window.PersonalVoiceMemory : (typeof globalThis !== 'undefined' ? globalThis.PersonalVoiceMemory : null);
       if (pvm && typeof pvm.resolveSync === 'function' && accounts && accounts.length) {
-        // 阈值 0.60：新记忆 count=1 整句 contains 即可用；账户列表二次校验兜底防误配
+        // 阈值 0.60 + 强度≥weak：单次纠正(candidate)不覆盖权威词库，需≥2次同向证据
         const m = pvm.resolveSync(t, { field: 'account', context: 'quick' });
-        if (m && m.confidence >= 0.60 && accounts.some(a => String(a).toLowerCase() === String(m.target).toLowerCase())) {
+        if (m && m.confidence >= 0.60 && m.strength !== 'candidate' && accounts.some(a => String(a).toLowerCase() === String(m.target).toLowerCase())) {
           return m.target;
         }
       }
@@ -710,7 +710,8 @@
         const pvm = typeof window !== 'undefined' ? window.PersonalVoiceMemory : (typeof globalThis !== 'undefined' ? globalThis.PersonalVoiceMemory : null);
         if (pvm && typeof pvm.resolveSync === 'function') {
           const m = pvm.resolveSync(location, { field: 'location', context: 'reminder' });
-          if (m && m.confidence >= 0.70) location = m.target;
+          // 置信≥0.70 且强度≥weak：单次纠正(candidate)不覆盖系统地点词表
+          if (m && m.confidence >= 0.70 && m.strength !== 'candidate') location = m.target;
         }
       } catch (e) { /* 记忆不可用不影响 */ }
     }

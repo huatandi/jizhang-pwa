@@ -39,9 +39,13 @@
   };
 
   let module = null;
-  let pipeline = null;
-  let initPromise = null;
+  // V5 Phase1：修假降级 —— pipeline 不再单例,按 (modelRepo+dtype+backend+lang) 键控,base/tiny 各真实实例。
+  let pipelines = new Map();       // key → Promise<pipeline>
   let currentBackend = null;
+
+  function pipelineKey(modelRepo, dtype, backend, lang) {
+    return [modelRepo, dtype, backend, lang].join('|');
+  }
 
   class WhisperEngine extends global.AsrKit.AsrEngineBase {
     constructor(config) {
@@ -82,10 +86,15 @@
       return module;
     }
 
-    /** 探测后端：WebGPU 优先，WASM 兜底 */
+    /** 探测后端：WebGPU 优先，WASM 兜底；非隔离环境(无 SharedArrayBuffer/crossOriginIsolated) → 强制 WASM 单线程 *
+     *  （避免请求 WebGPU 的 ort-wasm-simd-threaded.jsep/asyncify.mjs 而 404，V5 §75 能力探测） */
     async detectBackend() {
       if (this.config.device !== 'auto') return this.config.device;
-      if (global.navigator && global.navigator.gpu) {
+      const isolated = (function () {
+        try { return typeof SharedArrayBuffer !== 'undefined' || (typeof global.crossOriginIsolated !== 'undefined' && global.crossOriginIsolated); }
+        catch (e) { return false; }
+      })();
+      if (isolated && global.navigator && global.navigator.gpu) {
         try {
           const adapter = await global.navigator.gpu.requestAdapter();
           if (adapter) return 'webgpu';
@@ -112,9 +121,10 @@
     }
 
     async initialize() {
-      if (pipeline) return pipeline;
-      if (initPromise) return initPromise;
-      initPromise = (async () => {
+      const device = await this.detectBackend();
+      const key = pipelineKey(this.config.modelRepo, this.config.dtype, device, this._resolveLang());
+      if (pipelines.has(key)) return pipelines.get(key);
+      const p = (async () => {
         try {
           await this._ensureModelAvailable();
           const mod = await this._loadModule();
@@ -122,10 +132,11 @@
 
           // wasm 路径与单线程（Pages 无 COOP/COEP）
           if (env && env.backends && env.backends.onnx) {
-            // 本地 vendor/onnx 优先；未配置时回退 jsdelivr CDN
+            // 本地 vendor/onnx-whisper 优先（V5 AUD-B1：与 transformers.js 捆绑的 ORT 版本严格一致）；
+            // 未配置时回退 jsdelivr CDN
             const localWasm = (() => {
-              try { return new URL('vendor/onnx/', global.location && global.location.href).href; }
-              catch (e) { return 'vendor/onnx/'; }
+              try { return new URL('vendor/onnx-whisper/', global.location && global.location.href).href; }
+              catch (e) { return 'vendor/onnx-whisper/'; }
             })();
             env.backends.onnx.wasm.wasmPaths = this.config.wasmPaths || localWasm;
             env.backends.onnx.wasm.numThreads = 1;   // 关键：Pages 无 COEP，强制单线程
@@ -135,14 +146,13 @@
             env.backends.onnx.wasm.proxy = true;
           }
 
-          const device = await this.detectBackend();
           currentBackend = device;
           this.backend = device;
 
           const progressCb = (p) => {
             if (this.onProgress) this.onProgress(p.progress || 0, p.file || p.status || '');
           };
-          pipeline = await pipeFn(this.config.task, this.config.modelRepo, {
+          const pl = await pipeFn(this.config.task, this.config.modelRepo, {
             device,
             dtype: this.config.dtype,
             progress_callback: progressCb,
@@ -150,13 +160,16 @@
             chunk_length_s: this.config.chunkLengthSec,
           });
           this.modelName = this.config.modelRepo;
-          return pipeline;
+          console.log('[asr-runtime] Whisper init SUCCESS model=' + this.config.modelRepo + ' device=' + device + ' dtype=' + this.config.dtype);
+          return pl;
         } catch (e) {
-          initPromise = null;
+          pipelines.delete(key); // 失败允许重试;不同 key(base/tiny)互不影响
+          console.warn('[asr-runtime] Whisper init FAILED model=' + this.config.modelRepo + ' device=' + this.backend + ' : ' + (e && e.message || e));
           throw e;
         }
       })();
-      return initPromise;
+      pipelines.set(key, p);
+      return p;
     }
 
     /**
@@ -184,6 +197,7 @@
       }
       const ms = performance.now() - t0;
       const text = String(out && (out.text || out[0] && out[0].text) || '').trim();
+      console.log('[asr-runtime] Whisper transcribe ' + (text ? 'OK' : 'EMPTY') + ' model=' + this.modelName + ' device=' + (this.backend || '?') + ' time=' + Math.round(ms) + 'ms len=' + audio16k.length);
 
       // 分段（return_timestamps）
       let segments = [];
@@ -210,7 +224,7 @@
     }
 
     async dispose() {
-      pipeline = null; initPromise = null; currentBackend = null; this.modelName = null;
+      currentBackend = null; this.modelName = null;
       try { if (module && module.env) { /* env 全局，无需释放 */ } } catch (e) {}
     }
   }

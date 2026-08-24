@@ -59,8 +59,11 @@
   /* ================== OCR 单步（带引擎管理） ================== */
   let _ocrManager = null;
   async function _getOcrManager() {
-    if (_ocrManager) return _ocrManager;
     if (!global.OcrKit || !global.OcrKit.OcrManager) return null;
+    // V5 §10：统一单例（与工作台/preload 共享引擎实例，避免重复加载）
+    if (global.OcrKit.getManager) return global.OcrKit.getManager();
+    // 回退：旧逻辑（兼容无 getManager 的部署）
+    if (_ocrManager) return _ocrManager;
     const mgr = new global.OcrKit.OcrManager({ profile: 'balanced', engine: 'auto', fallbackThreshold: 55 });
     try {
       if (global.OcrKit.PaddleOcrEngine) mgr.register(new global.OcrKit.PaddleOcrEngine({ deviceProfile: 'balanced', numThreads: 1 }));

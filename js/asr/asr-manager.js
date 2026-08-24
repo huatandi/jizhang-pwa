@@ -47,6 +47,15 @@
     setCallback(cb) { this.cb = cb || {}; }
     setLang(lang) { this.lang = lang || defaultAsrBcp47(); }
 
+    /** V5 Phase1 保险13/14：隐私门——LOCAL_ONLY 模式下本地失败也绝不启用 WebSpeech(在线) */
+    _privacyAllowsOnline() {
+      try {
+        const P = global.AIPrivacy;
+        if (P && typeof P.getMode === 'function') return P.getMode() !== 'local_only';
+      } catch (e) { /* ignore */ }
+      return true;
+    }
+
     _emit(name, payload) {
       if (this.cb && typeof this.cb[name] === 'function') {
         try { this.cb[name](payload); } catch (e) { console.error('[asr] cb error:', e); }
@@ -64,19 +73,34 @@
 
     /** 选择引擎：本地优先，失败降级在线（需授权）；forceOnline 时直接在线 */
     async _selectEngine() {
-      // forceOnline：跳过 Whisper（含已缓存的 local mode），直接 WebSpeech
+      // forceOnline：跳过 Whisper（含已缓存的 local mode），直接 WebSpeech。
+      // ⚠️ 隐私门：LOCAL_ONLY 下即使 forceOnline 也绝不启用在线（V5 保险13）。
       if (this.opts.forceOnline) {
-        if (global.AsrKit.webspeechSupported) {
+        if (this._privacyAllowsOnline() && global.AsrKit.webspeechSupported) {
           this.engine = new global.AsrKit.WebSpeechEngine();
           this.mode = 'online';
           return this.engine;
         }
         const err = new Error(ERR.ASR_FAILED);
+        if (!this._privacyAllowsOnline()) err.privacyBlocked = true;
         throw err;
       }
       if (this.mode === 'local') return this.engine;
 
       // 本地 Whisper
+      // V5 Phase1 保险7：设备级熔断——连续多次初始化失败 → 暂不健康,直接走允许的 fallback
+      const cb = global.AsrKit.circuitBreaker;
+      if (cb && cb.isDisabled('whisper')) {
+        console.warn('[asr] Whisper 当前被熔断(连续失败),直接走 fallback');
+        if (this.allowOnline && this._privacyAllowsOnline() && global.AsrKit.webspeechSupported) {
+          this.engine = new global.AsrKit.WebSpeechEngine();
+          this.mode = 'online';
+          return this.engine;
+        }
+        const err = new Error(ERR.ASR_FAILED);
+        if (!this._privacyAllowsOnline()) err.privacyBlocked = true;
+        throw err;
+      }
       const WhisperEngine = global.AsrKit.WhisperEngine;
       const profile = global.AsrKit.modelManager.detectProfile();
       let plan = global.AsrKit.modelManager.resolvePlan(profile, this.opts.modelForce);
@@ -104,14 +128,16 @@
         this.mode = null; // 防止 mode 残留 'local'
       }
 
-      // 回退：在线（需授权）
-      if (this.allowOnline && global.AsrKit.webspeechSupported) {
+      // 回退：在线（需授权 + 隐私门：LOCAL_ONLY 绝不启用）
+      if (this.allowOnline && this._privacyAllowsOnline() && global.AsrKit.webspeechSupported) {
         this.engine = new global.AsrKit.WebSpeechEngine();
         this.mode = 'online';
         return this.engine;
       }
       const err = new Error(ERR.ASR_FAILED);
       err.cause = e;
+      // 隐私门导致的失败：明确标记，避免"本地失败→静默在线"掩盖隐私策略
+      if (!this._privacyAllowsOnline()) err.privacyBlocked = true;
       throw err;
     }
 
@@ -158,10 +184,15 @@
         this._emit('onState', 'initializing');
         try {
           await this.engine.initialize();
+          const cb2 = global.AsrKit.circuitBreaker;
+          if (cb2) cb2.markSuccess('whisper'); // 成功 → 复位熔断计数
         } catch (e) {
           console.warn('[asr] Whisper 模型预热失败，回退在线或报错:', e);
+          const cb2 = global.AsrKit.circuitBreaker;
+          if (cb2) cb2.markFailure('whisper', e && e.message); // 失败 → 累计,到阈值即熔断
           // 预热失败：若有在线授权则降级，否则上抛规范错误码（防止原始 Error 泄漏给 UI）
-          if (this.allowOnline && global.AsrKit.webspeechSupported) {
+          // 隐私门：LOCAL_ONLY 下即使 allowOnline=true 也绝不启用 WebSpeech
+          if (this.allowOnline && this._privacyAllowsOnline() && global.AsrKit.webspeechSupported) {
             this.engine = new global.AsrKit.WebSpeechEngine();
             this.mode = 'online';
             this.engine.setCallback((ev) => {

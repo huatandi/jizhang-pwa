@@ -158,6 +158,10 @@ function fileToImage(file) {
 // 打开工作台并载入第一张图片（本地识别路径）；返回 Promise 等待图片加载完成
 function openWorkbenchForFile(file) {
   return new Promise((resolve) => {
+    // V5：记录并展示当前图片文件名，方便用户对号入座
+    wbFileName = (file && (file.name || '未知文件')) || '';
+    const fnEl = document.getElementById('wbFileName');
+    if (fnEl) { fnEl.textContent = '📄 ' + wbFileName; fnEl.title = wbFileName; }
     const url = URL.createObjectURL(file);
     const img = document.getElementById('wbImg');
     if (img) {
@@ -228,13 +232,13 @@ function wbReapplyAi() {
   }
   showToast('↺ 已恢复 AI 识别值（可再手动修改）');
 }
-// 重置锁与 AI 原值（打开新图时）
+// 重置锁与 AI 原值（打开新图时）；并清空字段值，避免上一张的残留值（尤其垃圾日期）残留显示
 function wbResetFieldLocks() {
   wbLockedFields = new Set();
   wbAiValues = {};
   for (const id of WB_FIELD_IDS) {
     const el = document.getElementById(id);
-    if (el) el.classList.remove('wb-locked');
+    if (el) { el.classList.remove('wb-locked'); el.value = ''; }
   }
 }
 
@@ -253,7 +257,6 @@ function fillWbFields(f) {
     el.value = val;
     el.classList.remove('wb-locked');
   };
-  set('wbDate', f.date);
   set('wbAmount', f.amount);
   set('wbMerchant', f.merchant);
   set('wbCompany', f.company);
@@ -262,6 +265,19 @@ function fillWbFields(f) {
   set('wbTail', f.account_tail ? '*' + f.account_tail : '');
   set('wbTax', f.tax);
   set('wbRemark', f.remark);
+  // V5：日期必须合法格式才填入；无效 → 直接清空日期框（否则残留垃圾值显示为 □□□）
+  const isoDate = wbDateToIso(f.date);
+  const dEl = document.getElementById('wbDate');
+  if (dEl) {
+    if (isoDate) {
+      wbAiValues.wbDate = isoDate;
+      if (!wbLockedFields.has('wbDate')) { dEl.value = isoDate; dEl.classList.remove('wb-locked'); }
+    } else if (!wbLockedFields.has('wbDate')) {
+      dEl.value = '';
+      wbAiValues.wbDate = null;
+      dEl.classList.remove('wb-low-conf');
+    }
+  }
   if (f.transaction_type === 'income') { const t = document.getElementById('wbType'); if (t && !wbLockedFields.has('wbType')) t.value = 'income'; }
   if (f.category) {
     const sel = document.getElementById('wbCategory');
@@ -681,7 +697,9 @@ function aiRefreshAll() {
 }
 
 let wbDocId = null;       // 当前工作台文档 id
-let wbOcrText = '';       // 当前工作台 OCR 原文
+ let wbOcrText = '';       // 当前工作台 OCR 原文
+let wbOcrMeta = null;     // V5 §42-57：本次识别的指纹/模板/地区元数据（纠错学习用）
+let wbFileName = '';      // V5：当前工作台图片文件名（对号入座显示）
 
 // 渲染已上传单据预览网格
 async function aiRefreshDocs() {
@@ -1065,7 +1083,7 @@ async function wbExtract(force) {
     } catch (e) {
       console.error('[ocr] 本地识别失败:', e);
       showWbOcr('');
-      showToast('本地识别失败: ' + e.message, 'error');
+      showToast(wbOcrFailMessage(e), 'error');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '🔍 提取文字'; }
     }
@@ -1173,13 +1191,59 @@ async function wbExtract(force) {
 // 解析出 日期/金额/商户/公司/银行/尾号/税号/分类，按字段框自动填入（可修改后保存）
 // V2：优先 OcrKit（Paddle→Tesseract）+ MexicoParser 结构化解析；不可用则回退旧 OfflineOCR。
 // 本地 OCR 识别语言：跟随"识别语言"下拉 → tesseract.js 语言组合
+// V5 §11 修复：auto 不再写死 spa+eng，改为 global-config 解析（地区 → 浏览器语言 → eng 兜底）；
+// 并收紧到本地已打包语言（spa/eng/chi_sim），避免解析到未打包语言导致 Tesseract 联网下载失败（回归防护）。
 function wbOcrLang() {
+  const sanitize = (l) => (window.OcrKit && window.OcrKit.tesseractSanitizeLang)
+    ? window.OcrKit.tesseractSanitizeLang(l) : l;
   const sel = document.getElementById('aiOcrLang');
   const v = sel ? sel.value : 'auto';
   if (v === 'chi_sim') return 'chi_sim';
   if (v === 'eng') return 'eng';
   if (v === 'spa') return 'spa';
-  return 'spa+eng'; // auto/默认：西语+英语（墨西哥票据）
+  const gc = window.AIKit && window.AIKit.globalConfig;
+  if (gc && gc.resolveOcrLang) {
+    try {
+      const l = gc.resolveOcrLang();
+      if (l) return sanitize(l);
+    } catch (e) { /* ignore */ }
+  }
+  return sanitize('spa+eng'); // 兜底
+}
+
+// 把常见日期格式归一化为 yyyy-MM-dd；无法解析返回 null（V5：防止垃圾值进 <input type=date> 显示成 □□□）
+// 自动去掉时间后缀（"17/06/2026 10:46:30" → "17/06/2026" → "2026-06-17"）
+function wbDateToIso(s) {
+  let t = String(s || '').trim().split(/[\sT]/)[0]; // 只取日期部分
+  if (!t) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t; // 已是 ISO
+  const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  let m = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/); // YYYY/MM/DD
+  if (m) { const y = +m[1], mo = +m[2], d = +m[3]; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return iso(y, mo, d); }
+  m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); // DD/MM/YYYY / MM/DD/YYYY
+  if (m) {
+    let d = +m[1], mo = +m[2], y = +m[3];
+    if (mo > 12 && d <= 12) { const tmp = d; d = mo; mo = tmp; } // DD.MM 反了
+    if (y < 100) y += 2000;
+    if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) return iso(y, mo, d);
+  }
+  return null;
+}
+
+// 引擎失败 → 把具体引擎错误带到界面（便于直接定位根因，V5 §75）
+function wbOcrFailMessage(e) {
+  if (e && e.name === 'OCR_ENGINE_FAIL') {
+    const fb = String(e.fallbackError || '');
+    const pe = String(e.primaryError || '');
+    // 归因：优先说清是哪个引擎、什么原因；默认给出可直接到控制台的关键词
+    let reason;
+    if (/未加载|tesseract\.min|Tesseract 未加载/i.test(fb)) reason = 'Tesseract 模块未加载（vendor/tesseract/tesseract.min.js）';
+    else if (/语言包|traineddata|local core missing/i.test(fb)) reason = 'Tesseract 语言包/核心加载失败';
+    else if (/import|模块|加载失败|初始化失败|create|wasm|fetch|网络|network|Failed to fetch/i.test(pe)) reason = 'PaddleOCR 初始化或模型加载失败（首次需联网下载模型）';
+    else reason = (fb || pe || '').slice(0, 70) || '引擎初始化失败';
+    return 'OCR 引擎失败(Paddle/Tesseract)：' + reason + '；请查看控制台 [ocr] 日志获取完整原因';
+  }
+  return '本地识别失败: ' + ((e && e.message) || e);
 }
 
 async function wbLocalOcr() {
@@ -1202,7 +1266,6 @@ async function wbLocalOcr() {
         showWbOcr(res.text);
         const f = res.fields;
         const set = (id, val) => { if (val != null && val !== '') { const el = document.getElementById(id); if (el) el.value = val; } };
-        set('wbDate', f.date);
         set('wbAmount', f.amount);
         set('wbMerchant', f.merchant);
         set('wbCompany', f.company);
@@ -1211,6 +1274,10 @@ async function wbLocalOcr() {
         set('wbTail', f.account_tail ? '*' + f.account_tail : '');
         set('wbTax', f.tax);
         set('wbRemark', f.remark);
+        // V5：日期必须合法格式才填入；无效 → 直接清空日期框（防止残留垃圾值显示为 □□□）
+        const isoDate = wbDateToIso(f.date);
+        const dEl = document.getElementById('wbDate');
+        if (dEl) { dEl.value = isoDate || ''; }
         if (f.transaction_type === 'income') { const t = document.getElementById('wbType'); if (t) t.value = 'income'; }
         if (f.category) {
           const sel = document.getElementById('wbCategory');
@@ -1260,7 +1327,7 @@ async function wbLocalOcr() {
     showToast('✅ 本地识别完成，已填入 ' + found.length + ' 个字段（可修改后保存）');
   } catch (e) {
     console.error('[ocr] 本地识别失败:', e);
-    showToast('本地识别失败: ' + e.message, 'error');
+    showToast(wbOcrFailMessage(e), 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '📷 本地识别'; }
   }
@@ -1297,10 +1364,13 @@ function imgToDataUrl(img) {
 
 // ===== OcrKit 本地识别（新引擎，Paddle 优先 / Tesseract 兜底 / MexicoParser 结构化解析） =====
 // 若 js/ocr/* 与 js/mexico/* 模块已加载，优先走新管线；否则回退旧 wbLocalOcr。
+// V5 §10：优先使用 OcrKit.getManager() 统一单例（与 multimodal/preload 共享引擎实例）。
 let _ocrManager = null;
 async function getOcrManager() {
-  if (_ocrManager) return _ocrManager;
   if (!window.OcrKit || !window.OcrKit.OcrManager) return null;
+  if (window.OcrKit.getManager) return window.OcrKit.getManager();
+  // 回退：旧逻辑（兼容无 getManager 的部署）
+  if (_ocrManager) return _ocrManager;
   const mgr = new window.OcrKit.OcrManager({
     profile: 'balanced',
     engine: 'auto',
@@ -1394,31 +1464,41 @@ function extractCommonFields(fullText, words) {
   // ⚠️ 墨西哥小票常有 EFECTIVO(现金支付)/CAMBIO(找零) 行，其金额必须排除，总额只能取 TOTAL
   // 置信度分层（§二十六）：TOTAL 标签 0.90 → IMPORTE 0.80 → 最大金额猜测 0.45
   const CASH_LABEL_RE = /\b(?:EFECTIVO|CAMBIO|VUELTO|CASH|CHANGE|ENTREGADO|RECIBIDO|PAGADO)\b/i;
+  // 金额：容忍西班牙千分位的可选空格（"16, 000.00" → 16000；"1,505.30" → 1505.30）
+  const MONEY_PAT = '\\d{1,3}(?:,\\s?\\d{3})*\\.\\d{2}|\\d+\\.\\d{2}';
+  const MONEY_NUM = new RegExp('(' + MONEY_PAT + ')');
+  const numMoney = (s) => Number(String(s).replace(/[,\s]/g, ''));
   f.amountSource = null;
   f.amountConfidence = 0;
-  m = t.match(/(?:\bTOTAL\b(?!\s*SUB)|total a pagar|gran total|合计|总计|金额|AMOUNT)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
-  if (m) { f.amountSource = 'label'; f.amountConfidence = 0.90; }
+  // 优先：明确"应收/应支付"标签（TOTAL A COBRAR / IMPORTE COBRADO / TOTAL A PAGAR / A COBRAR）——高置信
+  m = t.match(new RegExp('\\b(?:TOTAL\\s+A\\s+COBRAR\\b|TOTAL\\s*A\\s*PAGAR\\b|IMPORTE\\s+COBRADO\\b|A\\s+COBRAR\\b)\\s*[=:]?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
+  if (m) { f.amountSource = 'label_total'; f.amountConfidence = 0.95; }
+  // 通用：TOTAL / IMPORTE / 合计 / AMOUNT（允许标签与金额之间有少量文字，如 "TOTAL A COBRAR" 也兼容）
   if (!m) {
-    m = t.match(/(?:IMPORTE|Monto|MONTO)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
+    m = t.match(new RegExp('(?:\\bTOTAL\\b(?!\\s*SUB)|\\bIMPORTE\\b|合计|总计|金额|AMOUNT|Monto|MONTO)[^\\d$¥€£￥₩]{0,8}?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
+    if (m) { f.amountSource = 'label'; f.amountConfidence = 0.90; }
+  }
+  if (!m) {
+    m = t.match(new RegExp('(?:IMPORTE|Monto|MONTO)\\s*[=:]?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
     if (m) { f.amountSource = 'importe'; f.amountConfidence = 0.80; }
   }
   if (!m) {
     // 兜底：剔除现金/找零标签及其金额后，取剩余最大金额（排除 EFECTIVO/CAMBIO 行）
     let cleaned = t.replace(new RegExp(CASH_LABEL_RE.source + '\\s*[=:]?\\s*[$¥€£￥₩]?\\s*[\\d][\\d,]*\\.?\\d*', 'gi'), ' ');
-    let all = cleaned.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
+    let all = cleaned.match(/\d{1,3}(?:,\s?\d{3})*\.\d{2}|\d+\.\d{2}/g);
     if (!all || !all.length) {
       // 剔除失败（标签与金额分行）→ 移除标签词本身再取最大
       cleaned = t.replace(CASH_LABEL_RE, ' ');
-      all = cleaned.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
+      all = cleaned.match(/\d{1,3}(?:,\s?\d{3})*\.\d{2}|\d+\.\d{2}/g);
     }
-    if (all && all.length) { const best = Math.max(...all.map(x => Number(x.replace(/,/g, '')))); f.amount = String(best); f.amountSource = 'max'; f.amountConfidence = 0.45; }
+    if (all && all.length) { const best = Math.max(...all.map(numMoney)); f.amount = String(best); f.amountSource = 'max'; f.amountConfidence = 0.45; }
   } else {
-    f.amount = String(Number(m[1].replace(/,/g, '')));
+    f.amount = String(numMoney(m[1]));
   }
   // TOTAL 已匹配但金额恰为现金/找零（如 OCR 把 EFECTIVO 值排在 TOTAL 后）→ 显式重取 TOTAL 行
   if (f.amount != null && CASH_LABEL_RE.test(t)) {
-    const tot = t.match(/(?:\bTOTAL\b(?!\s*SUB)|total a pagar|gran total)\s*[=:]?\s*[$¥€£￥₩]?\s*([\d][\d,]*\.\d{2})/i);
-    if (tot && tot[1]) f.amount = String(Number(tot[1].replace(/,/g, '')));
+    const tot = t.match(new RegExp('(?:\\bTOTAL\\b(?:\\s+A\\s+COBRAR\\b)?|\\bTOTAL\\s*A\\s*PAGAR\\b|\\bIMPORTE\\s+COBRADO\\b)[^\\d$¥€£￥₩]{0,8}?\\s*[$¥€£￥₩]?\\s*(' + MONEY_PAT + ')', 'i'));
+    if (tot && tot[1]) f.amount = String(numMoney(tot[1]));
   }
   // 商户：已知标签（排除银行专属标签；支持中文；捕获组不含 / : 以免吞掉日期；在日期/金额标签前截断）
   const merchantTags = ['NOMBRE', 'RAZON SOCIAL', 'PROVEEDOR', 'MERCHANT', '商户', '公司', '销售方', '收款方', '付款方', '店名'];
@@ -1461,13 +1541,25 @@ async function wbLocalOcrV2(img) {
   const mgr = await getOcrManager();
   if (!mgr) return null;
   const dataUrl = await imgToDataUrl(img);
+  // V5 §73：可中止任务（超时/取消后旧任务禁止回写 UI）
+  const jobMgr = window.OcrKit && window.OcrKit.jobManager;
+  const job = jobMgr ? jobMgr.create({ label: 'wb-local-ocr' }) : null;
   // 1. 预处理 + 识别（V2：OcrManager 已写回 documentType + lines）
-  // 超时保护：引擎首次加载（Paddle WASM/模型）可能很慢，但不可无限等待 → 180s 上限
-  const result = await withTimeout(
-    mgr.recognize(dataUrl, { enhanceMode: 'auto', rotateDeg: 0 }),
-    180000,
-    'OCR 识别超时（引擎加载过慢），请检查网络后重试'
-  );
+  // 超时保护：引擎首次加载（Paddle WASM/模型）可能很慢，但不可无限等待 → 180s 上限；
+  // V5 §73：超时即中止任务链（AbortSignal），杜绝旧任务继续跑并回写 UI。
+  let result;
+  try {
+    result = await withTimeout(
+      mgr.recognize(dataUrl, { enhanceMode: 'auto', rotateDeg: 0, signal: job ? job.signal : undefined }),
+      180000,
+      'OCR 识别超时（引擎加载过慢），请检查网络后重试'
+    );
+  } catch (e) {
+    if (job) job.abort('timeout-or-error');
+    if (e && e.name === 'AbortError') { console.warn('[ocr] 识别已中止'); return null; }
+    throw e;
+  }
+  if (job && job.aborted) return null; // 已中止：禁止回写
   const words = result.words || [];
   const fullText = (result.fullText || result.text || '').replace(/\s+/g, ' ').trim();
   // 2. 地区插件：墨西哥票据结构化解析（CFDI / SPEI / OXXO），仅墨西哥用户激活
@@ -1501,6 +1593,20 @@ async function wbLocalOcrV2(img) {
       if (structured && structured.qrUsed) result.qrUsed = structured.qrUsed;
     } catch (e) { console.warn('[ocr] MexicoParser 解析失败:', e); }
   }
+  // V5 §5：Region Router —— 语义字段提取 + 通用文档分类（全球通用，地区 Profile 映射语言；
+  // MX 结构化解析优先，其他地区/缺失字段由语义层补位；Core 不含地区业务规则）
+  let semantic = null;
+  let regionCode = null;
+  if (window.RegionRouter && window.RegionRouter.semanticExtract) {
+    try {
+      regionCode = window.RegionRouter.detectRegion();
+      semantic = window.RegionRouter.semanticExtract(fullText, regionCode);
+      const cls = window.RegionRouter.classifyDocument(result, regionCode);
+      if (cls && cls.type && cls.type !== 'generic_receipt' && !docType) {
+        docType = cls.type;
+      }
+    } catch (e) { console.warn('[ocr] Region Router 跳过（不影响主结果）:', e); }
+  }
   // 3. 通用兜底提取（任何地区都执行；MexicoParser 结构化字段缺失时补位）
   const V = window.ValidateKit || {};
   const common = extractCommonFields(fullText, words);
@@ -1533,6 +1639,74 @@ async function wbLocalOcrV2(img) {
   // 用 ValidateKit 规范化金额
   if (V.parseMoney && fields.amount != null) fields.amount = String(V.parseMoney(fields.amount));
 
+  // V5 §5：语义字段补全（仅补缺失；结构化解析/通用提取优先）
+  if (semantic && window.RegionRouter && window.RegionRouter.semanticToBusiness) {
+    try {
+      const sb = window.RegionRouter.semanticToBusiness(semantic);
+      if (fields.date == null && sb.date) fields.date = String(sb.date);
+      if (fields.merchant == null && sb.merchant) fields.merchant = sb.merchant;
+      if (fields.company == null && sb.company) fields.company = sb.company;
+      if (fields.tax == null && sb.taxId) fields.tax = sb.taxId;
+      if (fields.reference == null && (sb.reference || sb.folio || sb.traceKey)) fields.reference = sb.reference || sb.folio || sb.traceKey;
+      if (fields.bank_payer == null && sb.bankPayer) fields.bank_payer = sb.bankPayer;
+      if (fields.bank_receiver == null && sb.bankReceiver) fields.bank_receiver = sb.bankReceiver;
+      if (fields.account_tail == null && sb.accountTail) fields.account_tail = sb.accountTail;
+    } catch (e) { /* 语义补全失败不影响 */ }
+  }
+
+  // V5 §57：实体别名自动套用 —— 用户纠正过的商户/对方名称（"RECIBO"→"TANIA PAMELA..."）下次识别自动生效
+  try {
+    const kb = window.RecognitionCore && window.RecognitionCore.knowledgeBase;
+    if (kb && kb.resolveAlias) {
+      const resolve = (name) => {
+        try { const r = kb.resolveAlias(name); return (r && r.canonical) ? r.canonical : name; }
+        catch (e) { return name; }
+      };
+      if (fields.merchant) fields.merchant = resolve(fields.merchant);
+      if (fields.company) fields.company = resolve(fields.company);
+      if (fields.bank_payer) fields.bank_payer = resolve(fields.bank_payer);
+      if (fields.bank_receiver) fields.bank_receiver = resolve(fields.bank_receiver);
+    }
+  } catch (e) { /* 别名解析失败不影响 */ }
+
+  // V5 §52-56：学习规则套用 —— 同一上下文下被用户反复纠正的"金额"（如固定房租），OCR 又给出同样错误值→ 套用已学正确值
+  try {
+    const CL = window.OcrKit && window.OcrKit.correctionLearner;
+    if (CL && typeof CL.applyLearned === 'function') {
+      const ctx = wbOcrMeta ? (wbOcrMeta.templateId || wbOcrMeta.merchantId || wbOcrMeta.docType || 'global') : 'global';
+      const learned = await CL.applyLearned(fields, ctx);
+      for (const [k, ch] of Object.entries(learned || {})) {
+        if (k === 'amount' && ch.to != null) {
+          if (fields.amount == null || String(fields.amount) === '0' || String(fields.amount) === '' || String(fields.amount) === ch.from) {
+            fields.__amountOriginal = ch.from != null ? ch.from : (fields.amount != null ? fields.amount : null);
+            fields.amount = String(ch.to);
+            fields.amountConfidence = Math.max(fields.amountConfidence || 0, 0.8);
+            fields.amountSource = 'learned';
+            fields.__amountReason = '学习记忆：此前你纠正过该票金额 ' + ch.from + ' → ' + ch.to;
+          }
+        } else if ((k === 'merchant' || k === 'company') && ch.to != null) {
+          const f = k === 'merchant' ? 'merchant' : 'company';
+          if (!fields[f]) fields[f] = ch.to;
+        }
+      }
+    }
+  } catch (e) { /* 学习套用失败不影响 */ }
+
+  // V5 §27-33 金额智能（约束引擎 + 字符混淆候选）：现金/财务闭环保守裁决。
+  // 仅在"数学闭环成立 + 变体来自字符混淆"时采用变体（如 $→5：TOTAL 560.00 / EFECTIVO 70 / CAMBIO 10 → 60.00）；
+  // 无数学证据时绝不改动金额（§91）；任何异常静默降级（§98）。
+  if (window.OcrKit && window.OcrKit.candidatePool && window.OcrKit.candidatePool.applyAmountIntelligence) {
+    try {
+      const currency = (window.options && (window.options.base_currency || window.options.currency))
+        || (gcfg && typeof gcfg.detectCurrency === 'function' ? gcfg.detectCurrency() : null);
+      const ai = window.OcrKit.candidatePool.applyAmountIntelligence(fullText, fields, { currency, semantic });
+      if (ai.changed) fields.__amountOriginal = ai.original; // 溯源：原 OCR 值（供 EvidenceEngine）
+      if (ai.reason) fields.__amountReason = ai.reason;      // 溯源：纠错原因（§80 可追踪）
+      if (ai.confidence != null) fields.amountConfidence = ai.confidence;
+      if (ai.source) fields.amountSource = ai.source;
+    } catch (e) { console.warn('[ocr] 金额智能跳过（不影响主结果）:', e); }
+  }
+
   // V4.5 Region Retry：金额低置信（max-guess 0.45 / importe 0.80）→ 定位 TOTAL 区域裁剪重识别
   if ((fields.amount == null || (fields.amountConfidence || 0) < 0.65) &&
       window.OcrKit && window.OcrKit.regionRetry && result._canvas && result.lines && result.lines.length) {
@@ -1553,6 +1727,52 @@ async function wbLocalOcrV2(img) {
       }
     } catch (e) { console.warn('[ocr] 区域重试失败（不影响主结果）:', e); }
   }
+  // V5 §34 Region Retry 扩展：date/merchant 缺失时定位标签区域重识别（其余字段供模板/学习阶段接入）
+  if (window.OcrKit && window.OcrKit.regionRetry && result._canvas && result.lines && result.lines.length) {
+    try {
+      const mgr2 = await getOcrManager();
+      for (const field of ['date', 'merchant']) {
+        if (fields[field] != null && fields[field] !== '') continue;
+        try {
+          const rr = await window.OcrKit.regionRetry.retry(result, result._canvas, mgr2, field);
+          if (rr && rr.value != null && rr.value !== '') {
+            fields[field] = String(rr.value);
+          }
+        } catch (e) { console.warn('[ocr] 区域重试失败（不影响主结果）:', e); }
+      }
+    } catch (e) { /* ignore */ }
+  }
+  // V5 §42-47/§55：模板匹配 + 负样本抑制（记忆层，失败不影响主结果）
+  if (window.OcrKit && window.OcrKit.documentFingerprint && window.OcrKit.templateEngine) {
+    try {
+      const fp = window.OcrKit.documentFingerprint.build(result, { region: regionCode, docType });
+      const match = await window.OcrKit.templateEngine.match(fp);
+      wbOcrMeta = {
+        fingerprint: fp,
+        templateId: (match && match.template) ? match.template.id : null,
+        templateScore: (match && match.score) || 0,
+        merchantId: (match && match.template && match.template.merchantId) || null,
+        merchantName: (match && match.template && match.template.merchantName) || null,
+        region: regionCode || null,
+        docType: docType || null,
+        engine: result.engine || null,
+        preprocessProfile: result.profile || null,
+      };
+      if (match && match.template) result.template = { id: match.template.id, score: match.score, level: match.level };
+      // §55 负样本抑制：被证明错的候选 → 置信下调（不静默入账）
+      if (fields.amount != null && window.OcrKit.correctionLearner) {
+        const ctx = wbOcrMeta.templateId || wbOcrMeta.merchantId || wbOcrMeta.docType || 'global';
+        const suppressed = await window.OcrKit.correctionLearner.isSuppressed('amount', fields.amount, ctx);
+        if (suppressed) {
+          fields.amountConfidence = Math.min(fields.amountConfidence || 1, 0.3);
+          fields.__amountSuppressed = true;
+        }
+      }
+    } catch (e) { console.warn('[ocr] 模板记忆跳过（不影响主结果）:', e); }
+  } else {
+    wbOcrMeta = null;
+  }
+  if (job) job.finish(); // 任务正常结束（§73）
   return {
     text: fullText,
     fields,
@@ -1918,54 +2138,114 @@ function wbCollectFields() {
   };
 }
 
-// ===== 纠错学习（§三十一）：用户修正 AI 识别 → 记入本地知识库 =====
+// ===== 纠错学习（§三十一）：用户修正 AI 识别 → 记入本地知识库 + V5 §48 LearningEvent =====
 function wbLearnCorrections(fields) {
+  // 1) 别名学习（merchant/bank/category/remark 是"实体别名"，合理用途，保留）
   try {
     const rc = window.RecognitionCore && window.RecognitionCore.knowledgeBase;
-    if (!rc || !rc.learnCorrection) return;
-    // 字段 → 实体类型映射
-    const typeMap = { wbMerchant: 'merchant', wbCompany: 'merchant', wbBankPayer: 'bank', wbBankReceiver: 'bank', wbCategory: 'category', wbRemark: 'remark' };
-    const learn = (fieldId, aiVal, userVal, type) => {
-      const ai = String(aiVal || '').trim();
-      const user = String(userVal || '').trim();
-      // 用户修正了 AI 识别值，且差异足够大 → 记录 alias
-      if (ai && user && ai !== user && user.length >= 2 && ai.length >= 2) {
-        // 简单归一化判断是否"同一实体不同写法"（忽略大小写/空格/常见后缀）
-        const n = (s) => s.toLowerCase().replace(/[\s\-_./银行号#]/g, '');
-        if (n(ai) !== n(user)) {
-          rc.learnCorrection(ai, user, type).then((ok) => {
-            if (ok) console.log('[kb] 纠错学习: "' + ai + '" → "' + user + '" (' + type + ')');
-          }).catch(() => {});
+    if (rc && rc.learnCorrection) {
+      const typeMap = { wbMerchant: 'merchant', wbCompany: 'merchant', wbBankPayer: 'bank', wbBankReceiver: 'bank', wbCategory: 'category', wbRemark: 'remark' };
+      const learn = (fieldId, aiVal, userVal, type) => {
+        const ai = String(aiVal || '').trim();
+        const user = String(userVal || '').trim();
+        if (ai && user && ai !== user && user.length >= 2 && ai.length >= 2) {
+          const n = (s) => s.toLowerCase().replace(/[\s\-_./银行号#]/g, '');
+          if (n(ai) !== n(user)) {
+            rc.learnCorrection(ai, user, type).then((ok) => {
+              if (ok) console.log('[kb] 纠错学习: "' + ai + '" → "' + user + '" (' + type + ')');
+            }).catch(() => {});
+          }
         }
+      };
+      for (const [fieldId, type] of Object.entries(typeMap)) {
+        const el = document.getElementById(fieldId);
+        if (!el || !el.value) continue;
+        learn(fieldId, wbAiValues[fieldId], el.value, type);
       }
-    };
-    for (const [fieldId, type] of Object.entries(typeMap)) {
+    }
+  } catch (e) { /* 别名学习失败不影响 */ }
+  // 2) V5 §48-56 LearningEvent：金额/日期等"值"类字段的纠正 → 作用域化学习（含指纹/模板/地区上下文）
+  try {
+    const CL = window.OcrKit && window.OcrKit.correctionLearner;
+    if (!CL) return;
+    const meta = wbOcrMeta || {};
+    const ctx = meta.templateId || meta.merchantId || meta.docType || meta.region || 'global';
+    const fieldMap = { wbAmount: 'amount', wbDate: 'date', wbMerchant: 'merchant', wbCompany: 'merchant', wbTax: 'taxId', wbReference: 'reference', wbBankPayer: 'bank', wbBankReceiver: 'bank', wbTail: 'account_last4' };
+    for (const [fieldId, field] of Object.entries(fieldMap)) {
       const el = document.getElementById(fieldId);
       if (!el || !el.value) continue;
       const aiVal = wbAiValues[fieldId];
-      learn(fieldId, aiVal, el.value, type);
+      const userVal = String(el.value).trim();
+      if (aiVal != null && String(aiVal).trim() !== userVal) {
+        CL.record({
+          field, originalOcr: String(aiVal), corrected: userVal,
+          fingerprint: meta.fingerprint || null,
+          templateId: meta.templateId || null,
+          merchantId: meta.merchantId || null,
+          docType: meta.docType || null,
+          region: meta.region || null,
+          engine: meta.engine || null,
+          preprocessProfile: meta.preprocessProfile || null,
+          mathContext: wbAiValues.__amountReason || null,
+          scope: meta.templateId ? 'template' : 'instance',
+        }).catch(() => {});
+      }
     }
-    // 金额/日期若用户修正也记录（低置信学习）
+    // 负样本（§55）：AI 低置信猜测金额被用户改掉 → 记录该值在该上下文是错的
     const amtEl = document.getElementById('wbAmount');
-    if (amtEl && amtEl.value && wbAiValues.wbAmount && String(wbAiValues.wbAmount) !== String(amtEl.value).trim()) {
-      rc.learnCorrection(String(wbAiValues.wbAmount), amtEl.value.trim(), 'amount').catch(() => {});
+    const aiConf = wbAiValues && wbAiValues.__amountConfidence;
+    if (amtEl && amtEl.value && wbAiValues.wbAmount && aiConf != null && aiConf < 0.5
+        && String(wbAiValues.wbAmount).trim() !== String(amtEl.value).trim()) {
+      CL.negative('amount', wbAiValues.wbAmount, ctx).catch(() => {});
     }
-  } catch (e) { /* 纠错学习失败不影响保存 */ }
+  } catch (e) { /* 学习失败不影响保存 */ }
 }
 
 // 「保存」：对号入座 —— 把工作台识别字段填入记账表单(支出/收入弹窗)，用户核对后点弹窗保存入账
 async function wbSave() {
   const fields = wbCollectFields();
-  wbLearnCorrections(fields); // 纠错学习：用户修正 → 知识库
-  // 金额置信度分层（§二十六）：最大猜测(0.45)低置信 → 不静默入账，提示核对
+  wbLearnCorrections(fields); // 纠错学习：用户修正 → 知识库 + LearningEvent
+  // V5 §52/§63/§65-66：模板画像记录 + 候选模板创建（记忆层；失败不影响保存）
+  try {
+    const TE = window.OcrKit && window.OcrKit.templateEngine;
+    const meta = wbOcrMeta;
+    if (TE && meta && meta.fingerprint) {
+      const amountConf = wbAiValues && wbAiValues.__amountConfidence;
+      const userChanged = wbAiValues.wbAmount != null && String(wbAiValues.wbAmount).trim() !== String(fields.amount || '').trim();
+      if (meta.templateId) {
+        // 已有模板：记录使用（用户保存 = 弱正样本 §56；用户确认过金额也算一次成功）
+        const ok = (wbAiValues.__amountConfirmed || !userChanged) && (amountConf == null || amountConf >= 0.85);
+        TE.record(meta.templateId, { ok, engine: meta.engine, preprocessProfile: meta.preprocessProfile }).catch(() => {});
+      } else if (fields.amount && (wbAiValues.__amountConfirmed || amountConf == null || amountConf >= 0.7)) {
+        // 陌生票且关键字段可信 → 创建候选模板（§63：不立即 stable，防垃圾模板）
+        TE.save({
+          merchantName: fields.merchant || fields.company || meta.merchantName || null,
+          docType: meta.docType || null,
+          region: meta.region || null,
+          fingerprint: meta.fingerprint,
+          fieldAnchors: { TOTAL_AMOUNT: { anchor: 'TOTAL', relation: 'nearestRightMoney' } },
+        }).catch(() => {});
+      }
+    }
+  } catch (e) { /* 模板学习失败不影响保存 */ }
+  // 金额置信度分层（§二十六）：最大猜测(0.45)低置信 → 不再硬拦截，改为"确认后放行"
   const amtEl = document.getElementById('wbAmount');
   const aiConf = wbAiValues && wbAiValues.__amountConfidence;
   if (fields.amount && amtEl && !wbLockedFields.has('wbAmount') && aiConf != null && aiConf < 0.60) {
-    // 金额是低置信猜测：保留工作台，提示用户核对/重新识别（不自动对号入座）
-    showToast('⚠️ 金额识别置信度较低（最大金额猜测），请核对金额或点「🔄 重新识别」', 'error');
-    amtEl.classList.add('wb-low-conf');
-    setTimeout(() => amtEl.classList.remove('wb-low-conf'), 3000);
-    return;
+    // 用户确认机制（V5 §39）：让用户明示"认同识别结果"，确认后用锁定金额继续保存
+    const doConfirm = window.confirm
+      ? window.confirm(`金额识别置信度较低（系统猜测最大值）。\n识别金额：${fields.amount}\n\n是否确认使用该金额？\n（确认后本张票按此金额保存，并可重新识别覆盖）`)
+      : true; // 无 confirm 环境（如部分 WebView）→ 默认为确认，避免死锁
+    if (!doConfirm) {
+      showToast('已取消保存，可点「🔄 重新识别」或修改金额后再保存', 'error');
+      amtEl.classList.add('wb-low-conf');
+      setTimeout(() => amtEl.classList.remove('wb-low-conf'), 3000);
+      return;
+    }
+    // 用户确认：锁定金额字段（后续识别不覆盖），并继续走保存流程
+    wbLockedFields.add('wbAmount');
+    if (wbAiValues) wbAiValues.__amountConfirmed = true;
+    amtEl.classList.remove('wb-low-conf');
   }
   if (!fields.date && !fields.amount) {
     return showToast('请至少填写日期或金额', 'error');
