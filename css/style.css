@@ -2844,19 +2844,18 @@ select option {
 }
 
 /* ===== 快速记账（完整页面版） ===== */
+/* 页面本身也保证全宽（与明细查询/收入支出一致），不受任何容器影响 */
+#page-quick { width: 100%; max-width: none; }
 .quick-page-body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 640px;
+  /* 全宽铺满（与明细查询/收入支出一致）：不再限制 640px，任何屏幕宽度都占满父容器 */
+  width: 100%;
+  max-width: none;
 }
-/* PC 端铺满桌面（与明细查询/收入支出一致）：放开 640px 限制 */
+/* 宽屏下表单两列排列，充分利用桌面宽度 */
 @media (min-width: 901px) {
-  .quick-page-body {
-    max-width: 100%;
-    width: 100%;
-  }
-  /* 宽屏下表单两列排列，充分利用桌面宽度 */
   .quick-page-form .form-grid {
     grid-template-columns: repeat(2, 1fr);
   }
