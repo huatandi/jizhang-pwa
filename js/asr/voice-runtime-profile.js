@@ -67,13 +67,15 @@
     audioFocusV2: true,
     adaptiveVadEnabled: false,
     preRollEnabled: false,
-    voiceIntentV2Enabled: false,
+    voiceIntentV2Enabled: true,
     dynamicEvidenceEnabled: true,
     modelRouterV2Enabled: false,
     selfTestEnabled: true,
     // OCR 试验：Paddle WebGPU 实验路径（默认关闭；开启后仅在有 navigator.gpu 时尝试 WebGPU，
     // 失败自动回 WASM 单线程，再失败 → Tesseract。用于同图 benchmark，不改变默认稳定路径）
     paddleWebGpuExperimental: false,
+    voiceDraftSessionV1: true,
+    glmOcrOptionalEngine: false,
   };
   const FLAG_KEY = 'sm_voice_flags';
   let _memFlags = null; // 无 localStorage 环境(如 Node 测试)的降级

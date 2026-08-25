@@ -1,145 +1,170 @@
 'use strict';
 /**
- * AsrKit · vad —— 语音活动检测（VAD）
+ * AsrKit · vad V6 —— Adaptive VAD with hysteresis + pre-roll/post-roll.
  *
- * 能量阈值（RMS）+ 过零率，命令式记账短句足够，避免为引入 Silero-VAD 多 2MB+ 模型。
- * 设计为可插拔接口：未来可换 ML VAD，接口不变。
- *
- * 行为参数（可配置，默认值可调）：
- *   vadStartThreshold  起音阈值（RMS）
- *   vadStopThreshold   停音阈值（低于此值持续 silenceDurationMs 视为停顿）
- *   silenceDurationMs  结束静音时长（判定一句话结束）
- *   minSpeechMs        最短语音（过滤咳嗽/点击）
- *   maxUtteranceMs     最长单句（强制截断）
- *
- * 输出：utterance 事件 { startMs, endMs, audio: Float32Array(16k) }
+ * Design goals:
+ * - utterance end != voice session end;
+ * - avoid eating the first syllable (pre-roll ring buffer);
+ * - adapt to changing shop/room noise without ML dependency;
+ * - preserve old RMS+ZCR fallback behavior and configurable thresholds.
  */
 (function (global) {
   const DEFAULT_SETTINGS = {
-    vadStartThreshold: 0.012,   // RMS 起音
-    vadStopThreshold: 0.008,    // RMS 停音（略低于起音，防抖动）
-    silenceDurationMs: 1200,     // 一句话结束静音（V5 调大：录音不匆忙，留足停顿时间再判定说完）
-    minSpeechMs: 300,           // 最短语音
-    maxUtteranceMs: 12000,      // 最长单句
-    frameMs: 40,                // 帧长（16000Hz → 640 样本/帧）
+    vadStartThreshold: 0.012,
+    vadStopThreshold: 0.008,
+    silenceDurationMs: 1200,
+    minSpeechMs: 300,
+    maxUtteranceMs: 12000,
+    frameMs: 40,
+    adaptive: true,
+    noiseCalibrationMs: 800,
+    noiseAlpha: 0.06,
+    startNoiseMultiplier: 3.0,
+    stopNoiseMultiplier: 1.8,
+    minStartThreshold: 0.006,
+    maxStartThreshold: 0.045,
+    minStopThreshold: 0.004,
+    maxStopThreshold: 0.03,
+    preRollMs: 320,
+    postRollMs: 160,
   };
 
   class VadEngine {
     constructor(settings) {
       this.s = Object.assign({}, DEFAULT_SETTINGS, settings || {});
+      // Feature flags can safely disable adaptive/pre-roll during regression tests.
+      try {
+        const rt = global.AsrKit && global.AsrKit.runtime;
+        if (rt && rt.isEnabled) {
+          if (!rt.isEnabled('adaptiveVadEnabled')) this.s.adaptive = false;
+          if (!rt.isEnabled('preRollEnabled')) this.s.preRollMs = 0;
+        }
+      } catch (e) { /* keep config */ }
       this.reset();
-      this.onUtterance = null; // (audio16k, startMs, endMs) => void
-      this.onSilence = null;   // () => void（停顿回调，UI 显示"正在理解…"）
+      this.onUtterance = null;
+      this.onSilence = null;
       this.onSpeechStart = null;
+      this.onMetrics = null;
     }
 
     reset() {
       this.state = 'silence';
       this.speechStartMs = 0;
       this.silenceRunMs = 0;
-      this.buffer = [];        // 16k Float32 块
+      this.buffer = [];
       this.bufferLen = 0;
       this.nowMs = 0;
+      this.noiseFloor = null;
+      this.calibrationFrames = 0;
+      this.preRoll = [];
+      this.preRollLen = 0;
+      this.lastMetrics = null;
     }
 
     _rms(chunk) {
       let sum = 0;
       for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
-      return Math.sqrt(sum / chunk.length);
+      return Math.sqrt(sum / Math.max(1, chunk.length));
     }
-
     _zcr(chunk) {
       let z = 0;
-      for (let i = 1; i < chunk.length; i++) {
-        if ((chunk[i] >= 0) !== (chunk[i - 1] >= 0)) z++;
+      for (let i = 1; i < chunk.length; i++) if ((chunk[i] >= 0) !== (chunk[i - 1] >= 0)) z++;
+      return z / Math.max(1, chunk.length);
+    }
+    _adaptiveThresholds() {
+      if (!this.s.adaptive || this.noiseFloor == null) return { start: this.s.vadStartThreshold, stop: this.s.vadStopThreshold };
+      const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+      let start = clamp(this.noiseFloor * this.s.startNoiseMultiplier, this.s.minStartThreshold, this.s.maxStartThreshold);
+      let stop = clamp(this.noiseFloor * this.s.stopNoiseMultiplier, this.s.minStopThreshold, this.s.maxStopThreshold);
+      if (stop >= start) stop = Math.max(this.s.minStopThreshold, start * 0.72); // hysteresis invariant
+      return { start, stop };
+    }
+    _updateNoiseFloor(rms) {
+      if (!this.s.adaptive || this.state !== 'silence') return;
+      const calibFrames = Math.max(1, Math.round(this.s.noiseCalibrationMs / this.s.frameMs));
+      if (this.noiseFloor == null) this.noiseFloor = rms;
+      else {
+        const alpha = this.calibrationFrames < calibFrames ? 0.18 : this.s.noiseAlpha;
+        // Ignore sudden spikes while learning ambient floor.
+        if (rms < Math.max(this.noiseFloor * 2.5, this.s.vadStartThreshold * 1.2)) {
+          this.noiseFloor = this.noiseFloor * (1 - alpha) + rms * alpha;
+        }
       }
-      return z / chunk.length;
+      this.calibrationFrames++;
+    }
+    _pushPreRoll(chunk) {
+      if (!this.s.preRollMs) return;
+      this.preRoll.push(chunk);
+      this.preRollLen += chunk.length;
+      const maxSamples = Math.round(16000 * this.s.preRollMs / 1000);
+      while (this.preRollLen > maxSamples && this.preRoll.length > 1) {
+        const x = this.preRoll.shift(); this.preRollLen -= x.length;
+      }
+    }
+    _startWithPreRoll(chunk) {
+      const arr = this.s.preRollMs ? this.preRoll.slice() : [];
+      // Current chunk is usually already in preRoll; avoid duplicate identity.
+      if (!arr.length || arr[arr.length - 1] !== chunk) arr.push(chunk);
+      this.buffer = arr;
+      this.bufferLen = arr.reduce((n, b) => n + b.length, 0);
+      this.preRoll = [];
+      this.preRollLen = 0;
     }
 
-    /**
-     * 推入 16k mono Float32 块。返回 'speech' | 'silence' | 'utterance'
-     */
     push(chunk) {
-      const rms = this._rms(chunk);
-      const zcr = this._zcr(chunk);
-      const frameMs = this.s.frameMs;
+      const rms = this._rms(chunk), zcr = this._zcr(chunk), frameMs = this.s.frameMs;
       this.nowMs += frameMs;
+      if (this.state === 'silence') this._updateNoiseFloor(rms);
+      const th = this._adaptiveThresholds();
+      this.lastMetrics = { rms, zcr, noiseFloor: this.noiseFloor, startThreshold: th.start, stopThreshold: th.stop, state: this.state, atMs: this.nowMs };
+      if (this.onMetrics) { try { this.onMetrics(this.lastMetrics); } catch (e) {} }
 
       if (this.state === 'silence') {
-        // 起音：RMS 过阈值（或高过零率——清辅音段）
-        if (rms >= this.s.vadStartThreshold || (zcr > 0.15 && rms > this.s.vadStartThreshold * 0.6)) {
+        this._pushPreRoll(chunk);
+        const voiced = rms >= th.start || (zcr > 0.15 && rms > th.start * 0.62);
+        if (voiced) {
           this.state = 'speech';
-          this.speechStartMs = Math.max(0, this.nowMs - frameMs);
+          this.speechStartMs = Math.max(0, this.nowMs - frameMs - (this.s.preRollMs || 0));
           this.silenceRunMs = 0;
-          this.buffer = [chunk];
-          this.bufferLen = chunk.length;
+          this._startWithPreRoll(chunk);
           if (this.onSpeechStart) this.onSpeechStart(this.speechStartMs);
           return 'speech';
         }
         return 'silence';
       }
 
-      // speech 状态
-      this.buffer.push(chunk);
-      this.bufferLen += chunk.length;
-
-      // 最长单句：强制截断 → 发 utterance
+      this.buffer.push(chunk); this.bufferLen += chunk.length;
       if (this.nowMs - this.speechStartMs >= this.s.maxUtteranceMs) {
-        const audio = this._emit();
-        this.state = 'silence';
-        this.silenceRunMs = 0;
-        return 'utterance';
+        this._emit(); this.state = 'silence'; this.silenceRunMs = 0; return 'utterance';
       }
-
-      // 静音累积
-      if (rms < this.s.vadStopThreshold) {
+      if (rms < th.stop) {
         this.silenceRunMs += frameMs;
-        if (this.silenceRunMs >= this.s.silenceDurationMs) {
+        if (this.silenceRunMs >= this.s.silenceDurationMs + this.s.postRollMs) {
           const durMs = this.nowMs - this.speechStartMs;
-          // 过短 → 丢弃（咳嗽/点击）
           if (durMs < this.s.minSpeechMs) {
-            this.buffer = [];
-            this.bufferLen = 0;
-            this.state = 'silence';
-            this.silenceRunMs = 0;
-            return 'silence';
+            this.buffer = []; this.bufferLen = 0; this.state = 'silence'; this.silenceRunMs = 0; return 'silence';
           }
-          const audio = this._emit();
-          this.state = 'silence';
-          this.silenceRunMs = 0;
+          this._emit(); this.state = 'silence'; this.silenceRunMs = 0;
           if (this.onSilence) this.onSilence();
           return 'utterance';
         }
-      } else {
-        this.silenceRunMs = 0;
-      }
+      } else this.silenceRunMs = 0;
       return 'speech';
     }
 
     _emit() {
-      const out = new Float32Array(this.bufferLen);
-      let off = 0;
+      const out = new Float32Array(this.bufferLen); let off = 0;
       for (const b of this.buffer) { out.set(b, off); off += b.length; }
-      const startMs = this.speechStartMs;
-      const endMs = this.nowMs;
-      this.buffer = [];
-      this.bufferLen = 0;
+      const startMs = this.speechStartMs, endMs = this.nowMs;
+      this.buffer = []; this.bufferLen = 0; this.preRoll = []; this.preRollLen = 0;
       if (this.onUtterance) this.onUtterance(out, startMs, endMs);
       return out;
     }
-
-    /** 强制结束当前语音（用户点停止时调用），有语音则返回 utterance */
     flush() {
       if (this.state !== 'speech' || !this.bufferLen) return null;
       const durMs = this.nowMs - this.speechStartMs;
-      if (durMs < this.s.minSpeechMs) {
-        this.buffer = []; this.bufferLen = 0; this.state = 'silence';
-        return null;
-      }
-      const audio = this._emit();
-      this.state = 'silence';
-      this.silenceRunMs = 0;
-      return audio;
+      if (durMs < this.s.minSpeechMs) { this.buffer = []; this.bufferLen = 0; this.state = 'silence'; return null; }
+      const audio = this._emit(); this.state = 'silence'; this.silenceRunMs = 0; return audio;
     }
   }
 

@@ -86,6 +86,8 @@ function openQuickModal(autoVoice) {
   // 重置语音会话
   voiceSessionActive = false;
   voiceBuffer = '';
+  voiceDraftSession = null;
+  voiceDraftSnapshots.clear();
   voiceMultiEntries = [];
   if (voiceRestartTimer) { clearTimeout(voiceRestartTimer); voiceRestartTimer = null; }
   if (VoiceSR.isListening()) VoiceSR.stop();
@@ -190,6 +192,9 @@ function syncVoiceLangUI() {
 // 语音记账会话：点击开始（持续识别），再点停止
 let voiceSessionActive = false;
 let voiceBuffer = '';
+// V6 Voice Draft Session：一句结束 != 会话结束；明确说‘完成/好了/listo/done’才提交草稿。
+let voiceDraftSession = null;
+const voiceDraftSnapshots = new Map(); // segmentId -> 该句应用前的表单快照，用于删除/替换安全回滚
 let voiceRestartTimer = null;
 let voiceMultiEntries = []; // 语音多笔记账识别结果
 const QUICK_MEM_KEY = 'sm_quick_mem_v1'; // 记忆上次账户/分类
@@ -265,12 +270,119 @@ function checkVoiceCapability() {
   return { ok: false, message: msg('当前环境无法访问麦克风', 'Microphone not accessible', 'No se puede acceder al micrófono'), capability: cap };
 }
 
+function captureQuickVoiceState() {
+  const el = (id) => document.getElementById(id);
+  return {
+    type: quickType,
+    amount: el('qAmount') ? el('qAmount').value : '',
+    date: el('qDate') ? el('qDate').value : '',
+    account: el('qAccount') ? el('qAccount').value : '',
+    category: el('qCategory') ? el('qCategory').value : quickCategory,
+    remark: el('qRemark') ? el('qRemark').value : '',
+    quickCategory,
+    confirmed: Object.assign({}, voiceFieldConfirmed),
+    fieldHistory: voiceFieldHistory.slice(),
+  };
+}
+function restoreQuickVoiceState(st) {
+  if (!st) return;
+  const el = (id) => document.getElementById(id);
+  quickType = st.type || quickType;
+  if (el('qAmount')) el('qAmount').value = st.amount || '';
+  if (el('qDate')) el('qDate').value = st.date || todayLocal();
+  if (el('qAccount')) el('qAccount').value = st.account || '';
+  quickCategory = st.quickCategory || st.category || '';
+  if (el('qCategory')) el('qCategory').value = st.category || '';
+  if (el('qRemark')) el('qRemark').value = st.remark || '';
+  voiceFieldConfirmed = Object.assign({}, st.confirmed || {});
+  voiceFieldHistory = (st.fieldHistory || []).slice();
+  renderVoicePreview();
+}
+function showVoiceDraft(text) {
+  const tip = document.getElementById('voiceTip');
+  if (!tip) return;
+  const t = String(text || '').trim();
+  if (t) tip.textContent = '📝 ' + t;
+}
+function ensureVoiceDraftSession() {
+  if (!voiceDraftSession && window.VoiceDraftSession) voiceDraftSession = new VoiceDraftSession({ lang: voiceLang });
+  return voiceDraftSession;
+}
+function handleVoiceDraftFinal(finalText, resultMeta) {
+  const draft = ensureVoiceDraftSession();
+  if (!draft) return false; // 旧浏览器/加载异常 → 走 V5 旧路径
+
+  // 字段级明确改口继续复用成熟 CorrectionEngine；它是操作，不应污染内容草稿。
+  try {
+    const c = window.CorrectionEngine && CorrectionEngine.parse(finalText);
+    if (c && c.matched) {
+      applyVoiceText(finalText);
+      showVoiceDraft(draft.getDraftText());
+      return true;
+    }
+  } catch (e) { /* fallback to draft interpreter */ }
+
+  const before = captureQuickVoiceState();
+  const ev = draft.acceptUtterance(finalText, resultMeta || { lang: voiceLang });
+  const state = ev.state || draft.getState();
+
+  if (ev.type === 'COMMIT') {
+    voiceBuffer = state.draftText || voiceBuffer;
+    if (voiceBuffer.trim()) applyVoiceText(voiceBuffer); // 最终再解析一次，确保字段与完整草稿一致
+    draft.commit();
+    stopVoiceSession();
+    setVoiceBtnState('idle');
+    renderVoicePreview();
+    const msg = voiceLang.startsWith('es') ? '✔ Dictado terminado. Revisa y guarda' : voiceLang.startsWith('en') ? '✔ Dictation finished. Review and save' : '✔ 语音草稿完成，请核对后保存';
+    showToast(msg); speak(msg);
+    return true;
+  }
+  if (ev.type === 'CANCEL') {
+    restoreQuickVoiceState(voiceDraftSnapshots.get('__sessionStart') || before);
+    voiceBuffer = '';
+    stopVoiceSession();
+    showToast(voiceLang.startsWith('es') ? 'Dictado cancelado' : voiceLang.startsWith('en') ? 'Dictation cancelled' : '已取消本次语音草稿');
+    return true;
+  }
+  if (ev.type === 'EDIT') {
+    if (ev.action === 'CLEAR') {
+      restoreQuickVoiceState(voiceDraftSnapshots.get('__sessionStart'));
+      voiceBuffer = '';
+    } else if (ev.action === 'DELETE_LAST' && ev.removedSegmentId) {
+      const snap = voiceDraftSnapshots.get(ev.removedSegmentId);
+      if (snap) restoreQuickVoiceState(snap);
+      voiceBuffer = state.draftText || '';
+      if (voiceBuffer.trim()) applyVoiceText(voiceBuffer);
+    } else if (ev.action === 'REPLACE_LAST_ARMED') {
+      showToast(voiceLang.startsWith('es') ? 'Di de nuevo la última frase' : voiceLang.startsWith('en') ? 'Say the last sentence again' : '请重新说上一句');
+    }
+    showVoiceDraft(state.draftText);
+    return true;
+  }
+  if (ev.type === 'CONTENT') {
+    // 替换上一句：先恢复被替换句之前的表单快照，再应用新草稿。
+    if (ev.action === 'REPLACED_LAST' && ev.replacedSegmentId) {
+      const snap = voiceDraftSnapshots.get(ev.replacedSegmentId);
+      if (snap) restoreQuickVoiceState(snap);
+    }
+    if (ev.segment && !voiceDraftSnapshots.has(ev.segment.id)) voiceDraftSnapshots.set(ev.segment.id, before);
+    voiceBuffer = state.draftText || '';
+    if (voiceBuffer.trim()) applyVoiceText(voiceBuffer); // Shadow Parser：实时预览，但不保存账目
+    showVoiceDraft(voiceBuffer);
+    return true;
+  }
+  return false;
+}
+
 function startVoiceSession() {
   // 先停掉语音提醒会话，避免两个识别器冲突
   if (window.isReminderVoiceActive && window.isReminderVoiceActive()) stopReminderVoice();
   window.__voiceRetryCount = 0;
   voiceBuffer = '';
   voiceMultiEntries = [];
+  voiceDraftSession = window.VoiceDraftSession ? new VoiceDraftSession({ lang: voiceLang }) : null;
+  voiceDraftSnapshots.clear();
+  voiceDraftSnapshots.set('__sessionStart', captureQuickVoiceState());
   voiceFieldHistory = []; // 新会话：清空字段历史（撤销栈）
   voiceFieldConfirmed = {}; // 新会话：清空字段确认状态
   voiceSessionActive = true;
@@ -348,9 +460,13 @@ function voiceHandleResult(r) {
     // 持续识别：把每句累积起来整体解析，自动填充对应字段。
     // V4：mergeTranscript 去重合并（iOS 单次识别每轮重开可能重复返回同一句 final，
     // 或相邻轮次重叠如"明天上午十点"+"上午十点去银行"→"明天上午十点去银行"）
-    voiceBuffer = (window.VoiceSR && VoiceSR.mergeTranscript) ? VoiceSR.mergeTranscript(voiceBuffer, r.final) : (voiceBuffer + (voiceBuffer ? ' ' : '') + r.final);
     resetVoiceIdleTimer(); // 有识别内容 → 重置超时
-    applyVoiceText(voiceBuffer);
+    // V6：优先进入 VoiceDraftSession。只有显式“完成/好了/listo/done”等才结束会话；
+    // 普通 VAD utterance 只代表一句结束，不代表整个录音结束。
+    if (!handleVoiceDraftFinal(r.final, { lang: voiceLang, engine: r.engine, model: r.model, backend: r.backend })) {
+      voiceBuffer = (window.VoiceSR && VoiceSR.mergeTranscript) ? VoiceSR.mergeTranscript(voiceBuffer, r.final) : (voiceBuffer + (voiceBuffer ? ' ' : '') + r.final);
+      applyVoiceText(voiceBuffer);
+    }
   } else if (r.error) {
     // 区分可自动恢复错误（no-speech）与需人工介入错误（权限/模型/网络）
     const fatal = r.error === 'not-allowed' || r.error === 'unsupported' || r.error === 'aborted';

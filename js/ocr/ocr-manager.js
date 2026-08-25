@@ -508,6 +508,15 @@
         console.log('[ocr] ServerOcrEngine 已注册（sm_ocr_server_engine=1）');
       }
     } catch (e) { console.warn('[ocr] ServerOcrEngine 注册失败:', e); }
+    // V6 optional GLM-OCR adapter: NEVER default. Requires explicit user-controlled endpoint.
+    try {
+      const endpoint = (function () { try { return global.localStorage && global.localStorage.getItem('sm_glm_ocr_endpoint') || ''; } catch (e) { return ''; } })();
+      const enabled = (function () { try { return global.localStorage && global.localStorage.getItem('sm_glm_ocr_enabled') === '1'; } catch (e) { return false; } })();
+      if (enabled && endpoint && global.OcrKit.GlmOcrEngine) {
+        mgr.register(new global.OcrKit.GlmOcrEngine({ endpoint }));
+        console.log('[ocr] GLM-OCR optional engine registered:', endpoint);
+      }
+    } catch (e) { console.warn('[ocr] GLM-OCR optional engine registration failed:', e); }
     _singleton = mgr;
     return mgr;
   }

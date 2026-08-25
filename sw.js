@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v140';
+const CACHE_NAME = 'jizhang-pwa-v141-voice-ocr-v6';
 const APP_SHELL = [
   './',
   './index.html',
@@ -26,6 +26,7 @@ const APP_SHELL = [
   './js/ocr/ocr-job-manager.js',
   './js/ocr/execution-planner.js',
   './js/ocr/server-engine.js',
+  './js/ocr/glm-ocr-engine.js',
   './js/ocr/preprocess-worker.js',
   './js/ocr/region-retry.js',
   './js/ocr/ocr-candidate-pool.js',
@@ -75,6 +76,8 @@ const APP_SHELL = [
   // app.js 拆分模块（app.js v69 拆分）
   './js/voice/reminders.js',
   './js/voice/correction-engine.js',
+  './js/voice/voice-language-pack.js',
+  './js/voice/voice-draft-session.js',
   './js/voice/quick-voice.js',
   './js/ledger-crud.js',
   './js/ai/global-config.js',

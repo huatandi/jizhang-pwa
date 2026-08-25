@@ -1290,6 +1290,7 @@
   <script src="js/ocr/execution-planner.js?v=1"></script>
   <!-- V5 P4：服务器 OCR 引擎（可选注册，默认不启用） -->
   <script src="js/ocr/server-engine.js?v=1"></script>
+  <script src="js/ocr/glm-ocr-engine.js?v=1"></script>
   <script src="js/ocr/region-retry.js?v=2"></script>
   <!-- V5 P2：OCR 候选池（多引擎/混淆变体/数学证据裁决） -->
   <script src="js/ocr/ocr-candidate-pool.js?v=2"></script>
@@ -1335,7 +1336,9 @@
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
   <script src="js/voice/reminders.js?v=74"></script>
   <script src="js/voice/correction-engine.js?v=1"></script>
-  <script src="js/voice/quick-voice.js?v=71"></script>
+  <script src="js/voice/voice-language-pack.js?v=1"></script>
+  <script src="js/voice/voice-draft-session.js?v=1"></script>
+  <script src="js/voice/quick-voice.js?v=72"></script>
   <script src="js/ledger-crud.js?v=43"></script>
   <script src="js/ai/ai-workbench.js?v=76"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
