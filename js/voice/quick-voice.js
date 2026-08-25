@@ -140,8 +140,9 @@ function setVoiceBtnState(state) {
   }
 }
 
-// 语音语言状态：全球化多语（默认跟随浏览器，可循环切换）
+// 语音语言状态：全球化多语（默认跟随浏览器，可循环切换；含"跟随系统"auto）
 const VOICE_LANGS = [
+  { code: 'auto', label: '🌐 跟随系统', tip: '🎙️ 自动跟随系统语言（中文/English/Español…）' },
   { code: 'zh-CN', label: '中文', tip: '🎙️ 点击开始，持续说话自动识别 金额 · 日期 · 账户 · 分类' },
   { code: 'en-US', label: 'English', tip: '🎙️ Say: amount · date · account · category' },
   { code: 'es-MX', label: 'Español', tip: '🎙️ Di: monto · fecha · cuenta · categoría' },
@@ -152,10 +153,10 @@ const VOICE_LANGS = [
   { code: 'pt-BR', label: 'Português', tip: '🎙️ Diga: valor · data · conta · categoria' },
   { code: 'it-IT', label: 'Italiano', tip: '🎙️ Di: importo · data · conto · categoria' },
 ];
-// 默认语言：优先用户已保存，其次浏览器语言（global-config 检测），最后中文
+// 默认语言：优先用户已保存（'auto'=跟随系统），其次浏览器语言（global-config 检测），最后中文
 function defaultVoiceLang() {
   const saved = localStorage.getItem('sm_voice_lang');
-  if (saved && VOICE_LANGS.some(l => l.code === saved)) return saved;
+  if (saved && saved !== 'auto' && VOICE_LANGS.some(l => l.code === saved)) return saved;
   const gc = window.AIKit && window.AIKit.globalConfig;
   let detected = '';
   if (gc && gc.detectLang) {
@@ -165,13 +166,24 @@ function defaultVoiceLang() {
   }
   // 匹配语言主码（如 zh-CN → zh、en-US → en）
   const base = detected.split('-')[0];
-  const hit = VOICE_LANGS.find(l => l.code.split('-')[0] === base);
+  const hit = VOICE_LANGS.find(l => l.code !== 'auto' && l.code.split('-')[0] === base);
   if (hit) return hit.code;
   return 'zh-CN';
 }
-let voiceLang = defaultVoiceLang();
+let voiceLang = (() => { try { return localStorage.getItem('sm_voice_lang') || 'auto'; } catch (e) { return 'auto'; } })();
+/** 实际识别语言：auto → 跟随系统解析 */
+function effectiveVoiceLang() {
+  return voiceLang === 'auto' ? defaultVoiceLang() : voiceLang;
+}
 function getVoiceLangMeta(code) {
-  return VOICE_LANGS.find(l => l.code === code) || VOICE_LANGS[0];
+  const meta = VOICE_LANGS.find(l => l.code === code) || VOICE_LANGS[0];
+  // auto 动态显示当前系统语言
+  if (code === 'auto') {
+    const eff = effectiveVoiceLang();
+    const effLabel = (VOICE_LANGS.find(l => l.code === eff) || {}).label || '中文';
+    return { ...meta, label: '🌐 跟随系统(' + effLabel + ')' };
+  }
+  return meta;
 }
 function switchVoiceLang() {
   const idx = VOICE_LANGS.findIndex(l => l.code === voiceLang);
@@ -223,7 +235,7 @@ function toggleVoice() {
  *  - 完全支持 → ok
  */
 function checkVoiceCapability() {
-  const L = voiceLang;
+  const L = effectiveVoiceLang();
   const msg = (zh, en, es) => L === 'es-MX' ? es : L === 'en-US' ? en : zh;
   // 1) 语音识别基础设施
   if (!window.VoiceSR || !VoiceSR.supported) {
@@ -280,7 +292,7 @@ function startVoiceSession() {
   announceStart();
   // 60 秒无有效识别 → 自动停止（避免"说错后卡死一直聆听"）
   resetVoiceIdleTimer();
-  VoiceSR.listen({ lang: voiceLang, continuous: true }, voiceHandleResult);
+  VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true }, voiceHandleResult);
 }
 
 // 60 秒无有效语音 → 自动停止会话（用户要求：1 分钟内无法完成就主动取消/结束）
@@ -299,7 +311,7 @@ function announceStart() {
   try {
     if (!('speechSynthesis' in window)) return;
     const u = new SpeechSynthesisUtterance('请说');
-    u.lang = voiceLang === 'es-MX' ? 'es-MX' : voiceLang === 'en-US' ? 'en-US' : 'zh-CN';
+    u.lang = effectiveVoiceLang() === 'es-MX' ? 'es-MX' : effectiveVoiceLang() === 'en-US' ? 'en-US' : 'zh-CN';
     u.rate = 1;
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
@@ -343,7 +355,7 @@ function voiceHandleResult(r) {
   }
   if (r.interim) {
     const tip = document.getElementById('voiceTip');
-    if (tip) tip.textContent = (voiceLang === 'es-MX' ? '🔴 Escuchando… ' : voiceLang === 'en-US' ? '🔴 Listening… ' : '🔴 正在聆听… ') + r.interim;
+    if (tip) tip.textContent = (effectiveVoiceLang() === 'es-MX' ? '🔴 Escuchando… ' : effectiveVoiceLang() === 'en-US' ? '🔴 Listening… ' : '🔴 正在聆听… ') + r.interim;
   } else if (r.final) {
     // 持续识别：把每句累积起来整体解析，自动填充对应字段。
     // V4：mergeTranscript 去重合并（iOS 单次识别每轮重开可能重复返回同一句 final，
@@ -358,7 +370,7 @@ function voiceHandleResult(r) {
       // 停顿/超时类错误：自动重启继续聆听
       voiceRestartTimer = setTimeout(() => {
         if (voiceSessionActive && !VoiceSR.isListening()) {
-          VoiceSR.listen({ lang: voiceLang, continuous: true }, voiceHandleResult);
+          VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true }, voiceHandleResult);
         }
       }, 400);
     } else if (fatal) {
@@ -367,9 +379,9 @@ function voiceHandleResult(r) {
       stopVoiceSession();
       setVoiceBtnState('error');
       const msgMap = {
-        'not-allowed': voiceLang === 'es-MX' ? 'Permite el acceso al micrófono' : voiceLang === 'en-US' ? 'Microphone access denied' : '未获得麦克风权限，请点击「点击说话」并允许麦克风',
-        'unsupported': voiceLang === 'es-MX' ? 'El navegador no soporta voz' : voiceLang === 'en-US' ? 'Speech not supported in this browser' : '当前浏览器不支持语音识别',
-        'aborted': voiceLang === 'es-MX' ? 'No se pudo iniciar el motor de voz' : voiceLang === 'en-US' ? 'Speech engine failed to start' : '语音引擎启动失败，请重试',
+        'not-allowed': effectiveVoiceLang() === 'es-MX' ? 'Permite el acceso al micrófono' : effectiveVoiceLang() === 'en-US' ? 'Microphone access denied' : '未获得麦克风权限，请点击「点击说话」并允许麦克风',
+        'unsupported': effectiveVoiceLang() === 'es-MX' ? 'El navegador no soporta voz' : effectiveVoiceLang() === 'en-US' ? 'Speech not supported in this browser' : '当前浏览器不支持语音识别',
+        'aborted': effectiveVoiceLang() === 'es-MX' ? 'No se pudo iniciar el motor de voz' : effectiveVoiceLang() === 'en-US' ? 'Speech engine failed to start' : '语音引擎启动失败，请重试',
       };
       showToast(msgMap[r.error] || r.error, 'error');
       if (wasActive && r.error === 'aborted') {
@@ -382,18 +394,18 @@ function voiceHandleResult(r) {
           if (!voiceSessionActive) {
             voiceSessionActive = true;
             setVoiceBtnState('listening');
-            VoiceSR.listen({ lang: voiceLang, continuous: true, forceOnline: useOnline }, voiceHandleResult);
+            VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true, forceOnline: useOnline }, voiceHandleResult);
           }
         }, 1500);
       }
     } else if (voiceSessionActive && r.error === 'network') {
       // 网络错误：降级提示，不无限重启（保留会话状态，等用户手动再试）
       setVoiceBtnState('error');
-      showToast(voiceLang === 'es-MX' ? 'Voz sin red, revisa conexión' : voiceLang === 'en-US' ? 'Speech needs network, check connection' : '语音服务需要网络，请检查连接', 'error');
+      showToast(effectiveVoiceLang() === 'es-MX' ? 'Voz sin red, revisa conexión' : effectiveVoiceLang() === 'en-US' ? 'Speech needs network, check connection' : '语音服务需要网络，请检查连接', 'error');
       stopVoiceSession();
     } else {
       setVoiceBtnState('error');
-      showToast(voiceLang === 'es-MX' ? ('Error de voz: ' + r.error) : voiceLang === 'en-US' ? ('Speech error: ' + r.error) : ('语音识别失败: ' + r.error), 'error');
+      showToast(effectiveVoiceLang() === 'es-MX' ? ('Error de voz: ' + r.error) : effectiveVoiceLang() === 'en-US' ? ('Speech error: ' + r.error) : ('语音识别失败: ' + r.error), 'error');
     }
   } else if (r.end) {
     if (voiceSessionActive) {
@@ -406,7 +418,7 @@ function voiceHandleResult(r) {
         if (VoiceSR.isListening()) return; // 仍在听则不再重启
         voiceSessionActive = true;
         setVoiceBtnState('listening');
-        VoiceSR.listen({ lang: voiceLang, continuous: true }, voiceHandleResult);
+        VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true }, voiceHandleResult);
         resetVoiceIdleTimer();
       }, 600);
     } else {
@@ -420,7 +432,7 @@ function speak(text, onend) {
   try {
     if (!('speechSynthesis' in window)) { if (onend) setTimeout(onend, 300); return; }
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = voiceLang === 'es-MX' ? 'es-MX' : voiceLang === 'en-US' ? 'en-US' : 'zh-CN';
+    u.lang = effectiveVoiceLang() === 'es-MX' ? 'es-MX' : effectiveVoiceLang() === 'en-US' ? 'en-US' : 'zh-CN';
     u.rate = 1;
     // V5 Phase1 保险6：TTS 说话时抑制 ASR,防 TTS 被麦克风再次收录
     const af = window.AsrKit && window.AsrKit.audioFocus;
@@ -781,7 +793,7 @@ function renderVoicePreview() {
   if (!box) return;
   // 多笔模式：显示可编辑清单（PWA 修复：每笔可改金额/分类、可删除，确认后保存）
   if (voiceMultiEntries && voiceMultiEntries.length >= 2) {
-    const L = voiceLang;
+    const L = effectiveVoiceLang();
     const title = L === 'es-MX'
       ? `📋 Detectadas ${voiceMultiEntries.length} operaciones`
       : L === 'en-US'
@@ -834,7 +846,7 @@ function renderVoicePreview() {
   if (account && account !== '未填') chips.push(`<span class="vp-chip vp-acc" data-k="account">🏦 ${escapeHtml(account)}</span>`);
   if (remark) chips.push(`<span class="vp-chip vp-rmk" data-k="remark">📝 ${escapeHtml(remark)}</span>`);
   const missing = [];
-  const L = voiceLang;
+  const L = effectiveVoiceLang();
   if (!amount) missing.push(L === 'es-MX' ? 'monto' : L === 'en-US' ? 'amount' : '金额');
   if (!cat) missing.push(L === 'es-MX' ? 'categoría' : L === 'en-US' ? 'category' : quickType === 'expense' ? '分类' : '收入分类');
   const html = chips.length
@@ -944,10 +956,10 @@ function applyVoiceText(buffer) {
           restoreVoiceField(last.field, last.oldValue);
           voiceFieldConfirmed[last.field] = false; // 撤销 → 该字段回到可被常规解析更新状态
           renderVoicePreview();
-          const undoMsg = voiceLang === 'es-MX' ? ('Deshecho: ' + fieldLabel(last.field)) : voiceLang === 'en-US' ? ('Undid ' + fieldLabel(last.field)) : '已撤销' + fieldLabel(last.field);
+          const undoMsg = effectiveVoiceLang() === 'es-MX' ? ('Deshecho: ' + fieldLabel(last.field)) : effectiveVoiceLang() === 'en-US' ? ('Undid ' + fieldLabel(last.field)) : '已撤销' + fieldLabel(last.field);
           showToast(undoMsg + ' ↩️'); speak(undoMsg);
         } else {
-          showToast(voiceLang === 'es-MX' ? 'Nada que deshacer' : voiceLang === 'en-US' ? 'Nothing to undo' : '没有可撤销的字段', 'error');
+          showToast(effectiveVoiceLang() === 'es-MX' ? 'Nada que deshacer' : effectiveVoiceLang() === 'en-US' ? 'Nothing to undo' : '没有可撤销的字段', 'error');
         }
         setVoiceBtnState('done');
         setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
@@ -955,9 +967,9 @@ function applyVoiceText(buffer) {
       }
       if (corr.action === 'ask') {
         const f = corr.field;
-        const askMsg = voiceLang === 'es-MX'
+        const askMsg = effectiveVoiceLang() === 'es-MX'
           ? (fieldLabel(f) === '金额' ? 'Di el monto' : 'Di ' + fieldLabel(f))
-          : voiceLang === 'en-US'
+          : effectiveVoiceLang() === 'en-US'
             ? ('Say the ' + fieldLabel(f))
             : '请说' + fieldLabel(f);
         showToast(askMsg); speak(askMsg);
@@ -969,9 +981,9 @@ function applyVoiceText(buffer) {
       const ok = applyVoiceFieldOverride(corr.field, corr.value, corr.oldValue);
       renderVoicePreview();
       const label = fieldLabel(corr.field);
-      const doneMsg = voiceLang === 'es-MX' ? (label + ': ' + corr.value) : voiceLang === 'en-US' ? (label + ': ' + corr.value) : (label + '已改为 ' + corr.value);
+      const doneMsg = effectiveVoiceLang() === 'es-MX' ? (label + ': ' + corr.value) : effectiveVoiceLang() === 'en-US' ? (label + ': ' + corr.value) : (label + '已改为 ' + corr.value);
       showToast(ok ? ('✔ ' + doneMsg) : doneMsg, ok ? undefined : 'error');
-      if (ok) speak(voiceLang === 'es-MX' ? (label + ' ' + corr.value) : voiceLang === 'en-US' ? (label + ' ' + corr.value) : (label + '改为' + corr.value));
+      if (ok) speak(effectiveVoiceLang() === 'es-MX' ? (label + ' ' + corr.value) : effectiveVoiceLang() === 'en-US' ? (label + ' ' + corr.value) : (label + '改为' + corr.value));
       setVoiceBtnState('done');
       // 清除改口残留（改口后的 buffer 不再整体重解析）
       voiceBuffer = '';
@@ -989,7 +1001,7 @@ function applyVoiceText(buffer) {
     if (voiceSessionActive) stopVoiceSession();
     renderVoicePreview();
     setVoiceBtnState('idle');
-    const L = voiceLang;
+    const L = effectiveVoiceLang();
     const msg = L === 'es-MX'
       ? `✔ ${multi.entries.length} operaciones. Revisa y confirma`
       : L === 'en-US'
@@ -1020,12 +1032,12 @@ function applyVoiceText(buffer) {
     const amt = Number(document.getElementById('qAmount').value);
     const cat = quickCategory || document.getElementById('qCategory').value;
     if (!amt || amt <= 0) {
-      const msg = voiceLang === 'es-MX' ? 'Falta monto, di de nuevo' : voiceLang === 'en-US' ? 'Missing amount' : '缺少金额，请补充';
+      const msg = effectiveVoiceLang() === 'es-MX' ? 'Falta monto, di de nuevo' : effectiveVoiceLang() === 'en-US' ? 'Missing amount' : '缺少金额，请补充';
       showToast(msg, 'error'); speak(msg);
       return;
     }
     if (!cat) {
-      const msg = voiceLang === 'es-MX' ? 'Falta categoría' : voiceLang === 'en-US' ? 'Missing category' : '缺少分类，请补充';
+      const msg = effectiveVoiceLang() === 'es-MX' ? 'Falta categoría' : effectiveVoiceLang() === 'en-US' ? 'Missing category' : '缺少分类，请补充';
       showToast(msg, 'error'); speak(msg);
       return;
     }
@@ -1033,9 +1045,9 @@ function applyVoiceText(buffer) {
     const saveBtn = document.getElementById('btnSaveQuick');
     if (saveBtn) { saveBtn.classList.add('vp-save-pulse'); setTimeout(() => saveBtn.classList.remove('vp-save-pulse'), 4000); }
     renderVoicePreview();
-    const msg = voiceLang === 'es-MX' ? '✔ Revisa y pulsa Guardar' : voiceLang === 'en-US' ? '✔ Review and tap Save' : '✔ 已就绪，请检查后点「保存」入账';
+    const msg = effectiveVoiceLang() === 'es-MX' ? '✔ Revisa y pulsa Guardar' : effectiveVoiceLang() === 'en-US' ? '✔ Review and tap Save' : '✔ 已就绪，请检查后点「保存」入账';
     showToast(msg);
-    speak(voiceLang === 'es-MX' ? 'Revisa y pulsa guardar' : voiceLang === 'en-US' ? 'Review and tap save' : '请检查后点保存');
+    speak(effectiveVoiceLang() === 'es-MX' ? 'Revisa y pulsa guardar' : effectiveVoiceLang() === 'en-US' ? 'Review and tap save' : '请检查后点保存');
     setVoiceBtnState('idle');
     return;
   }
@@ -1048,7 +1060,7 @@ function applyVoiceText(buffer) {
     voiceBuffer = '';
     setVoiceBtnState('done');
     renderVoicePreview();
-    const clearMsg = voiceLang === 'es-MX' ? 'Borrado, di de nuevo' : voiceLang === 'en-US' ? 'Cleared, say again' : '已清空，请重新说';
+    const clearMsg = effectiveVoiceLang() === 'es-MX' ? 'Borrado, di de nuevo' : effectiveVoiceLang() === 'en-US' ? 'Cleared, say again' : '已清空，请重新说';
     speak(clearMsg);
     showToast(clearMsg + ' 🗑️');
     setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
@@ -1066,7 +1078,7 @@ function applyVoiceText(buffer) {
       document.getElementById('qDate').value = d;
       setVoiceBtnState('done');
       renderVoicePreview();
-      speak(voiceLang === 'es-MX' ? ('Fecha: ' + d) : voiceLang === 'en-US' ? ('Date set: ' + d) : '日期已设为 ' + d);
+      speak(effectiveVoiceLang() === 'es-MX' ? ('Fecha: ' + d) : effectiveVoiceLang() === 'en-US' ? ('Date set: ' + d) : '日期已设为 ' + d);
       setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
       return;
     }
@@ -1079,7 +1091,7 @@ function applyVoiceText(buffer) {
         sel.value = acc;
         setVoiceBtnState('done');
         renderVoicePreview();
-        speak(voiceLang === 'es-MX' ? ('Cuenta: ' + acc) : voiceLang === 'en-US' ? ('Account set: ' + acc) : '账户已设为 ' + acc);
+        speak(effectiveVoiceLang() === 'es-MX' ? ('Cuenta: ' + acc) : effectiveVoiceLang() === 'en-US' ? ('Account set: ' + acc) : '账户已设为 ' + acc);
         setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
         return;
       }
@@ -1109,7 +1121,7 @@ function applyVoiceText(buffer) {
     if (sel && [...sel.options].some(o => o.value === parsed.category)) {
       writeVoiceField('category', parsed.category);
       filled = true;
-      speak(voiceLang === 'es-MX' ? ('Categoría: ' + parsed.category) : voiceLang === 'en-US' ? ('Category: ' + parsed.category) : '分类 ' + parsed.category);
+      speak(effectiveVoiceLang() === 'es-MX' ? ('Categoría: ' + parsed.category) : effectiveVoiceLang() === 'en-US' ? ('Category: ' + parsed.category) : '分类 ' + parsed.category);
     } else {
       showToast('⚠️ 分类「' + parsed.category + '」不在列表中', 'error');
     }
@@ -1129,7 +1141,7 @@ function applyVoiceText(buffer) {
       }
       writeVoiceField('account', parsed.account);
       filled = true;
-      speak(voiceLang === 'es-MX' ? ('Cuenta: ' + parsed.account) : voiceLang === 'en-US' ? ('Account: ' + parsed.account) : '账户 ' + parsed.account);
+      speak(effectiveVoiceLang() === 'es-MX' ? ('Cuenta: ' + parsed.account) : effectiveVoiceLang() === 'en-US' ? ('Account: ' + parsed.account) : '账户 ' + parsed.account);
     } else {
       // 下拉中无此账户 → 提示，避免"识别成功却未选中"的困惑
       showToast('⚠️ 账户「' + parsed.account + '」不在列表中，请到设置添加', 'error');
@@ -1139,10 +1151,10 @@ function applyVoiceText(buffer) {
 
   renderVoicePreview();
   setVoiceBtnState('done');
-  if (voiceLang === 'es-MX') {
+  if (effectiveVoiceLang() === 'es-MX') {
     showToast(filled ? '✔ Reconocido. Sigue hablando o di "guardar"' : 'Texto reconocido, di el monto');
     if (filled) speak('Reconocido');
-  } else if (voiceLang === 'en-US') {
+  } else if (effectiveVoiceLang() === 'en-US') {
     showToast(filled ? '✔ Recognized. Keep talking or say "save"' : 'Text recognized, say the amount');
     if (filled) speak('Recognized');
   } else {
@@ -1209,7 +1221,7 @@ async function saveQuick() {
     voiceMultiEntries = [];
     voiceBuffer = '';
     gotoPage('dashboard');
-    const L = voiceLang;
+    const L = effectiveVoiceLang();
     const okMsg = L === 'es-MX' ? `✔ ${saved} operaciones registradas` : L === 'en-US' ? `✔ ${saved} entries saved` : `✔ 已记录 ${saved} 笔`;
     showToast(errors ? okMsg + `，${errors} 笔失败` : okMsg);
     speak(okMsg);
@@ -1286,7 +1298,7 @@ async function saveQuick() {
     incomeVoiceBuffer = '';
     incomeVoiceActive = true;
     setIncomeVoiceBtnState('listening');
-    const lang = getVoiceLangMeta ? getVoiceLangMeta().lang : 'zh-CN';
+    const lang = typeof effectiveVoiceLang === 'function' ? effectiveVoiceLang() : 'zh-CN';
     VoiceSR.listen({ lang, continuous: true }, incomeVoiceHandleResult);
   }
 
@@ -1325,7 +1337,7 @@ async function saveQuick() {
       if (incomeVoiceActive && r.error === 'no-speech') {
         incomeVoiceRestartTimer = setTimeout(() => {
           if (incomeVoiceActive && !VoiceSR.isListening()) {
-            const lang = getVoiceLangMeta ? getVoiceLangMeta().lang : 'zh-CN';
+            const lang = typeof effectiveVoiceLang === 'function' ? effectiveVoiceLang() : 'zh-CN';
             VoiceSR.listen({ lang, continuous: true }, incomeVoiceHandleResult);
           }
         }, 400);
