@@ -46,6 +46,8 @@
     refreshOn: { startup: true, foreground: true, openCard: true, intervalMs: 60 * 60 * 1000 },
     // ---- 单位（§38，内部标准 SI；显示层换算）----
     units: { temperature: 'c', windSpeed: 'kmh' },
+    // 天气显示语言独立于系统/浏览器语言；默认中文，可选 zh/es/en/auto
+    language: 'zh',
   };
 
   const LS_KEY = 'sm_weather_cfg';

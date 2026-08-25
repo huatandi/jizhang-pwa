@@ -16,7 +16,7 @@
       dur: '预计持续', hours: '小时', maxRate: '最大雨量', total: '累计雨量',
       maxWind: '最大持续风', maxGust: '最大阵风', today: '今天', tomorrow: '明天',
       rainProb: '降雨概率', clickDetail: '点击查看未来天气', hour: '逐小时', collapse: '收起',
-      noEvents: '今日无降雨/大风', tapSetup: '设置城市后可看天气',
+      noEvents: '今日无降雨/大风', tapSetup: '设置城市后可看天气', from: '起', gust: '阵风', saved: '天气设置已保存', saveFail: '天气保存失败，请检查城市名',
     },
     es: {
       title: 'Tiempo', updated: 'Actualizado', fetching: 'Cargando tiempo…',
@@ -25,7 +25,7 @@
       dur: 'Duración', hours: 'h', maxRate: 'Pico', total: 'Total',
       maxWind: 'Viento sostenido', maxGust: 'Ráfagas', today: 'Hoy', tomorrow: 'Mañana',
       rainProb: 'Prob. lluvia', clickDetail: 'Ver pronóstico', hour: 'Por hora', collapse: 'Cerrar',
-      noEvents: 'Sin lluvia/viento hoy', tapSetup: 'Configura ciudad para el tiempo',
+      noEvents: 'Sin lluvia/viento hoy', tapSetup: 'Configura ciudad para el tiempo', from: 'desde', gust: 'ráfagas', saved: 'Configuración del tiempo guardada', saveFail: 'No se pudo guardar; revisa la ciudad',
     },
     en: {
       title: 'Weather', updated: 'Updated', fetching: 'Loading weather…',
@@ -34,7 +34,7 @@
       dur: 'Lasting', hours: 'h', maxRate: 'Peak rate', total: 'Total',
       maxWind: 'Sustained', maxGust: 'Gusts', today: 'Today', tomorrow: 'Tomorrow',
       rainProb: 'Rain chance', clickDetail: 'View forecast', hour: 'Hourly', collapse: 'Close',
-      noEvents: 'No rain/wind today', tapSetup: 'Set city for weather',
+      noEvents: 'No rain/wind today', tapSetup: 'Set city for weather', from: 'from', gust: 'gusts', saved: 'Weather settings saved', saveFail: 'Could not save weather; check the city',
     },
   };
   const ICON_EMOJI = { clear: '☀️', partly_cloudy: '⛅', cloudy: '☁️', fog: '🌫️', drizzle: '🌦️', rain: '🌧️', snow: '🌨️', thunderstorm: '⛈️' };
@@ -43,11 +43,18 @@
   const SEV_EN = { RAIN_TRACE: 'drizzle', RAIN_LIGHT: 'light rain', RAIN_MODERATE: 'rain', RAIN_HEAVY: 'heavy rain', RAIN_VERY_HEAVY: 'downpour', WIND_NORMAL: '', WIND_BREEZY: 'breeze', WIND_STRONG: 'strong wind', WIND_VERY_STRONG: 'gale' };
 
   function lang() {
+    // 天气语言可独立选择。默认中文，避免人在墨西哥/西语浏览器时天气被强制显示西语。
+    try {
+      const cfg = global.WeatherKit && global.WeatherKit.WeatherConfig;
+      const chosen = cfg && cfg.get('language');
+      if (chosen === 'zh' || chosen === 'es' || chosen === 'en') return chosen;
+      if (chosen !== 'auto' && chosen) return 'zh';
+    } catch (e) { /* ignore */ }
     try {
       const gc = global.AIKit && global.AIKit.globalConfig;
-      if (gc && gc.detectLang) { const l = gc.detectLang(); if (l && l.indexOf('zh') === 0) return 'zh'; if (l && l.indexOf('es') === 0) return 'es'; }
+      if (gc && gc.detectLang) { const l = gc.detectLang(); if (l && l.indexOf('zh') === 0) return 'zh'; if (l && l.indexOf('es') === 0) return 'es'; if (l && l.indexOf('en') === 0) return 'en'; }
     } catch (e) { /* ignore */ }
-    try { const n = global.navigator && global.navigator.language || ''; if (n.indexOf('zh') === 0) return 'zh'; if (n.indexOf('es') === 0) return 'es'; } catch (e) {}
+    try { const n = global.navigator && global.navigator.language || ''; if (n.indexOf('zh') === 0) return 'zh'; if (n.indexOf('es') === 0) return 'es'; if (n.indexOf('en') === 0) return 'en'; } catch (e) {}
     return 'zh';
   }
   const L = () => I18N[lang()] || I18N.zh;
@@ -99,8 +106,8 @@
     const rainEv = evs.find(e => e.type === 'rain');
     const windEv = evs.find(e => e.type === 'wind');
     let evLine = '';
-    if (rainEv) evLine += `<span class="weather-mini-ev">🌧 ${clockOf(rainEv.startTime)}起 ${sevOf(rainEv.severity)}</span>`;
-    if (windEv) evLine += `<span class="weather-mini-ev">💨 ${clockOf(windEv.startTime)}起 阵风${Math.round(windEv.metrics.maxWindGust)}</span>`;
+    if (rainEv) evLine += `<span class="weather-mini-ev">🌧 ${clockOf(rainEv.startTime)} ${l.from} ${sevOf(rainEv.severity)}</span>`;
+    if (windEv) evLine += `<span class="weather-mini-ev">💨 ${clockOf(windEv.startTime)} ${l.from} ${l.gust} ${speedKmh(windEv.metrics.maxWindGust)}</span>`;
     if (!evLine) evLine = `<span class="weather-mini-ev">${l.noEvents}</span>`;
     const updated = res.fromCache ? ` · ${l.updated} ${fmtUpdated(data.updatedAt)}` : '';
     host.innerHTML = `<div class="weather-mini" onclick="WeatherCard.openDetail()" title="${l.clickDetail}">
@@ -247,7 +254,8 @@
     try { o.location = C && C.get('location'); } catch (e) {}
     const rem = C ? C.getReminder() : {};
     const units = C ? C.getUnits() : {};
-    return { location: o.location || '', rem, units };
+    let language = 'zh'; try { language = (C && C.get('language')) || 'zh'; } catch (e) {}
+    return { location: o.location || '', rem, units, language };
   }
   function saveCfg(next) {
     const C = global.WeatherKit.WeatherConfig;
@@ -255,6 +263,7 @@
     if (next.location !== undefined) C.set('location', next.location);
     if (next.rem) C.set('reminder', next.rem);
     if (next.units) C.set('units', next.units);
+    if (next.language !== undefined) C.set('language', next.language || 'zh');
   }
 
   const SettingsAPI = {
@@ -262,9 +271,11 @@
     fill() {
       const doc = global.document;
       if (!doc) return;
-      const { location, rem, units } = readCfg();
+      const { location, rem, units, language } = readCfg();
       const cityEl = doc.getElementById('weatherCity');
       if (cityEl) cityEl.value = typeof location === 'string' ? location : (location && location.name) || '';
+      const wl = doc.getElementById('weatherLanguage');
+      if (wl) wl.value = language || 'zh';
       const rainOn = doc.getElementById('weatherRainOn');
       if (rainOn) rainOn.checked = rem.rainEnabled !== false;
       const windOn = doc.getElementById('weatherWindOn');
@@ -294,13 +305,14 @@
         temperature: (doc.getElementById('weatherUnitTemp') || {}).value || 'c',
         windSpeed: (doc.getElementById('weatherUnitWind') || {}).value || 'kmh',
       };
-      saveCfg({ location: city, rem, units });
+      const language = (doc.getElementById('weatherLanguage') || {}).value || 'zh';
+      saveCfg({ location: city, rem, units, language });
       // 保存后立即刷新
       global.WeatherKit.WeatherService.refresh({ force: true }).then((res) => {
         const host = doc.getElementById('weatherMiniHost');
         if (host) API.renderMini(host, res);
-        global.showToast && global.showToast(city ? '✅ 天气城市已保存' : '天气设置已保存');
-      }).catch(() => { global.showToast && global.showToast('天气保存失败，请检查城市名', 'error'); });
+        global.showToast && global.showToast('✅ ' + L().saved);
+      }).catch(() => { global.showToast && global.showToast(L().saveFail, 'error'); });
     },
     saveCity() { this.saveAll(); },
     /** GPS 定位（拒绝则提示手动城市，§28） */
