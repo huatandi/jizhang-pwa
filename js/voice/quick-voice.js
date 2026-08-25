@@ -19,7 +19,7 @@ let voiceFieldConfirmed = {};
 
 // 渲染分类下拉（支出/收入共用，跟随 quickType）
 function renderQuickCatSelect() {
-  const cats = quickType === 'expense' ? options.expense_categories : options.departments;
+  const cats = quickType === 'expense' ? (typeof expenseCatOptions === 'function' ? expenseCatOptions() : options.expense_categories) : options.departments;
   const sel = document.getElementById('qCategory');
   if (!sel) return;
   const cur = quickCategory && cats.includes(quickCategory) ? quickCategory : '';
@@ -789,7 +789,7 @@ function renderVoicePreview() {
         : `📋 识别到 ${voiceMultiEntries.length} 笔（可编辑/删除）`;
     const items = voiceMultiEntries.map((e, i) => {
       const kindTag = e.kind === 'income' ? '<span class="vp-kind vp-inc">收</span>' : '<span class="vp-kind vp-exp">支</span>';
-      const catOpts = (e.kind === 'income' ? (options.departments || []) : (options.expense_categories || [])).map(c =>
+      const catOpts = (e.kind === 'income' ? (options.departments || []) : (typeof expenseCatOptions === 'function' ? expenseCatOptions() : (options.expense_categories || []))).map(c =>
         `<option value="${escapeHtml(c)}" ${c === e.category ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
       return `<div class="vp-multi-item vp-multi-edit">
         ${kindTag}<span class="vp-idx">${i + 1}</span>

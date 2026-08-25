@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
     accounts: ['现金', 'BANORTE', 'BANREJIO', 'BANREJO', 'BBVA', 'SAND', 'HSBS', 'CITB', 'SANTANDE', '支票', '欠款', '其他'],
     departments: ['一', '二', '三', '四', '五', '其他'],
     pay_methods: ['现金', '刷卡', '支票', '欠款'],
-    expense_categories: ['杂费', '交通', '伙食', '工资', '房租', '店租', '网费', '水费', '电费', '气费', '通讯', '财会', '律师', '装修', '材料', '商厦管理费', '设备', '装饰', '桌椅', '其他'],
+    expense_categories: ['已付货款', '杂费', '交通', '伙食', '工资', '房租', '店租', '网费', '水费', '电费', '气费', '通讯', '财会', '律师', '装修', '材料', '商厦管理费', '设备', '装饰', '桌椅', '其他'],
     discount_accounts: ['BBVA', 'SAND', 'HSBS', 'CITB', '其他'],
     status_options: ['空', '清零'],
     currencies: ['MXN', 'CNY', 'USD'],

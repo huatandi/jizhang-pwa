@@ -333,7 +333,7 @@ async function renderPurchase() {
       <td>${fmtDate(r.doc_date)}</td>
       <td><a class="query-link" onclick="openQuery('supplier','${escJs(r.supplier)}')">${escapeHtml(r.supplier)}</a></td>
       <td class="amount">${total ? '¥' + fmtMoney(total) : ''}</td>
-      <td>${escapeHtml(r.pay_method)}</td>
+      <td>${escapeHtml(r.status)}</td>
       <td class="amount positive">${paid ? '¥' + fmtMoney(paid) : ''}</td>
       <td class="amount ${unpaid > 0 ? 'negative' : ''}">${st.cleared ? clearedBadge : (unpaid > 0 ? '¥' + fmtMoney(unpaid) : '')}</td>
       <td>${escapeHtml(r.remark)}</td>
@@ -353,8 +353,7 @@ function openPurchaseModal(prefillDate) {
   document.getElementById('pPaid').value = '';
   document.getElementById('pRemark').value = '';
   fillSelect('pSupplier', options.suppliers, true);
-  fillSelect('pPayMethod', options.pay_methods, true);
-  fillSelect('pStatus', options.status_options, true);
+  fillSelect('pStatus', purchaseStatusOptions(), true);
   openModal('purchaseModal');
 }
 
@@ -369,10 +368,8 @@ function editPurchase(id) {
     document.getElementById('pPaid').value = r.paid_amount;
     document.getElementById('pRemark').value = r.remark || '';
     fillSelect('pSupplier', options.suppliers, true);
-    fillSelect('pPayMethod', options.pay_methods, true);
-    fillSelect('pStatus', options.status_options, true);
+    fillSelect('pStatus', purchaseStatusOptions(), true);
     document.getElementById('pSupplier').value = r.supplier;
-    document.getElementById('pPayMethod').value = r.pay_method || '';
     document.getElementById('pStatus').value = r.status || '';
     openModal('purchaseModal');
   });
@@ -384,7 +381,6 @@ async function savePurchase() {
     doc_date: document.getElementById('pDate').value,
     supplier,
     total_amount: document.getElementById('pTotal').value,
-    pay_method: document.getElementById('pPayMethod').value,
     paid_amount: document.getElementById('pPaid').value,
     status: document.getElementById('pStatus').value,
     remark: document.getElementById('pRemark').value,
@@ -483,7 +479,7 @@ function openExpenseModal(prefillDate) {
   document.getElementById('ePayee').value = '';
   document.getElementById('eHandler').value = '';
   document.getElementById('eRemark').value = '';
-  fillSelect('eCategory', options.expense_categories, true);
+  fillSelect('eCategory', expenseCatOptions(), true);
   fillAccountSelect ? fillAccountSelect('eAccount', true) : fillSelect('eAccount', options.accounts, true);
   // 功能补充 P5：填充快捷模板下拉
   fillQuickTemplates('expense');
@@ -500,7 +496,7 @@ function editExpense(id) {
     document.getElementById('ePayee').value = r.payee || '';
     document.getElementById('eHandler').value = r.handler || '';
     document.getElementById('eRemark').value = r.remark || '';
-    fillSelect('eCategory', options.expense_categories, true);
+    fillSelect('eCategory', expenseCatOptions(), true);
     fillAccountSelect ? fillAccountSelect('eAccount', true) : fillSelect('eAccount', options.accounts, true);
     document.getElementById('eCategory').value = r.category;
     document.getElementById('eAccount').value = r.account;

@@ -182,7 +182,7 @@ function openWorkbenchForFile(file) {
     const t = document.getElementById('wbType');
     if (t) t.value = 'expense';
     try {
-      fillSelect('wbCategory', (options && options.expense_categories) || [], true);
+      fillSelect('wbCategory', (typeof expenseCatOptions === 'function' ? expenseCatOptions() : ((options && options.expense_categories) || [])), true);
     } catch (e) { console.warn('[ai] 分类下拉填充失败（options 未就绪）:', e); }
     showWbOcr('本地识别中…识别完成后文字显示在这里，字段自动填入下方');
     openModal('aiWorkbenchModal');
@@ -490,7 +490,7 @@ function aiReviewCard(r) {
         <label>支出分类 <select id="cCategory-${r.id}" data-field="category">
           ${(() => {
             const aiCat = r.detail && r.detail.category || '';
-            const cats = options.expense_categories || [];
+            const cats = typeof expenseCatOptions === 'function' ? expenseCatOptions() : (options.expense_categories || []);
             const aligned = alignCategory(aiCat, cats);
             if (aligned) return cats.map(c => `<option value="${escapeHtml(c)}" ${c === aligned ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
             if (!cats.length) return `<option value="${escapeHtml(aiCat)}" ${aiCat ? 'selected' : ''}>${escapeHtml(aiCat) || '（选择分类）'}</option>`;
