@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=69">
+  <link rel="stylesheet" href="css/style.css?v=70">
   <!-- PaddleOCR SDK 裸模块 import map（V5 §75：vendor/paddleocr/index.mjs 内的 js-yaml / clipper-lib /
        @techstark/opencv-js / onnxruntime-web 是裸 ESM，需 import map 解析。onnxruntime-web 必须与
        vendor/onnx 同版本(1.24.3)——此前误指 1.19.2 造成 JS glue 与 .wasm 版本错配 → function import requires a callable。 -->
@@ -1119,6 +1119,13 @@
     <button class="mobile-mode-btn" data-scene="family" onclick="applyScenePreset('family', this, true)">🏠 家庭模式</button>
   </div>
 
+  <!-- 移动端顶部模式切换条（手机端侧边栏隐藏，需在此切换家庭/开店模式） -->
+  <div class="mobile-modebar" id="mobileModeBar" style="display:none">
+    <span class="mobile-modebar-label">📋 模式</span>
+    <button class="mobile-mode-btn" data-scene="business" onclick="applyScenePreset('business', this, true)">🏪 开店模式</button>
+    <button class="mobile-mode-btn" data-scene="family" onclick="applyScenePreset('family', this, true)">🏠 家庭模式</button>
+  </div>
+
   <!-- 移动端底部导航 -->
   <nav class="mobile-nav" id="mobileNav">
     <button class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span><span class="m-label">总览</span></button>
@@ -1255,7 +1262,7 @@
 
   <script src="js/offline-db.js?v=45"></script>
   <script src="js/offline-backend.js?v=46"></script>
-  <script src="js/voice/personal-voice-memory.js?v=5"></script>
+  <script src="js/voice/personal-voice-memory.js?v=6"></script>
   <!-- Intelligence Layer：Field Evidence / Conflict Resolver（V4 Phase 1） -->
   <script src="js/intelligence/evidence-engine.js?v=1"></script>
   <script src="js/intelligence/conflict-resolver.js?v=1"></script>
@@ -1269,7 +1276,7 @@
   <script src="js/intelligence/document-fingerprint.js?v=1"></script>
   <script src="js/intelligence/template-engine.js?v=1"></script>
   <script src="js/intelligence/correction-learner.js?v=2"></script>
-  <script src="js/voice-engine.js?v=50"></script>
+  <script src="js/voice-engine.js?v=51"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
   <script src="js/ai/global-config.js?v=39"></script>
   <script src="js/offline-ocr.js?v=40"></script>
@@ -1316,7 +1323,7 @@
   <script src="js/asr/whisper-engine.js?v=59"></script>
   <script src="js/asr/webspeech-engine.js?v=42"></script>
   <script src="js/asr/model-manager.js?v=56"></script>
-  <script src="js/asr/asr-manager.js?v=59"></script>
+  <script src="js/asr/asr-manager.js?v=60"></script>
   <script src="js/voice/voice-parser.js?v=39"></script>
   <script src="js/voice/voice-sr.js?v=58"></script>
   <script src="js/voice/voice-qa.js?v=40"></script>

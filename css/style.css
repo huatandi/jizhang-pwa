@@ -3148,13 +3148,16 @@ select option {
 /* 日期/时间输入框：暗色主题 → 日历/时钟图标用白色渲染，否则深色看不见（V5） */
 input[type="date"], input[type="datetime-local"], input[type="time"], input[type="month"], input[type="week"] {
   color-scheme: dark;
+  -webkit-color-scheme: dark;
 }
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="datetime-local"]::-webkit-calendar-picker-indicator,
 input[type="time"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) grayscale(1) brightness(1.7);
-  opacity: 0.92;
+  filter: invert(1) grayscale(1) brightness(1.9);
+  opacity: 0.95;
   cursor: pointer;
+  background: transparent;
+  color: #fff;
 }
 /* 收入/支出/进货 弹窗底部：话筒与「保存」同尺寸/圆角/琥珀渐变（V5） */
 .quick-footer .voice-btn {

@@ -136,10 +136,10 @@ async function saveIncome() {
   const d = {
     date: document.getElementById('iDate').value,
     project: document.getElementById('iProject').value,
-    pay_method: '',
+    pay_method: '', // 收款方式已从界面移除（V5）
     account: document.getElementById('iAccount').value,
     amount: document.getElementById('iAmount').value,
-    discount: document.getElementById('iDiscount').value,
+    discount: document.getElementById('iDiscount').value, // 未入金额（刷卡未入账户的金额）
     card_pending_account: document.getElementById('iCardPending').value,
     handler: document.getElementById('iHandler').value,
     remark: document.getElementById('iRemark').value,

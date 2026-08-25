@@ -437,9 +437,9 @@
           if (d.supplier) DB.prepare('INSERT OR IGNORE INTO suppliers (name) VALUES (?)').run(d.supplier);
         } else {
           const baseAmount = toBaseAmount(d.amount, currency);
-          r = DB.prepare(`INSERT INTO expense (date, category, amount, account, handler, payee, remark, voucher, mode, currency)
+          r = DB.prepare(`INSERT INTO expense (date, category, amount, account, handler, remark, voucher, mode, currency, payee)
             VALUES (?,?,?,?,?,?,?,?,?,?)`)
-            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.payee || '', d.remark || '', d.voucher || '', mode, currency);
+            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.remark || '', d.voucher || '', mode, currency, d.payee || '');
         }
         return ok({ id: r.lastInsertRowid, currency });
       }
@@ -460,8 +460,8 @@
             .run(d.doc_date || '', d.supplier || '', totalBase, d.pay_method || '', paidBase, d.status || '', d.remark || '', currency, Number(id), mode);
         } else {
           const baseAmount = toBaseAmount(d.amount, currency);
-          r = DB.prepare(`UPDATE expense SET date=?, category=?, amount=?, account=?, handler=?, payee=?, remark=?, voucher=?, currency=? WHERE id=? AND mode=?`)
-            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.payee || '', d.remark || '', d.voucher || '', currency, Number(id), mode);
+          r = DB.prepare(`UPDATE expense SET date=?, category=?, amount=?, account=?, handler=?, remark=?, voucher=?, currency=?, payee=? WHERE id=? AND mode=?`)
+            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.remark || '', d.voucher || '', currency, d.payee || '', Number(id), mode);
         }
         if (r.changes === 0) return fail('记录不存在或不属于当前账本', 404);
         return ok({ ok: true });
@@ -774,8 +774,8 @@
           : DB.prepare("SELECT COUNT(*) c FROM income WHERE date=? AND project=? AND amount=? AND remark=? AND mode=?").get(todayStr, rule.category || '', num(rule.amount), remarkTag, mode).c;
         if (dup > 0) { skipped++; continue; }
         if (rule.type === 'expense') {
-          DB.prepare(`INSERT INTO expense (date, category, amount, account, handler, payee, remark, mode) VALUES (?,?,?,?,?,?,?,?)`)
-            .run(todayStr, rule.category || '', num(rule.amount), rule.account || '', '', rule.payee || '', remarkTag, mode);
+          DB.prepare(`INSERT INTO expense (date, category, amount, account, handler, remark, mode, payee) VALUES (?,?,?,?,?,?,?,?)`)
+            .run(todayStr, rule.category || '', num(rule.amount), rule.account || '', '', remarkTag, mode, '');
         } else {
           DB.prepare(`INSERT INTO income (date, project, pay_method, account, amount, handler, remark, mode) VALUES (?,?,?,?,?,?,?,?)`)
             .run(todayStr, rule.category || '', '', rule.account || '', num(rule.amount), '', remarkTag, mode);

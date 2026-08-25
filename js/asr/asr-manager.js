@@ -73,14 +73,16 @@
 
     /** 选择引擎：本地优先，失败降级在线（需授权）；forceOnline 时直接在线 */
     async _selectEngine() {
-      // forceOnline：跳过 Whisper（含已缓存的 local mode），直接 WebSpeech
+      // forceOnline：跳过 Whisper（含已缓存的 local mode），直接 WebSpeech。
+      // ⚠️ 隐私门：LOCAL_ONLY 下即使 forceOnline 也绝不启用在线（V5 保险13）。
       if (this.opts.forceOnline) {
-        if (global.AsrKit.webspeechSupported) {
+        if (this._privacyAllowsOnline() && global.AsrKit.webspeechSupported) {
           this.engine = new global.AsrKit.WebSpeechEngine();
           this.mode = 'online';
           return this.engine;
         }
         const err = new Error(ERR.ASR_FAILED);
+        if (!this._privacyAllowsOnline()) err.privacyBlocked = true;
         throw err;
       }
       if (this.mode === 'local') return this.engine;
@@ -90,12 +92,13 @@
       const cb = global.AsrKit.circuitBreaker;
       if (cb && cb.isDisabled('whisper')) {
         console.warn('[asr] Whisper 当前被熔断(连续失败),直接走 fallback');
-        if (this.allowOnline && global.AsrKit.webspeechSupported) {
+        if (this.allowOnline && this._privacyAllowsOnline() && global.AsrKit.webspeechSupported) {
           this.engine = new global.AsrKit.WebSpeechEngine();
           this.mode = 'online';
           return this.engine;
         }
         const err = new Error(ERR.ASR_FAILED);
+        if (!this._privacyAllowsOnline()) err.privacyBlocked = true;
         throw err;
       }
       const WhisperEngine = global.AsrKit.WhisperEngine;
