@@ -891,7 +891,6 @@
           </label>
           <label>日期 <input type="date" id="iDate" required></label>
           <label>收入分类 <select id="iProject"></select></label>
-          <label>收款方式 <select id="iPayMethod"></select></label>
           <label>账户 <select id="iAccount"></select></label>
           <label>金额
             <div class="amount-row">
@@ -899,7 +898,7 @@
               <select id="iCurrency" class="currency-select" title="币种（自动换算为基准币种入账）"></select>
             </div>
           </label>
-          <label>优惠 <input type="number" id="iDiscount" min="0" step="0.01" placeholder="0.00"></label>
+          <label>未入金额 <input type="number" id="iDiscount" min="0" step="0.01" placeholder="0.00" title="刷卡未入账户的金额"></label>
           <label>刷卡未入账户 <select id="iCardPending"></select></label>
           <label>经手人 <input type="text" id="iHandler" placeholder="经手人姓名"></label>
           <label class="full">备注 <input type="text" id="iRemark" placeholder="备注信息"></label>
@@ -968,6 +967,7 @@
             <button class="btn-small" onclick="saveQuickTemplate('expense')" title="把当前填写的支出保存为模板">💾 存为模板</button>
           </label>
           <label>日期 <input type="date" id="eDate" required></label>
+          <label>收款人 <input type="text" id="ePayee" placeholder="收款人姓名/单位"></label>
           <label>支出项目 <select id="eCategory"></select></label>
           <label>金额
             <div class="amount-row">
@@ -1253,8 +1253,8 @@
   <script src="js/recognition/qr-engine.js?v=3"></script>
   <script src="js/recognition/index.js?v=1"></script>
 
-  <script src="js/offline-db.js?v=44"></script>
-  <script src="js/offline-backend.js?v=45"></script>
+  <script src="js/offline-db.js?v=45"></script>
+  <script src="js/offline-backend.js?v=46"></script>
   <script src="js/voice/personal-voice-memory.js?v=5"></script>
   <!-- Intelligence Layer：Field Evidence / Conflict Resolver（V4 Phase 1） -->
   <script src="js/intelligence/evidence-engine.js?v=1"></script>
@@ -1335,9 +1335,9 @@
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
   <script src="js/voice/reminders.js?v=74"></script>
   <script src="js/voice/correction-engine.js?v=1"></script>
-  <script src="js/voice/quick-voice.js?v=71"></script>
-  <script src="js/ledger-crud.js?v=43"></script>
-  <script src="js/ai/ai-workbench.js?v=76"></script>
+  <script src="js/voice/quick-voice.js?v=72"></script>
+  <script src="js/ledger-crud.js?v=44"></script>
+  <script src="js/ai/ai-workbench.js?v=77"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=38"></script>
   <!-- ===== 参考汇率工具（Exchange Rate Engine V1.0）=====

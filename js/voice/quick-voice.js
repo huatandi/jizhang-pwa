@@ -1351,7 +1351,7 @@ async function saveQuick() {
     }
   }
 
-  // 语音识别 → 填入新增收入字段（iDate/iAmount/iProject/iPayMethod/iAccount/iRemark）
+  // 语音识别 → 填入新增收入字段（iDate/iAmount/iProject/iAccount/iRemark）
   function applyIncomeVoiceText(buffer) {
     const ex = window.VoiceEngine ? window.VoiceEngine.extract(buffer, { mode: 'quick', kind: 'income' }) : null;
     if (!ex) { setIncomeVoiceBtnState('done'); return; }

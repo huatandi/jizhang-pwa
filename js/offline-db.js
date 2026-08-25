@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS purchase (
 CREATE TABLE IF NOT EXISTS expense (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT NOT NULL, category TEXT DEFAULT '', amount REAL DEFAULT 0, account TEXT DEFAULT '',
-  handler TEXT DEFAULT '', remark TEXT DEFAULT '', voucher TEXT DEFAULT '', mode TEXT DEFAULT 'business', currency TEXT DEFAULT 'MXN'
+  handler TEXT DEFAULT '', payee TEXT DEFAULT '', remark TEXT DEFAULT '', voucher TEXT DEFAULT '', mode TEXT DEFAULT 'business', currency TEXT DEFAULT 'MXN'
 );
 CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL);
 CREATE TABLE IF NOT EXISTS options (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -159,6 +159,12 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
     const saved = await idbLoad(DB_KEY);
     if (saved && saved.length) {
       db = new SQL.Database(new Uint8Array(saved));
+      // 旧库迁移：expense 表补 payee 收款人列（历史版本无此列）
+      try {
+        const cols = db.exec("PRAGMA table_info(expense)");
+        const hasPayee = cols.length && cols[0].values.some(v => v[1] === 'payee');
+        if (!hasPayee) db.exec('ALTER TABLE expense ADD COLUMN payee TEXT DEFAULT \'\'');
+      } catch (e) { /* 表不存在或已迁移则跳过 */ }
     } else {
       db = new SQL.Database();
       db.exec(SCHEMA_SQL);

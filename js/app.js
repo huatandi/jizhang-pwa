@@ -778,7 +778,7 @@ function fillQuickTemplates(type) {
 async function saveQuickTemplate(type) {
   const fields = type === 'income' ? {
     project: document.getElementById('iProject').value,
-    pay_method: document.getElementById('iPayMethod').value,
+    pay_method: '',
     account: document.getElementById('iAccount').value,
     card_pending_account: document.getElementById('iCardPending').value,
     handler: document.getElementById('iHandler').value,
@@ -818,7 +818,6 @@ function applyQuickTemplate(type, name) {
   const f = t.fields;
   if (type === 'income') {
     if (f.project && document.getElementById('iProject')) document.getElementById('iProject').value = f.project;
-    if (f.pay_method && document.getElementById('iPayMethod')) document.getElementById('iPayMethod').value = f.pay_method;
     if (f.account && document.getElementById('iAccount')) document.getElementById('iAccount').value = f.account;
     if (f.card_pending_account && document.getElementById('iCardPending')) document.getElementById('iCardPending').value = f.card_pending_account;
     if (f.handler) document.getElementById('iHandler').value = f.handler;

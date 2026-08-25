@@ -2267,9 +2267,6 @@ async function wbSave() {
         const proj = document.getElementById('iProject');
         const projectName = fields.company || fields.merchant || '';
         if (proj && projectName && [...proj.options].some(o => o.value === projectName)) proj.value = projectName;
-        const pay = document.getElementById('iPayMethod');
-        const payName = fields.bank_receiver || fields.bank_payer || (fields.account_tail ? '尾号' + fields.account_tail : '');
-        if (pay && payName && [...pay.options].some(o => o.value === payName)) pay.value = payName;
         const acc = document.getElementById('iAccount');
         const accName = fields.bank_receiver || fields.bank_payer || (options.accounts && options.accounts[0]) || '';
         if (acc && accName && [...acc.options].some(o => o.value === accName)) acc.value = accName;
