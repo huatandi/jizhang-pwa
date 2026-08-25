@@ -350,6 +350,11 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 }
 .kpi-label { font-size: 12px; color: var(--text-3); display: block; letter-spacing: 0.5px; }
 .kpi-value { font-size: 26px; font-weight: 800; margin-top: 4px; display: block; font-variant-numeric: tabular-nums; color: var(--text); }
+/* 同比环比四卡主题色（与系统色板和谐）：金=收入环比 / 红=支出环比 / 绿=收入同比 / 青=支出同比 */
+.kpi-cmp-income-mom { color: #ffb020; }
+.kpi-cmp-expense-mom { color: #f87171; }
+.kpi-cmp-income-yoy { color: #22c55e; }
+.kpi-cmp-expense-yoy { color: #2dd4bf; }
 .kpi-trend { font-size: 12px; margin-top: 4px; color: var(--green); font-weight: 600; }
 .kpi-badge {
   position: absolute; top: 14px; right: 14px;
@@ -433,7 +438,7 @@ td.amount.negative { color: var(--red); }
   margin: 2px 10px 2px 0;
   transition: var(--transition);
 }
-.income-pair:hover { border-color: var(--primary); background: #24344d; }
+.income-pair:hover { border-color: var(--primary); background: #24344d; cursor: pointer; }
 .income-pair .amount { font-size: 15px; }
 .pair-remark {
   font-size: 12px; color: var(--text-3);
@@ -1912,15 +1917,23 @@ select option {
 .fx-meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: #94a3b8; }
 
 .fx-fav { margin-bottom: 12px; }
-.fx-fav-title { font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 8px; }
+.fx-fav-title { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 8px; }
+.fx-fav-label { display: inline-flex; align-items: center; }
 .fx-fav-hint { font-size: 11px; font-weight: 400; color: #94a3b8; }
-.fx-fav-edit {
-  float: right; font-size: 11px; font-weight: 600; color: var(--primary);
+/* 标题行内「添加」小按钮：与「常用/编辑」同字号，缩小容器 */
+.fx-fav-add { display: inline-flex; margin: 0; }
+.fx-fav-add-btn {
+  font-size: 13px; font-weight: 600; color: var(--primary);
   cursor: pointer; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--surface); transition: var(--transition); user-select: none;
+  background: var(--surface); transition: var(--transition); user-select: none; line-height: 1.4;
+}
+.fx-fav-add-btn:hover { border-color: var(--primary); background: var(--primary-soft); }
+.fx-fav-edit {
+  font-size: 13px; font-weight: 600; color: var(--primary);
+  cursor: pointer; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface); transition: var(--transition); user-select: none; line-height: 1.4;
 }
 .fx-fav-edit:hover { border-color: var(--primary); background: var(--primary-soft); }
-.fx-fav-add { margin-top: 8px; text-align: center; }
 .fx-fav-item.editing { cursor: default; }
 .fx-fav-item .fx-fav-del {
   position: absolute; top: 4px; right: 4px; width: 20px; height: 20px;
@@ -3506,4 +3519,71 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 @keyframes prSpin {
   to { transform: rotate(360deg); }
 }
+
+/* ==================== Weather Intelligence（天气预备） ==================== */
+.weather-card { padding: 12px 14px; }
+.weather-mini {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  cursor: pointer; padding: 4px 2px; flex-wrap: wrap;
+}
+.weather-mini:hover { opacity: .85; }
+.weather-mini-empty { justify-content: center; color: var(--text-3); font-size: 13px; cursor: default; }
+.weather-mini-left { display: flex; align-items: center; gap: 10px; }
+.weather-mini-icon { font-size: 30px; }
+.weather-mini-main { display: flex; flex-direction: column; }
+.weather-mini-temp { font-size: 24px; font-weight: 800; color: var(--text); line-height: 1.1; }
+.weather-mini-sub { font-size: 12px; color: var(--text-2); }
+.weather-mini-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.weather-mini-ev { font-size: 12px; color: var(--text-1); }
+.weather-mini-upd { font-size: 11px; color: #94a3b8; }
+
+.weather-modal { max-width: 460px; }
+.weather-modal-body { padding: 4px 2px; }
+.weather-detail-top { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.weather-detail-loc { font-size: 14px; font-weight: 700; color: var(--text-1); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.weather-detail-upd { font-size: 11px; font-weight: 400; color: #94a3b8; }
+.weather-detail-cur { display: flex; align-items: center; gap: 14px; }
+.weather-detail-icon { font-size: 48px; }
+.weather-detail-temp { font-size: 42px; font-weight: 800; color: var(--text); }
+.weather-detail-side { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--text-2); }
+.weather-detail-empty { text-align: center; color: var(--text-3); padding: 30px 10px; font-size: 14px; }
+
+/* 事件卡片 */
+.weather-events { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.weather-events-empty { font-size: 13px; color: var(--text-3); text-align: center; padding: 14px; border: 1px dashed var(--border); border-radius: 10px; margin-bottom: 12px; }
+.weather-ev { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface2); }
+.weather-ev-rain { border-left: 3px solid #38bdf8; }
+.weather-ev-wind { border-left: 3px solid #fbbf24; }
+.weather-ev-head { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.weather-ev-sev { font-size: 11px; font-weight: 600; color: var(--primary); background: var(--primary-soft); padding: 1px 8px; border-radius: 20px; }
+.weather-ev-times { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-top: 6px; }
+.weather-ev-times b { color: var(--text-1); }
+.weather-ev-bar { position: relative; height: 6px; background: #1e293b; border-radius: 3px; margin: 8px 0 6px; }
+.weather-ev-peak { position: absolute; top: -4px; transform: translateX(-50%); color: var(--primary); font-size: 12px; }
+.weather-ev-meta { font-size: 12px; color: var(--text-2); }
+
+/* 未来 7 天 */
+.weather-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.weather-day { border: 1px solid var(--border); border-radius: 10px; padding: 8px 6px; text-align: center; cursor: pointer; transition: var(--transition); background: var(--surface2); }
+.weather-day:hover { border-color: var(--primary); }
+.weather-day-name { font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
+.weather-day-icon { font-size: 22px; min-height: 26px; }
+.weather-day-wind { font-size: 12px; }
+.weather-day-temp { font-size: 12px; color: var(--text-1); }
+.weather-day-max { font-weight: 700; }
+.weather-day-min { color: var(--text-3); }
+.weather-day-rain { font-size: 11px; color: #38bdf8; min-height: 15px; }
+.weather-day-detail { display: none; margin-top: 6px; text-align: left; }
+.weather-day-ev { font-size: 11px; color: var(--text-2); padding: 2px 0; border-top: 1px dashed var(--border); }
+
+/* 逐小时 */
+.weather-hour-toggle { font-size: 13px; color: var(--primary); cursor: pointer; text-align: center; padding: 6px; }
+.weather-hourly { max-height: 260px; overflow-y: auto; margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; }
+.weather-hour-row { display: flex; align-items: center; gap: 10px; padding: 6px 12px; font-size: 13px; border-bottom: 1px solid var(--border-soft); }
+.weather-hour-row:last-child { border-bottom: none; }
+.weather-hour-t { color: var(--text-3); width: 44px; }
+.weather-hour-i { font-size: 16px; width: 24px; }
+.weather-hour-temp { color: var(--text-1); }
+.weather-hour-rain { color: #38bdf8; font-size: 12px; }
+.weather-hour-wind { font-size: 12px; }
 

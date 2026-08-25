@@ -22,15 +22,6 @@
   let allowOnline = false; // 用户未授权在线时，Whisper 不可用则报错
   let sessionId = 0;       // 会话 ID：每次 listen/stop 递增，隔离旧回调
 
-  // 默认语音语言（BCP-47）：跟随 global-config（本币地区 → 浏览器语言）
-  function privacyMode() {
-    try {
-      const P = global.AIPrivacy;
-      if (P && typeof P.getMode === 'function') return P.getMode() || 'local_only';
-    } catch (e) { /* ignore */ }
-    return 'local_only';
-  }
-
   function defaultVoiceLang() {
     const gc = global.AIKit && global.AIKit.globalConfig;
     if (gc && gc.detectLang) {
@@ -118,20 +109,25 @@
 
   function _doListen(opts, cb, sid) {
     activeCb = cb || null;
-    // 在线回退（WebSpeech 系统语音识别）默认遵循隐私策略，而非恒定开启：
-    //   local_only    → 默认 false（绝不联网）
-    //   local_first/ai_assist → 默认 true（本地失败才降级，由 AsrManager 隐私门兜底）
-    // 调用方显式传 opts.allowOnline 时以其为准；LOCAL_ONLY 仍由 AsrManager._privacyAllowsOnline 强制拦截。
-    const modeName = privacyMode();
+    // 语音识别引擎模式（设置页，localStorage）：
+    //   auto   → 本地 Whisper 优先，失败降级系统语音（WebSpeech，输入法级，不涉及账目数据外发）
+    //   local  → 仅本地 Whisper，绝不联网
+    //   online → 直接用系统语音 WebSpeech（绕开本地模型下载）
+    // 在线回退（WebSpeech）是浏览器系统能力，与 AI 分析外发（OCR/文本 AI）不同，
+    // 不把账目数据发给第三方——local_only 隐私门只拦截后者。
+    let engMode = 'auto';
+    try { engMode = (global.localStorage && global.localStorage.getItem('sm_voice_engine_mode')) || 'auto'; } catch (e) {}
+    if (!['auto', 'local', 'online'].includes(engMode)) engMode = 'auto';
     allowOnline = opts && opts.allowOnline != null
       ? !!opts.allowOnline
-      : (modeName !== 'local_only');
+      : (engMode !== 'local');
     const mgr = _ensureManager();
     mgr.allowOnline = allowOnline;
     // forceOnline：仅本次生效。Whisper 连续失败后强制直接用 WebSpeech（跳过本地模型初始化）。
     // 注意：不清理会导致后续所有会话永久 forceOnline —— 每次按 opts 显式设置/清除。
     mgr.opts = mgr.opts || {};
-    if (opts && opts.forceOnline) mgr.opts.forceOnline = true;
+    const forceOnline = (opts && opts.forceOnline) || engMode === 'online';
+    if (forceOnline) mgr.opts.forceOnline = true;
     else delete mgr.opts.forceOnline;
     mgr.setLang((opts && opts.lang) || defaultVoiceLang());
     const guard = (fn) => (...args) => { if (sid === sessionId) fn(...args); };

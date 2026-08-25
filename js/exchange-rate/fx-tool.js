@@ -284,8 +284,6 @@
     if (hint) hint.textContent = `点击查看对 ${ref} 参考汇率`;
     const editBtn = el('fxFavEditBtn');
     if (editBtn) editBtn.textContent = state.editFav ? '✅ 完成' : '✏️ 编辑';
-    const addRow = el('fxFavAddRow');
-    if (addRow) addRow.hidden = false; // 添加入口常显，无需进入编辑模式
     // 1 from ≈ X：以 base 为桥交叉换算。fromRate = 1 base = ? from；codeRate = 1 base = ? code
     // 基准币（base）自身 rate 视为 1（rates 表不存基准自身）
     const refRate = ref === state.base ? { rate: 1 } : state.rates[ref];

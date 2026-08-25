@@ -92,7 +92,6 @@ function openIncomeModal(prefillDate) {
   document.getElementById('iHandler').value = '';
   document.getElementById('iRemark').value = '';
   fillSelect('iProject', options.departments, true);
-  fillSelect('iPayMethod', options.pay_methods, true);
   fillAccountSelect ? fillAccountSelect('iAccount', true) : fillSelect('iAccount', options.accounts, true);
   fillSelect('iCardPending', options.discount_accounts, true);
   // 功能补充 P5：填充快捷模板下拉
@@ -111,11 +110,9 @@ function editIncome(id) {
     document.getElementById('iHandler').value = r.handler || '';
     document.getElementById('iRemark').value = r.remark || '';
     fillSelect('iProject', options.departments, true);
-    fillSelect('iPayMethod', options.pay_methods, true);
     fillAccountSelect ? fillAccountSelect('iAccount', true) : fillSelect('iAccount', options.accounts, true);
     fillSelect('iCardPending', options.discount_accounts, true);
     document.getElementById('iProject').value = r.project;
-    document.getElementById('iPayMethod').value = r.pay_method;
     document.getElementById('iAccount').value = r.account;
     document.getElementById('iCardPending').value = r.card_pending_account || '';
     // 功能补充 P4：编辑时金额已是基准币种，币种固定为基准（避免二次换算误导）
@@ -139,10 +136,10 @@ async function saveIncome() {
   const d = {
     date: document.getElementById('iDate').value,
     project: document.getElementById('iProject').value,
-    pay_method: document.getElementById('iPayMethod').value,
+    pay_method: '', // 收款方式已从界面移除（V5）
     account: document.getElementById('iAccount').value,
     amount: document.getElementById('iAmount').value,
-    discount: document.getElementById('iDiscount').value,
+    discount: document.getElementById('iDiscount').value, // 未入金额（刷卡未入账户的金额）
     card_pending_account: document.getElementById('iCardPending').value,
     handler: document.getElementById('iHandler').value,
     remark: document.getElementById('iRemark').value,
@@ -208,7 +205,7 @@ async function renderSuppliers() {
     return `
     <tr>
       <td><span class="tag tag-blue">${escapeHtml(r.name)}</span> ${cleared}</td>
-      <td class="amount">${r.purchase_count}</td>
+      <td class="amount">${Number(r.discount) ? (Number(r.discount) > 0 ? '¥' + fmtMoney(r.discount) : '超付 ¥' + fmtMoney(-r.discount)) : ''}</td>
       <td class="amount">¥${fmtMoney(r.total_amount)}</td>
       <td class="amount positive">${Number(r.paid_amount) ? '¥' + fmtMoney(r.paid_amount) : ''}</td>
       <td class="amount">${bal}</td>
@@ -336,7 +333,7 @@ async function renderPurchase() {
       <td>${fmtDate(r.doc_date)}</td>
       <td><a class="query-link" onclick="openQuery('supplier','${escJs(r.supplier)}')">${escapeHtml(r.supplier)}</a></td>
       <td class="amount">${total ? '¥' + fmtMoney(total) : ''}</td>
-      <td>${escapeHtml(r.pay_method)}</td>
+      <td>${escapeHtml(r.status)}</td>
       <td class="amount positive">${paid ? '¥' + fmtMoney(paid) : ''}</td>
       <td class="amount ${unpaid > 0 ? 'negative' : ''}">${st.cleared ? clearedBadge : (unpaid > 0 ? '¥' + fmtMoney(unpaid) : '')}</td>
       <td>${escapeHtml(r.remark)}</td>
@@ -356,8 +353,7 @@ function openPurchaseModal(prefillDate) {
   document.getElementById('pPaid').value = '';
   document.getElementById('pRemark').value = '';
   fillSelect('pSupplier', options.suppliers, true);
-  fillSelect('pPayMethod', options.pay_methods, true);
-  fillSelect('pStatus', options.status_options, true);
+  fillSelect('pStatus', purchaseStatusOptions(), true);
   openModal('purchaseModal');
 }
 
@@ -372,10 +368,8 @@ function editPurchase(id) {
     document.getElementById('pPaid').value = r.paid_amount;
     document.getElementById('pRemark').value = r.remark || '';
     fillSelect('pSupplier', options.suppliers, true);
-    fillSelect('pPayMethod', options.pay_methods, true);
-    fillSelect('pStatus', options.status_options, true);
+    fillSelect('pStatus', purchaseStatusOptions(), true);
     document.getElementById('pSupplier').value = r.supplier;
-    document.getElementById('pPayMethod').value = r.pay_method || '';
     document.getElementById('pStatus').value = r.status || '';
     openModal('purchaseModal');
   });
@@ -387,7 +381,6 @@ async function savePurchase() {
     doc_date: document.getElementById('pDate').value,
     supplier,
     total_amount: document.getElementById('pTotal').value,
-    pay_method: document.getElementById('pPayMethod').value,
     paid_amount: document.getElementById('pPaid').value,
     status: document.getElementById('pStatus').value,
     remark: document.getElementById('pRemark').value,
@@ -483,9 +476,10 @@ function openExpenseModal(prefillDate) {
   editingExpenseId = null;
   document.getElementById('eDate').value = normalizeDateForInput(deJs(prefillDate));
   document.getElementById('eAmount').value = '';
+  document.getElementById('ePayee').value = '';
   document.getElementById('eHandler').value = '';
   document.getElementById('eRemark').value = '';
-  fillSelect('eCategory', options.expense_categories, true);
+  fillSelect('eCategory', expenseCatOptions(), true);
   fillAccountSelect ? fillAccountSelect('eAccount', true) : fillSelect('eAccount', options.accounts, true);
   // 功能补充 P5：填充快捷模板下拉
   fillQuickTemplates('expense');
@@ -499,9 +493,10 @@ function editExpense(id) {
     editingExpenseId = id;
     document.getElementById('eDate').value = r.date;
     document.getElementById('eAmount').value = r.amount;
+    document.getElementById('ePayee').value = r.payee || '';
     document.getElementById('eHandler').value = r.handler || '';
     document.getElementById('eRemark').value = r.remark || '';
-    fillSelect('eCategory', options.expense_categories, true);
+    fillSelect('eCategory', expenseCatOptions(), true);
     fillAccountSelect ? fillAccountSelect('eAccount', true) : fillSelect('eAccount', options.accounts, true);
     document.getElementById('eCategory').value = r.category;
     document.getElementById('eAccount').value = r.account;
@@ -515,6 +510,7 @@ async function saveExpense() {
     category: document.getElementById('eCategory').value,
     amount: document.getElementById('eAmount').value,
     account: document.getElementById('eAccount').value,
+    payee: document.getElementById('ePayee').value,
     handler: document.getElementById('eHandler').value,
     remark: document.getElementById('eRemark').value,
     currency: (document.getElementById('eCurrency') || {}).value || BASE_CURRENCY()

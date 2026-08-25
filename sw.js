@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v141-voice-ocr-v6';
+const CACHE_NAME = 'jizhang-pwa-v150';
 const APP_SHELL = [
   './',
   './index.html',
@@ -134,6 +134,21 @@ const APP_SHELL = [
   './vendor/paddleocr/assets/worker-entry-C9UNuyOJ.js',
   './vendor/sqljs/sql-wasm.js',
   './vendor/sqljs/sql-wasm.wasm',
+  // Weather Intelligence（天气预备）
+  './js/weather/weather-types.js',
+  './js/weather/weather-config.js',
+  './js/weather/weather-provider.js',
+  './js/weather/open-meteo-provider.js',
+  './js/weather/weather-normalizer.js',
+  './js/weather/weather-cache.js',
+  './js/weather/rain-event-resolver.js',
+  './js/weather/wind-event-resolver.js',
+  './js/weather/weather-event-engine.js',
+  './js/weather/weather-diff-engine.js',
+  './js/weather/weather-reminder-engine.js',
+  './js/weather/weather-voice-intent.js',
+  './js/weather/weather-service.js',
+  './js/weather/weather-card.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
 ];

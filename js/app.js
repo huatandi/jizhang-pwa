@@ -312,7 +312,7 @@ async function loadOptions() {
   }
   // 同步语音引擎的选项（分类/账户列表/账户编号随用户配置更新）
   if (window.VoiceEngine) {
-    window.VoiceEngine.setOptions({ expense_categories: options && options.expense_categories, departments: options && options.departments, accounts: options && options.accounts, account_numbers: options && options.account_numbers });
+    window.VoiceEngine.setOptions({ expense_categories: typeof expenseCatOptions === 'function' ? expenseCatOptions() : (options && options.expense_categories), departments: options && options.departments, accounts: options && options.accounts, account_numbers: options && options.account_numbers });
   }
   // 同步 VoiceKit V3（本地解析引擎）的选项访问
   if (window.VoiceKit && window.VoiceKit.setOptionsGetter) {
@@ -517,8 +517,8 @@ async function renderDashboard() {
     // 最近明细（按日期分组，一天一行，参考收入记账页）
     const [incomes, expenses] = await Promise.all([api('/income'), api('/expense')]);
     const all = [
-      ...incomes.slice(0, 30).map(r => ({ date: r.date, type: '收入', tag: 'green', name: r.project || r.account, account: r.account, amount: r.amount, remark: r.remark })),
-      ...expenses.slice(0, 30).map(r => ({ date: r.date, type: '支出', tag: 'red', name: r.category, account: r.account, amount: -r.amount, remark: r.remark }))
+      ...incomes.slice(0, 30).map(r => ({ id: r.id, kind: 'income', date: r.date, type: '收入', tag: 'green', name: r.project || r.account, account: r.account, amount: r.amount, remark: r.remark })),
+      ...expenses.slice(0, 30).map(r => ({ id: r.id, kind: 'expense', date: r.date, type: '支出', tag: 'red', name: r.category, account: r.account, amount: -r.amount, remark: r.remark }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
     // 按日期分组
@@ -533,9 +533,9 @@ async function renderDashboard() {
     const tbody = document.querySelector('#recentTable tbody');
     tbody.innerHTML = dates.map(date => {
       const items = groups[date];
-      // 当日明细：每笔记录显示类型+账户+金额，收入支出一目了然
+      // 当日明细：每笔记录显示类型+账户+金额，收入支出一目了然；双击弹出该笔账目编辑弹窗
       const details = items.map(r => `
-        <span class="income-pair">
+        <span class="income-pair" ondblclick="${r.kind === 'income' ? `editIncome(${r.id})` : `editExpense(${r.id})`}" title="双击编辑该笔明细">
           ${catIconHtml(r.name || '', r.type === '收入' ? 'income' : 'expense')}
           <span class="tag tag-${r.tag}">${r.type}</span>
           <span class="tag tag-blue">${escapeHtml(r.account || '未填')}</span>
@@ -543,11 +543,14 @@ async function renderDashboard() {
           ${r.remark ? `<span class="pair-remark">${escapeHtml(r.remark)}</span>` : ''}
         </span>`).join('');
       const total = items.reduce((s, r) => s + (r.amount || 0), 0);
+      // 双击日期/当日合计 → 编辑该日第一条记录（可在弹窗改数据与日期）
+      const first = items[0] || null;
+      const dblDay = first ? (first.kind === 'income' ? `editIncome(${first.id})` : `editExpense(${first.id})`) : '';
       return `
       <tr>
-        <td class="date-cell"><span class="tag tag-blue">${fmtDate(date)}</span></td>
+        <td class="date-cell"><span class="tag tag-blue" ondblclick="${dblDay}" title="双击编辑日期/内容">${fmtDate(date)}</span></td>
         <td class="account-details">${details}</td>
-        <td class="amount ${total >= 0 ? 'positive' : 'negative'}">¥${fmtMoney(total)}</td>
+        <td class="amount ${total >= 0 ? 'positive' : 'negative'}" ondblclick="${dblDay}" title="双击编辑">¥${fmtMoney(total)}</td>
       </tr>`;
     }).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
 
@@ -591,6 +594,19 @@ function fillSelect(id, arr, empty = false) {
   const sel = document.getElementById(id);
   sel.innerHTML = (empty ? '<option value="">-- 选择 --</option>' : '') +
     arr.map(o => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
+}
+
+// 支出分类统一前置「已付货款」（开店业务固定项，置顶显示）
+function expenseCatOptions() {
+  const base = (options && options.expense_categories) || [];
+  return ['已付货款', ...base.filter(c => c !== '已付货款')];
+}
+
+// 进货货款状态下拉：现金 + 有编号的银行（account_numbers 值）+ 欠款 + 支票 + 清零
+function purchaseStatusOptions() {
+  const numMap = (options && options.account_numbers) || {};
+  const banks = [...new Set(Object.values(numMap).filter(Boolean))];
+  return ['现金', ...banks, '欠款', '支票', '清零'];
 }
 
 // 账户下拉（带语音编号显示）：值仍为账户名，显示为"编号 · 账户名"
@@ -724,7 +740,7 @@ async function saveAccountMeta(nameEncoded) {
     await api('/account-meta/' + encodeURIComponent(name), 'PUT', { initial_balance: Number.isFinite(initial) ? initial : 0, acc_type: accType });
     // 同步语音引擎（账户编号立即生效）
     if (window.VoiceEngine && typeof window.VoiceEngine.setOptions === 'function') {
-      window.VoiceEngine.setOptions({ expense_categories: options.expense_categories, departments: options.departments, accounts: options.accounts, account_numbers: options.account_numbers });
+      window.VoiceEngine.setOptions({ expense_categories: typeof expenseCatOptions === 'function' ? expenseCatOptions() : options.expense_categories, departments: options.departments, accounts: options.accounts, account_numbers: options.account_numbers });
     }
     showToast('✅ 账户「' + name + '」已保存' + (num ? '（语音编号 ' + num + '）' : ''));
     refreshDashboards();
@@ -756,7 +772,7 @@ async function saveAllAccountMeta() {
   await Promise.all(metaP);
   options = await api('/options');
   if (window.VoiceEngine && typeof window.VoiceEngine.setOptions === 'function') {
-    window.VoiceEngine.setOptions({ expense_categories: options.expense_categories, departments: options.departments, accounts: options.accounts, account_numbers: options.account_numbers });
+    window.VoiceEngine.setOptions({ expense_categories: typeof expenseCatOptions === 'function' ? expenseCatOptions() : options.expense_categories, departments: options.departments, accounts: options.accounts, account_numbers: options.account_numbers });
   }
   refreshDashboards();
 }
@@ -778,7 +794,7 @@ function fillQuickTemplates(type) {
 async function saveQuickTemplate(type) {
   const fields = type === 'income' ? {
     project: document.getElementById('iProject').value,
-    pay_method: document.getElementById('iPayMethod').value,
+    pay_method: '', // 收款方式已从界面移除
     account: document.getElementById('iAccount').value,
     card_pending_account: document.getElementById('iCardPending').value,
     handler: document.getElementById('iHandler').value,
@@ -786,6 +802,7 @@ async function saveQuickTemplate(type) {
   } : {
     category: document.getElementById('eCategory').value,
     account: document.getElementById('eAccount').value,
+    payee: document.getElementById('ePayee') ? document.getElementById('ePayee').value : '',
     handler: document.getElementById('eHandler').value,
     remark: document.getElementById('eRemark').value
   };
@@ -818,7 +835,6 @@ function applyQuickTemplate(type, name) {
   const f = t.fields;
   if (type === 'income') {
     if (f.project && document.getElementById('iProject')) document.getElementById('iProject').value = f.project;
-    if (f.pay_method && document.getElementById('iPayMethod')) document.getElementById('iPayMethod').value = f.pay_method;
     if (f.account && document.getElementById('iAccount')) document.getElementById('iAccount').value = f.account;
     if (f.card_pending_account && document.getElementById('iCardPending')) document.getElementById('iCardPending').value = f.card_pending_account;
     if (f.handler) document.getElementById('iHandler').value = f.handler;
@@ -826,6 +842,7 @@ function applyQuickTemplate(type, name) {
   } else {
     if (f.category && document.getElementById('eCategory')) document.getElementById('eCategory').value = f.category;
     if (f.account && document.getElementById('eAccount')) document.getElementById('eAccount').value = f.account;
+    if (f.payee && document.getElementById('ePayee')) document.getElementById('ePayee').value = f.payee;
     if (f.handler) document.getElementById('eHandler').value = f.handler;
     if (f.remark) document.getElementById('eRemark').value = f.remark;
   }
@@ -907,23 +924,22 @@ async function renderMonthly() {
 
 // 同比环比（本月 vs 上月 vs 去年同月）
 function renderMonthlyCompare(tc) {
-  const setKpi = (id, cur, prev, isExpense) => {
+  // 四卡各自主题色（与系统色板和谐）：收入环比=品牌金 / 支出环比=支出红 / 收入同比=健康绿 / 支出同比=对比青
+  const setKpi = (id, cur, prev, theme) => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (cur == null || prev == null) { el.textContent = '—'; el.className = 'kpi-value'; return; }
+    if (cur == null || prev == null) { el.textContent = '—'; el.className = 'kpi-value ' + theme; return; }
     const diff = cur - prev;
     const pct = prev === 0 ? (cur === 0 ? 0 : 100) : Math.round(diff / Math.abs(prev) * 100);
     const up = diff > 0;
-    // 支出上涨是坏，收入上涨是好
-    const good = isExpense ? !up : up;
     el.textContent = `${up ? '+' : ''}${diff.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} (${up ? '+' : ''}${pct}%)`;
-    el.className = 'kpi-value ' + (diff === 0 ? '' : (good ? 'positive' : 'negative'));
+    el.className = 'kpi-value ' + theme;
   };
   if (!tc) return;
-  setKpi('cmpIncomeMoM', tc.current.income, tc.previous.income, false);
-  setKpi('cmpExpenseMoM', tc.current.expense, tc.previous.expense, true);
-  setKpi('cmpIncomeYoY', tc.current.income, tc.last_year.income, false);
-  setKpi('cmpExpenseYoY', tc.current.expense, tc.last_year.expense, true);
+  setKpi('cmpIncomeMoM', tc.current.income, tc.previous.income, 'kpi-cmp-income-mom');
+  setKpi('cmpExpenseMoM', tc.current.expense, tc.previous.expense, 'kpi-cmp-expense-mom');
+  setKpi('cmpIncomeYoY', tc.current.income, tc.last_year.income, 'kpi-cmp-income-yoy');
+  setKpi('cmpExpenseYoY', tc.current.expense, tc.last_year.expense, 'kpi-cmp-expense-yoy');
 
   // 对比图：本月/上月/去年同月 收入+支出 柱状图
   const chart = initChart('chartCompare');
@@ -979,7 +995,7 @@ function setQueryType(t, btn) {
 // 查询下拉选项数据源（按类型）；事项备注为关键词输入
 function getQueryItemList() {
   if (queryType === 'supplier') return options.suppliers || [];
-  if (queryType === 'expense_category') return options.expense_categories || [];
+  if (queryType === 'expense_category') return typeof expenseCatOptions === 'function' ? expenseCatOptions() : (options.expense_categories || []);
   if (queryType === 'income_category') return options.departments || [];
   if (queryType === 'account') return options.accounts || [];
   return [];
@@ -1585,6 +1601,18 @@ function refreshSettingUI() {
   fillDataRangeUI();
   // 当地国家选择器回填（国家 → 语言/货币/银行）
   fillCountrySelect();
+  // 语音识别引擎模式回填（localStorage，跟随 VoiceSR）
+  const veEl = document.getElementById('voiceEngineMode');
+  if (veEl) {
+    let ve = 'auto';
+    try { ve = localStorage.getItem('sm_voice_engine_mode') || 'auto'; } catch (e) {}
+    veEl.value = ['auto', 'local', 'online'].includes(ve) ? ve : 'auto';
+  }
+  // 天气设置回填（WeatherSettings.fill）
+  try {
+    const ws = window.WeatherSettings;
+    if (ws && ws.fill) ws.fill();
+  } catch (e) { console.warn('[weather] 设置回填跳过:', e && e.message || e); }
 }
 
 /* ================== 当地国家：语言 / 货币 / 银行 ================== */
@@ -1652,7 +1680,7 @@ async function applyCountrySetting() {
     // 4) 重新加载选项并应用
     options = await api('/options');
     if (window.VoiceEngine) {
-      window.VoiceEngine.setOptions({ expense_categories: options.expense_categories, departments: options.departments, accounts: options.accounts });
+      window.VoiceEngine.setOptions({ expense_categories: typeof expenseCatOptions === 'function' ? expenseCatOptions() : options.expense_categories, departments: options.departments, accounts: options.accounts });
     }
     // 5) 保存 settings（含 country）
     try { settings = await api('/settings', 'POST', settings); } catch (e) { /* settings 保存失败不影响 */ }
@@ -1750,7 +1778,7 @@ function syncAlarmVolumeLabel(val) {
 function renderCatBudgetList() {
   const box = document.getElementById('catBudgetList');
   if (!box) return;
-  const cats = options.expense_categories || [];
+  const cats = (typeof expenseCatOptions === 'function' ? expenseCatOptions() : (options.expense_categories || []));
   const saved = (settings.budget && settings.budget.categories) || {};
   if (!cats.length) { box.innerHTML = '<div class="opt-empty">暂无支出分类</div>'; return; }
   box.innerHTML = cats.map(c => {
@@ -1809,6 +1837,11 @@ async function saveSettings(close = true) {
   try {
     settings = await api('/settings', 'POST', settings);
   } catch (e) { return showToast('保存失败: ' + e.message, 'error'); }
+  // 语音识别引擎模式（localStorage，VoiceSR 读取）
+  const veEl2 = document.getElementById('voiceEngineMode');
+  if (veEl2) {
+    try { localStorage.setItem('sm_voice_engine_mode', ['auto', 'local', 'online'].includes(veEl2.value) ? veEl2.value : 'auto'); } catch (e) {}
+  }
   applySettings();
   // 保存的数据范围生效：更新侧边栏 + 当前范围
   if (settings.dataRange) {
@@ -1833,7 +1866,7 @@ async function applyScenePreset(scene, btn, silent) {
     if (!silent && !confirm('切换到「开店经营」模式？\n将显示开店经营的独立数据（此前在家庭模式记的账不会混入），并启用全部功能。\n分类会恢复为经营常用分类。可随时切回。')) return;
     try {
       await api('/options/departments', 'PUT', { list: ['一', '二', '三', '四', '五', '其他'] });
-      await api('/options/expense_categories', 'PUT', { list: ['杂费', '交通', '伙食', '工资', '房租', '店租', '网费', '水费', '电费', '气费', '通讯', '财会', '律师', '装修', '材料', '商厦管理费', '设备', '装饰', '桌椅', '其他'] });
+      await api('/options/expense_categories', 'PUT', { list: ['已付货款', '杂费', '交通', '伙食', '工资', '房租', '店租', '网费', '水费', '电费', '气费', '通讯', '财会', '律师', '装修', '材料', '商厦管理费', '设备', '装饰', '桌椅', '其他'] });
     } catch (e) { return showToast('切换失败: ' + e.message, 'error'); }
     settings.scene = 'business';
     settings.dataMode = 'business';
@@ -1933,7 +1966,7 @@ function renderRecurList() {
 function fillRecurCatSelect() {
   const sel = document.getElementById('recCategory');
   const kind = document.getElementById('recType').value;
-  const cats = kind === 'expense' ? options.expense_categories : options.departments;
+  const cats = kind === 'expense' ? (typeof expenseCatOptions === 'function' ? expenseCatOptions() : options.expense_categories) : options.departments;
   if (sel) fillSelect('recCategory', cats, true);
 }
 
@@ -1987,7 +2020,9 @@ function switchOptTab(btn) {
 }
 
 async function renderOptTags() {
-  const list = options[optCurrentKey] || [];
+  const list = (optCurrentKey === 'expense_categories' && typeof expenseCatOptions === 'function')
+    ? expenseCatOptions()
+    : (options[optCurrentKey] || []);
   document.getElementById('optTags').innerHTML = list.length
     ? list.map(v => `<span class="opt-tag">${escapeHtml(v)} <button class="opt-del" onclick="removeOptionItem('${escJs(v)}')" title="删除">×</button></span>`).join('')
     : '<span class="opt-empty">暂无选项，输入后添加</span>';
@@ -2207,7 +2242,7 @@ const VoiceParser = (window.VoiceKit && Object.keys(window.VoiceKit).length) ? O
 
   // 分类关键词匹配（支出分类 + 收入分类）
   matchCategory(text, kind) {
-    const cats = kind === 'expense' ? options.expense_categories : options.departments;
+    const cats = kind === 'expense' ? (typeof expenseCatOptions === 'function' ? expenseCatOptions() : options.expense_categories) : options.departments;
     const low = String(text || '').toLowerCase();
     const rules = {
       '餐饮': ['餐', '饭', '吃', '奶茶', '咖啡', '外卖', '买菜', '饭店', '早点', '夜宵', '食堂', '火锅', 'pizza', 'comida', 'restaurante', 'restaurant', 'lunch', 'dinner', 'breakfast', 'food', 'eat', 'taco', 'burger', 'cafe', 'break', 'almuerzo', 'cena', 'desayuno', 'tacos', 'mercado', 'despensa', 'carne', 'frutas', 'verduras', 'pan', 'leche', 'tortilla', 'super', 'comprar comida', 'fruta', 'verdura', 'sopa', 'bebida'],
@@ -2597,7 +2632,7 @@ const VoiceParser = (window.VoiceKit && Object.keys(window.VoiceKit).length) ? O
 if (window.VoiceEngine) {
   const VE = window.VoiceEngine;
   // 注入当前选项（分类/账户列表）——loadOptions 登录后会用真实数据再次注入
-  VE.setOptions({ expense_categories: options && options.expense_categories, departments: options && options.departments, accounts: options && options.accounts });
+  VE.setOptions({ expense_categories: (typeof expenseCatOptions === 'function' ? expenseCatOptions() : (options && options.expense_categories)), departments: options && options.departments, accounts: options && options.accounts });
   // 覆盖 VoiceParser 的解析方法（保留 parseDate/parseAmount 等旧名）
   Object.assign(VoiceParser, {
     parseAmount: VE.parseAmount,
@@ -2989,6 +3024,17 @@ async function initAfterLogin() {
   fillQuerySelect();
   runQuery();
   await renderDashboard();
+  // Weather Intelligence：登录后刷新天气小卡 + 调度自动刷新（启动/回前台/间隔）
+  try {
+    const wk = window.WeatherKit;
+    if (wk && wk.WeatherService) {
+      wk.WeatherService.refresh({}).then((res) => {
+        const host = document.getElementById('weatherMiniHost');
+        if (host && wk.WeatherCard) wk.WeatherCard.renderMini(host, res);
+      }).catch(() => {});
+      wk.WeatherService.scheduleAutoRefresh({});
+    }
+  } catch (e) { console.warn('[weather] 初始化跳过（不影响主应用）:', e && e.message || e); }
   // 登录后主页面刚显示，图表可能以 0 宽度初始化 → 延迟重排一次（修复堆积左侧）
   resizeVisibleCharts();
   renderIncome();

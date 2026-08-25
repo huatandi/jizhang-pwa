@@ -80,7 +80,8 @@ CREATE TABLE IF NOT EXISTS purchase (
 CREATE TABLE IF NOT EXISTS expense (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT NOT NULL, category TEXT DEFAULT '', amount REAL DEFAULT 0, account TEXT DEFAULT '',
-  handler TEXT DEFAULT '', remark TEXT DEFAULT '', voucher TEXT DEFAULT '', mode TEXT DEFAULT 'business', currency TEXT DEFAULT 'MXN'
+  handler TEXT DEFAULT '', remark TEXT DEFAULT '', voucher TEXT DEFAULT '', mode TEXT DEFAULT 'business', currency TEXT DEFAULT 'MXN',
+  payee TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL);
 CREATE TABLE IF NOT EXISTS options (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -140,7 +141,7 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
     accounts: ['现金', 'BANORTE', 'BANREJIO', 'BANREJO', 'BBVA', 'SAND', 'HSBS', 'CITB', 'SANTANDE', '支票', '欠款', '其他'],
     departments: ['一', '二', '三', '四', '五', '其他'],
     pay_methods: ['现金', '刷卡', '支票', '欠款'],
-    expense_categories: ['杂费', '交通', '伙食', '工资', '房租', '店租', '网费', '水费', '电费', '气费', '通讯', '财会', '律师', '装修', '材料', '商厦管理费', '设备', '装饰', '桌椅', '其他'],
+    expense_categories: ['已付货款', '杂费', '交通', '伙食', '工资', '房租', '店租', '网费', '水费', '电费', '气费', '通讯', '财会', '律师', '装修', '材料', '商厦管理费', '设备', '装饰', '桌椅', '其他'],
     discount_accounts: ['BBVA', 'SAND', 'HSBS', 'CITB', '其他'],
     status_options: ['空', '清零'],
     currencies: ['MXN', 'CNY', 'USD'],
@@ -159,6 +160,12 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
     const saved = await idbLoad(DB_KEY);
     if (saved && saved.length) {
       db = new SQL.Database(new Uint8Array(saved));
+      // 旧库迁移：expense 表补 payee 收款人列（历史版本无此列）
+      try {
+        const cols = db.exec("PRAGMA table_info(expense)");
+        const hasPayee = cols.length && cols[0].values.some(v => v[1] === 'payee');
+        if (!hasPayee) db.exec('ALTER TABLE expense ADD COLUMN payee TEXT DEFAULT \'\'');
+      } catch (e) { /* 表不存在或已迁移则跳过 */ }
     } else {
       db = new SQL.Database();
       db.exec(SCHEMA_SQL);
@@ -169,6 +176,12 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
       stmt.free();
       save();
     }
+    // 旧库迁移（V5）：expense 表缺 payee 列（收款人）→ 补列
+    try {
+      const cols = db.exec("PRAGMA table_info(expense)");
+      const hasPayee = cols && cols[0] && cols[0].values.some(r => r[1] === 'payee');
+      if (!hasPayee) db.exec("ALTER TABLE expense ADD COLUMN payee TEXT DEFAULT ''");
+    } catch (e) { /* 迁移失败不影响 */ }
     return db;
   }
 

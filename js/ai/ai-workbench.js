@@ -182,7 +182,7 @@ function openWorkbenchForFile(file) {
     const t = document.getElementById('wbType');
     if (t) t.value = 'expense';
     try {
-      fillSelect('wbCategory', (options && options.expense_categories) || [], true);
+      fillSelect('wbCategory', (typeof expenseCatOptions === 'function' ? expenseCatOptions() : ((options && options.expense_categories) || [])), true);
     } catch (e) { console.warn('[ai] 分类下拉填充失败（options 未就绪）:', e); }
     showWbOcr('本地识别中…识别完成后文字显示在这里，字段自动填入下方');
     openModal('aiWorkbenchModal');
@@ -490,7 +490,7 @@ function aiReviewCard(r) {
         <label>支出分类 <select id="cCategory-${r.id}" data-field="category">
           ${(() => {
             const aiCat = r.detail && r.detail.category || '';
-            const cats = options.expense_categories || [];
+            const cats = typeof expenseCatOptions === 'function' ? expenseCatOptions() : (options.expense_categories || []);
             const aligned = alignCategory(aiCat, cats);
             if (aligned) return cats.map(c => `<option value="${escapeHtml(c)}" ${c === aligned ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
             if (!cats.length) return `<option value="${escapeHtml(aiCat)}" ${aiCat ? 'selected' : ''}>${escapeHtml(aiCat) || '（选择分类）'}</option>`;
@@ -2267,9 +2267,7 @@ async function wbSave() {
         const proj = document.getElementById('iProject');
         const projectName = fields.company || fields.merchant || '';
         if (proj && projectName && [...proj.options].some(o => o.value === projectName)) proj.value = projectName;
-        const pay = document.getElementById('iPayMethod');
-        const payName = fields.bank_receiver || fields.bank_payer || (fields.account_tail ? '尾号' + fields.account_tail : '');
-        if (pay && payName && [...pay.options].some(o => o.value === payName)) pay.value = payName;
+        // 收款方式已从界面移除（V5）：收款方银行直接作为账户
         const acc = document.getElementById('iAccount');
         const accName = fields.bank_receiver || fields.bank_payer || (options.accounts && options.accounts[0]) || '';
         if (acc && accName && [...acc.options].some(o => o.value === accName)) acc.value = accName;
