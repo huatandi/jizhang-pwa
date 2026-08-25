@@ -350,6 +350,11 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 }
 .kpi-label { font-size: 12px; color: var(--text-3); display: block; letter-spacing: 0.5px; }
 .kpi-value { font-size: 26px; font-weight: 800; margin-top: 4px; display: block; font-variant-numeric: tabular-nums; color: var(--text); }
+/* 同比环比四卡主题色（与系统色板和谐）：金=收入环比 / 红=支出环比 / 绿=收入同比 / 青=支出同比 */
+.kpi-cmp-income-mom { color: #ffb020; }
+.kpi-cmp-expense-mom { color: #f87171; }
+.kpi-cmp-income-yoy { color: #22c55e; }
+.kpi-cmp-expense-yoy { color: #2dd4bf; }
 .kpi-trend { font-size: 12px; margin-top: 4px; color: var(--green); font-weight: 600; }
 .kpi-badge {
   position: absolute; top: 14px; right: 14px;

@@ -924,23 +924,22 @@ async function renderMonthly() {
 
 // 同比环比（本月 vs 上月 vs 去年同月）
 function renderMonthlyCompare(tc) {
-  const setKpi = (id, cur, prev, isExpense) => {
+  // 四卡各自主题色（与系统色板和谐）：收入环比=品牌金 / 支出环比=支出红 / 收入同比=健康绿 / 支出同比=对比青
+  const setKpi = (id, cur, prev, theme) => {
     const el = document.getElementById(id);
     if (!el) return;
-    if (cur == null || prev == null) { el.textContent = '—'; el.className = 'kpi-value'; return; }
+    if (cur == null || prev == null) { el.textContent = '—'; el.className = 'kpi-value ' + theme; return; }
     const diff = cur - prev;
     const pct = prev === 0 ? (cur === 0 ? 0 : 100) : Math.round(diff / Math.abs(prev) * 100);
     const up = diff > 0;
-    // 支出上涨是坏，收入上涨是好
-    const good = isExpense ? !up : up;
     el.textContent = `${up ? '+' : ''}${diff.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} (${up ? '+' : ''}${pct}%)`;
-    el.className = 'kpi-value ' + (diff === 0 ? '' : (good ? 'positive' : 'negative'));
+    el.className = 'kpi-value ' + theme;
   };
   if (!tc) return;
-  setKpi('cmpIncomeMoM', tc.current.income, tc.previous.income, false);
-  setKpi('cmpExpenseMoM', tc.current.expense, tc.previous.expense, true);
-  setKpi('cmpIncomeYoY', tc.current.income, tc.last_year.income, false);
-  setKpi('cmpExpenseYoY', tc.current.expense, tc.last_year.expense, true);
+  setKpi('cmpIncomeMoM', tc.current.income, tc.previous.income, 'kpi-cmp-income-mom');
+  setKpi('cmpExpenseMoM', tc.current.expense, tc.previous.expense, 'kpi-cmp-expense-mom');
+  setKpi('cmpIncomeYoY', tc.current.income, tc.last_year.income, 'kpi-cmp-income-yoy');
+  setKpi('cmpExpenseYoY', tc.current.expense, tc.last_year.expense, 'kpi-cmp-expense-yoy');
 
   // 对比图：本月/上月/去年同月 收入+支出 柱状图
   const chart = initChart('chartCompare');
