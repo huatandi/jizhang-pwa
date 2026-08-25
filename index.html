@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=74">
+  <link rel="stylesheet" href="css/style.css?v=70">
   <!-- PaddleOCR SDK 裸模块 import map（V5 §75：vendor/paddleocr/index.mjs 内的 js-yaml / clipper-lib /
        @techstark/opencv-js / onnxruntime-web 是裸 ESM，需 import map 解析。onnxruntime-web 必须与
        vendor/onnx 同版本(1.24.3)——此前误指 1.19.2 造成 JS glue 与 .wasm 版本错配 → function import requires a callable。 -->
@@ -129,11 +129,6 @@
           <p class="subtitle" id="dashRangeText">全部分析基于当前日期范围</p>
         </header>
 
-        <!-- 天气预备（Weather Intelligence） -->
-        <div class="chart-card wide weather-card" id="weatherMiniCard">
-          <div class="weather-mini-host" id="weatherMiniHost"><div class="weather-mini weather-mini-empty">天气加载中…</div></div>
-        </div>
-
         <!-- 参考汇率工具 -->
         <div class="chart-card wide fx-card" id="fxCard" hidden>
           <div class="fx-head">
@@ -174,13 +169,13 @@
           <!-- 常用货币 -->
           <div class="fx-fav">
             <div class="fx-fav-title">
-              <span class="fx-fav-label">⭐ 常用</span>
-              <span class="fx-fav-add" id="fxFavAddRow">
-                <button class="fx-fav-add-btn" onclick="FxTool.openFavPicker()" title="添加常用货币">＋ 添加</button>
-              </span>
-              <span class="fx-fav-edit" id="fxFavEditBtn" onclick="FxTool.toggleEditFav()" title="编辑">✏️ 编辑</span>
+              ⭐ 常用
+              <span class="fx-fav-edit" id="fxFavEditBtn" onclick="FxTool.toggleEditFav()" title="编辑">✏️</span>
             </div>
             <div class="fx-fav-grid" id="fxFavGrid"></div>
+            <div class="fx-fav-add" id="fxFavAddRow" hidden>
+              <button class="btn-small" onclick="FxTool.openFavPicker()">＋ 添加</button>
+            </div>
           </div>
         </div>
 
@@ -383,7 +378,7 @@
           <table id="purchaseTable">
             <thead>
               <tr>
-                <th>电子单日期</th><th>供货商</th><th>进货款</th><th>货款状态</th><th>已付</th><th>未付</th><th>备注</th><th>操作</th>
+                <th>电子单日期</th><th>供货商</th><th>进货款</th><th>付款方式</th><th>已付</th><th>未付</th><th>备注</th><th>操作</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -761,19 +756,6 @@
             <div class="settings-note" style="margin-top:6px">💡 Web 无法调用系统「闹钟」音量通道，铃声输出跟随手机媒体音量。闹铃响时同时叠加语音播报与震动，尽可能保证听到。上传的音乐片段仅保存在本机浏览器（IndexedDB），不会上传服务器。</div>
           </div>
 
-          <!-- 语音识别引擎 -->
-          <div class="settings-section">
-            <div class="settings-title">🎙️ 语音识别引擎 <span class="settings-sub">本地模型下载失败或网络受限时，可改用系统语音识别（联网转写，仅语音内容，不上传账目）</span></div>
-            <div class="opt-add-row" style="margin-bottom:6px">
-              <select id="voiceEngineMode" class="query-select" style="flex:1">
-                <option value="auto">自动（本地优先，失败用系统语音）</option>
-                <option value="local">仅本地（Whisper，不联网）</option>
-                <option value="online">系统语音在线（WebSpeech）</option>
-              </select>
-            </div>
-            <div class="recur-hint">💡 语音识别是系统能力：WebSpeech 只把语音转为文字（Apple/Google 服务器），账目数据仍全在本机，不上传。选「系统语音在线」可完全绕开本地模型下载。</div>
-          </div>
-
           <!-- 个人语音学习（PvM：通用个人语言记忆，本地 IndexedDB，不上传） -->
           <div class="settings-section">
             <div class="settings-title">🧠 个人语音学习 <span class="settings-sub">越用越懂你：记住你的简称/叫法/纠错（如"店里"→华泰店、"三坦德"→Santander）</span></div>
@@ -788,44 +770,6 @@
             </div>
             <div id="pvmListBox" style="margin-top:8px;max-height:200px;overflow-y:auto;font-size:12px"></div>
             <div class="settings-note" style="margin-top:6px">💡 仅保存在本机（IndexedDB）。识别正确时自动记一次；识别错误你改掉后自动学习，下次直接识别。</div>
-          </div>
-
-          <!-- 天气设置（Weather Intelligence） -->
-          <div class="settings-section">
-            <div class="settings-title">🌤️ 天气预备 <span class="settings-sub">数据总览顶部显示今日天气 + 降雨/大风智能提醒（Open-Meteo 免费接口，无需注册）</span></div>
-            <div class="opt-add-row" style="margin-bottom:6px">
-              <input type="text" id="weatherCity" placeholder="城市名（如 Mexicali / 北京 / CDMX）">
-              <button class="btn-primary" onclick="WeatherSettings.saveCity()">💾 保存城市</button>
-              <button class="btn-small" onclick="WeatherSettings.useGPS()" title="用当前定位（需授权）">📍 定位</button>
-            </div>
-            <div class="recur-hint" id="weatherCityHint">例：Mexicali、北京、Mexico City。保存后总览页自动显示天气。</div>
-            <div class="alarm-settings-row" style="margin-top:8px;flex-wrap:wrap;gap:8px">
-              <label class="switch-row"><span>☔ 降雨提醒</span><input type="checkbox" id="weatherRainOn" checked></label>
-              <label class="switch-row"><span>💨 大风提醒</span><input type="checkbox" id="weatherWindOn" checked></label>
-            </div>
-            <div class="opt-add-row" style="margin-top:6px;gap:8px">
-              <label style="font-size:12px;color:var(--text-2);white-space:nowrap">降雨提前
-                <select id="weatherRainAdvance" class="query-select" style="width:auto">
-                  <option value="0">准时</option><option value="15">15分钟</option><option value="30" selected>30分钟</option>
-                  <option value="60">1小时</option><option value="120">2小时</option>
-                </select>
-              </label>
-              <label style="font-size:12px;color:var(--text-2);white-space:nowrap">大风提前
-                <select id="weatherWindAdvance" class="query-select" style="width:auto">
-                  <option value="0">准时</option><option value="30">30分钟</option><option value="60" selected>1小时</option>
-                  <option value="120">2小时</option>
-                </select>
-              </label>
-            </div>
-            <div class="opt-add-row" style="margin-top:6px;gap:8px">
-              <label style="font-size:12px;color:var(--text-2);white-space:nowrap">温度
-                <select id="weatherUnitTemp" class="query-select" style="width:auto"><option value="c" selected>°C</option><option value="f">°F</option></select>
-              </label>
-              <label style="font-size:12px;color:var(--text-2);white-space:nowrap">风速
-                <select id="weatherUnitWind" class="query-select" style="width:auto"><option value="kmh" selected>km/h</option><option value="mph">mph</option></select>
-              </label>
-            </div>
-            <div class="recur-hint" style="margin-top:6px">💡 预报变化会自动更新提醒；网络中断时显示上次数据并标注更新时间。iOS 下 App 完全关闭后无法后台查天气，打开 App 时会自动刷新。</div>
           </div>
 
           <!-- 月度预算 -->
@@ -888,6 +832,18 @@
             </div>
           </div>
 
+          <!-- 多币种与汇率（功能补充 P4） -->
+          <div class="settings-section">
+            <div class="settings-title">💱 多币种与汇率 <span class="settings-sub">记账时选择币种，按汇率自动换算为基准币种（MXN）入账</span></div>
+            <div class="rate-add-row">
+              <select id="rateCurrency" class="currency-select"></select>
+              <input type="number" id="rateValue" min="0.0001" step="0.0001" placeholder="1 MXN = ? 该币种">
+              <button class="btn-primary" onclick="saveExchangeRate()">💾 保存汇率</button>
+            </div>
+            <div class="recur-hint" id="rateHint">例：USD 汇率填 0.055 → 1 MXN = 0.055 USD，100 USD 入账自动换算为 ≈1818 MXN。</div>
+            <div class="rate-list" id="rateList"></div>
+          </div>
+
           <!-- 安全设置 -->
           <div class="settings-section">
             <div class="settings-title">🔒 登录安全 <span class="settings-sub">开店经营 / 家庭明细 共用一个登录密码</span></div>
@@ -918,17 +874,6 @@
     </main>
   </div>
 
-  <!-- ======== 天气详情 Modal（Weather Intelligence） ======== -->
-  <div class="modal-overlay" id="weatherModal">
-    <div class="modal weather-modal">
-      <div class="modal-header">
-        <h3>🌤️ 天气预备</h3>
-        <button class="modal-close" onclick="closeModal('weatherModal')">×</button>
-      </div>
-      <div class="modal-body weather-modal-body"></div>
-    </div>
-  </div>
-
   <!-- ======== 收入 Modal ======== -->
   <div class="modal-overlay" id="incomeModal">
     <div class="modal">
@@ -946,6 +891,7 @@
           </label>
           <label>日期 <input type="date" id="iDate" required></label>
           <label>收入分类 <select id="iProject"></select></label>
+          <label>收款方式 <select id="iPayMethod"></select></label>
           <label>账户 <select id="iAccount"></select></label>
           <label>金额
             <div class="amount-row">
@@ -953,7 +899,7 @@
               <select id="iCurrency" class="currency-select" title="币种（自动换算为基准币种入账）"></select>
             </div>
           </label>
-          <label>未入金额 <input type="number" id="iDiscount" min="0" step="0.01" placeholder="0.00" title="刷卡未入账户的金额"></label>
+          <label>优惠 <input type="number" id="iDiscount" min="0" step="0.01" placeholder="0.00"></label>
           <label>刷卡未入账户 <select id="iCardPending"></select></label>
           <label>经手人 <input type="text" id="iHandler" placeholder="经手人姓名"></label>
           <label class="full">备注 <input type="text" id="iRemark" placeholder="备注信息"></label>
@@ -988,13 +934,14 @@
               <select id="pCurrency" class="currency-select" title="币种（自动换算为基准币种入账）"></select>
             </div>
           </label>
-          <label>货款状态 <select id="pStatus"></select></label>
+          <label>付款方式 <select id="pPayMethod"></select></label>
           <label>已付金额
             <div class="amount-row">
               <input type="number" id="pPaid" min="0" step="0.01" placeholder="0.00">
               <span class="currency-static" id="pCurrencyLabel">MXN</span>
             </div>
           </label>
+          <label>货款状态 <select id="pStatus"></select></label>
           <label class="full">备注 <input type="text" id="pRemark" placeholder="备注信息"></label>
         </div>
       </div>
@@ -1021,7 +968,6 @@
             <button class="btn-small" onclick="saveQuickTemplate('expense')" title="把当前填写的支出保存为模板">💾 存为模板</button>
           </label>
           <label>日期 <input type="date" id="eDate" required></label>
-          <label>收款人 <input type="text" id="ePayee" placeholder="收款人姓名/单位"></label>
           <label>支出项目 <select id="eCategory"></select></label>
           <label>金额
             <div class="amount-row">
@@ -1057,7 +1003,7 @@
           <table id="supplierTable" style="min-width:620px;width:100%;">
             <thead>
               <tr>
-                <th>供应商名称</th><th>折扣金额</th><th>进货总额</th><th>已付货款</th><th>未付 / 折扣</th><th>折扣率</th><th>操作</th>
+                <th>供应商名称</th><th>进货笔数</th><th>进货总额</th><th>已付货款</th><th>未付 / 折扣</th><th>折扣率</th><th>操作</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -1165,13 +1111,6 @@
   </div>
 
   <div class="toast" id="toast"></div>
-
-  <!-- 移动端顶部模式切换条（手机端侧边栏隐藏，需在此切换家庭/开店模式） -->
-  <div class="mobile-modebar" id="mobileModeBar" style="display:none">
-    <span class="mobile-modebar-label">📋 模式</span>
-    <button class="mobile-mode-btn" data-scene="business" onclick="applyScenePreset('business', this, true)">🏪 开店模式</button>
-    <button class="mobile-mode-btn" data-scene="family" onclick="applyScenePreset('family', this, true)">🏠 家庭模式</button>
-  </div>
 
   <!-- 移动端顶部模式切换条（手机端侧边栏隐藏，需在此切换家庭/开店模式） -->
   <div class="mobile-modebar" id="mobileModeBar" style="display:none">
@@ -1314,8 +1253,8 @@
   <script src="js/recognition/qr-engine.js?v=3"></script>
   <script src="js/recognition/index.js?v=1"></script>
 
-  <script src="js/offline-db.js?v=46"></script>
-  <script src="js/offline-backend.js?v=46"></script>
+  <script src="js/offline-db.js?v=44"></script>
+  <script src="js/offline-backend.js?v=45"></script>
   <script src="js/voice/personal-voice-memory.js?v=6"></script>
   <!-- Intelligence Layer：Field Evidence / Conflict Resolver（V4 Phase 1） -->
   <script src="js/intelligence/evidence-engine.js?v=1"></script>
@@ -1344,14 +1283,13 @@
   <script src="js/ocr/preprocess.js?v=41"></script>
   <script src="js/ocr/tesseract-engine.js?v=40"></script>
   <script src="js/ocr/paddle-engine.js?v=48"></script>
-  <script src="js/ocr/ocr-manager.js?v=56"></script>
+  <script src="js/ocr/ocr-manager.js?v=61"></script>
   <!-- V5 P3：可中止 OCR 任务管理 -->
   <script src="js/ocr/ocr-job-manager.js?v=1"></script>
   <!-- V5 P6：执行计划（FAST/SMART/RESCUE） -->
   <script src="js/ocr/execution-planner.js?v=1"></script>
   <!-- V5 P4：服务器 OCR 引擎（可选注册，默认不启用） -->
   <script src="js/ocr/server-engine.js?v=1"></script>
-  <script src="js/ocr/glm-ocr-engine.js?v=1"></script>
   <script src="js/ocr/region-retry.js?v=2"></script>
   <!-- V5 P2：OCR 候选池（多引擎/混淆变体/数学证据裁决） -->
   <script src="js/ocr/ocr-candidate-pool.js?v=2"></script>
@@ -1375,12 +1313,12 @@
   <!-- audio-processor.js 由 audioWorklet.addModule('js/asr/audio-processor.js') 动态加载，不在主线程执行 -->
   <script src="js/asr/audio-capture.js?v=39"></script>
   <script src="js/asr/vad.js?v=40"></script>
-  <script src="js/asr/whisper-engine.js?v=60"></script>
+  <script src="js/asr/whisper-engine.js?v=59"></script>
   <script src="js/asr/webspeech-engine.js?v=42"></script>
   <script src="js/asr/model-manager.js?v=56"></script>
-  <script src="js/asr/asr-manager.js?v=61"></script>
+  <script src="js/asr/asr-manager.js?v=60"></script>
   <script src="js/voice/voice-parser.js?v=39"></script>
-  <script src="js/voice/voice-sr.js?v=59"></script>
+  <script src="js/voice/voice-sr.js?v=58"></script>
   <script src="js/voice/voice-qa.js?v=40"></script>
   <script src="js/ai/engine-manager.js?v=38"></script>
   <script src="js/ai/multimodal.js?v=39"></script>
@@ -1397,11 +1335,9 @@
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
   <script src="js/voice/reminders.js?v=74"></script>
   <script src="js/voice/correction-engine.js?v=1"></script>
-  <script src="js/voice/voice-language-pack.js?v=1"></script>
-  <script src="js/voice/voice-draft-session.js?v=1"></script>
-  <script src="js/voice/quick-voice.js?v=74"></script>
-  <script src="js/ledger-crud.js?v=46"></script>
-  <script src="js/ai/ai-workbench.js?v=78"></script>
+  <script src="js/voice/quick-voice.js?v=71"></script>
+  <script src="js/ledger-crud.js?v=43"></script>
+  <script src="js/ai/ai-workbench.js?v=81"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=38"></script>
   <!-- ===== 参考汇率工具（Exchange Rate Engine V1.0）=====
@@ -1414,22 +1350,7 @@
   <script src="js/exchange-rate/frankfurter-provider.js?v=38"></script>
   <script src="js/exchange-rate/rate-calculator.js?v=38"></script>
   <script src="js/exchange-rate/exchange-rate-engine.js?v=38"></script>
-  <script src="js/exchange-rate/fx-tool.js?v=48"></script>
-  <!-- Weather Intelligence（天气预备）：数据层 → 事件引擎 → 提醒 → UI（先于 boot 加载，供全局 WeatherKit） -->
-  <script src="js/weather/weather-types.js?v=1"></script>
-  <script src="js/weather/weather-config.js?v=1"></script>
-  <script src="js/weather/weather-provider.js?v=1"></script>
-  <script src="js/weather/open-meteo-provider.js?v=1"></script>
-  <script src="js/weather/weather-normalizer.js?v=1"></script>
-  <script src="js/weather/weather-cache.js?v=1"></script>
-  <script src="js/weather/rain-event-resolver.js?v=1"></script>
-  <script src="js/weather/wind-event-resolver.js?v=1"></script>
-  <script src="js/weather/weather-event-engine.js?v=1"></script>
-  <script src="js/weather/weather-diff-engine.js?v=1"></script>
-  <script src="js/weather/weather-reminder-engine.js?v=1"></script>
-  <script src="js/weather/weather-voice-intent.js?v=1"></script>
-  <script src="js/weather/weather-service.js?v=1"></script>
-  <script src="js/weather/weather-card.js?v=2"></script>
+  <script src="js/exchange-rate/fx-tool.js?v=47"></script>
   <script src="js/boot.js?v=54"></script>
 </body>
 </html>

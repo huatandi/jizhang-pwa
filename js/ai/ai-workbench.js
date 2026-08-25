@@ -12,6 +12,7 @@
 (function (global) {
 let aiQueueTimer = null;
 let aiReviewExpanded = null; // 当前展开确认的待确认 id
+let _pendingLocalFiles = []; // V6.1: 仅暂存用户选中的图片；选择/导入绝不自动启动 OCR
 
 // 默认语音语言（BCP-47）：跟随 global-config（本币地区 → 浏览器语言）
 function defaultWbLang() {
@@ -26,51 +27,50 @@ function defaultWbLang() {
   catch (e) { return 'en-US'; }
 }
 
-// 上传批量单据
+// 上传/导入图片：V6.1 改为“先预览，后识别”。选择文件本身绝不启动 OCR。
 async function aiUploadFiles(files) {
   const list = [...files];
   if (!list.length) return showToast('请选择单据图片', 'error');
-  // 图片判定放宽：iOS 拍照/相册 type 可能为空或 HEIC
   const imgs = list.filter(isImageFile);
   if (!imgs.length) return showToast('请选择图片文件（JPG/PNG/HEIC 等）', 'error');
 
-  // ---- PWA 离线版：无服务器 AI 接口 → 本地 OcrKit 逐张识别，直接填入识别工作台 ----
-  try {
-    const serverAi = await checkServerAi();
-    if (!serverAi) {
-      return aiUploadLocal(imgs);
+  // 本地 PWA 优先采用人工确认工作流：只载入预览，不推理。
+  let serverAi = false;
+  try { serverAi = await checkServerAi(); } catch (e) { serverAi = false; }
+  if (!serverAi) {
+    _pendingLocalFiles = imgs.slice();
+    try {
+      await openWorkbenchForFile(_pendingLocalFiles[0]);
+      const btn = document.getElementById('wbExtractBtn');
+      if (btn) btn.textContent = _pendingLocalFiles.length > 1 ? `🔍 开始识别（1/${_pendingLocalFiles.length}）` : '🔍 开始识别';
+      showToast(_pendingLocalFiles.length > 1
+        ? `已载入 ${_pendingLocalFiles.length} 张图片。请先核对预览，再点「开始识别」`
+        : '图片已载入。请先核对预览，再点「开始识别」');
+      return;
+    } catch (e) {
+      console.error('[ocr] 载入预览失败:', e);
+      return showToast('图片预览失败: ' + (e && e.message || e), 'error');
     }
-  } catch (e) {
-    console.warn('[ai] AI 接口探测失败，走本地识别:', e);
-    return aiUploadLocal(imgs);
   }
 
+  // 服务器模式保持上传语义，但仍由服务器任务决定识别；本地不额外 OCR。
   const fd = new FormData();
-  for (const f of imgs) {
-    fd.append('files', f);
-  }
-  // OCR 语言选择（持久化记忆）
+  for (const f of imgs) fd.append('files', f);
   const langSel = document.getElementById('aiOcrLang');
   if (langSel) {
     fd.append('ocrLang', langSel.value);
-    try { localStorage.setItem('sm_ai_ocr_lang', langSel.value); } catch (e) { /* ignore */ }
+    try { localStorage.setItem('sm_ai_ocr_lang', langSel.value); } catch (e) {}
   }
   const btn = document.getElementById('aiDropzone');
   if (btn) btn.style.opacity = '0.6';
   try {
-    // 审计修复：FormData 上传带鉴权（此前 401）
     const data = await (typeof apiForm === 'function' ? apiForm('/ai/documents', fd) : fetch('/api/ai/documents', { method: 'POST', body: fd }).then(r => r.json()));
     let msg = `已上传 ${data.count} 张单据`;
     const dups = data.documents.filter(d => d.duplicate).length;
-    if (dups) msg += `，其中 ${dups} 张是重复文件已跳过`;
-    showToast(msg);
-    aiRefreshAll();
-  } catch (e) {
-    console.error(e);
-    showToast('上传失败: ' + e.message, 'error');
-  } finally {
-    if (btn) btn.style.opacity = '1';
-  }
+    if (dups) msg += `，其中 ${dups} 张重复文件已跳过`;
+    showToast(msg); aiRefreshAll();
+  } catch (e) { console.error(e); showToast('上传失败: ' + e.message, 'error'); }
+  finally { if (btn) btn.style.opacity = '1'; }
 }
 
 // 探测服务器版 AI 接口是否可用（PWA 离线后端无 /ai/* → 走本地识别）
@@ -182,7 +182,7 @@ function openWorkbenchForFile(file) {
     const t = document.getElementById('wbType');
     if (t) t.value = 'expense';
     try {
-      fillSelect('wbCategory', (typeof expenseCatOptions === 'function' ? expenseCatOptions() : ((options && options.expense_categories) || [])), true);
+      fillSelect('wbCategory', (options && options.expense_categories) || [], true);
     } catch (e) { console.warn('[ai] 分类下拉填充失败（options 未就绪）:', e); }
     showWbOcr('本地识别中…识别完成后文字显示在这里，字段自动填入下方');
     openModal('aiWorkbenchModal');
@@ -490,7 +490,7 @@ function aiReviewCard(r) {
         <label>支出分类 <select id="cCategory-${r.id}" data-field="category">
           ${(() => {
             const aiCat = r.detail && r.detail.category || '';
-            const cats = typeof expenseCatOptions === 'function' ? expenseCatOptions() : (options.expense_categories || []);
+            const cats = options.expense_categories || [];
             const aligned = alignCategory(aiCat, cats);
             if (aligned) return cats.map(c => `<option value="${escapeHtml(c)}" ${c === aligned ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
             if (!cats.length) return `<option value="${escapeHtml(aiCat)}" ${aiCat ? 'selected' : ''}>${escapeHtml(aiCat) || '（选择分类）'}</option>`;
@@ -1085,7 +1085,7 @@ async function wbExtract(force) {
       showWbOcr('');
       showToast(wbOcrFailMessage(e), 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '🔍 提取文字'; }
+      if (btn) { btn.disabled = false; btn.textContent = '🔍 开始识别'; }
     }
     return;
   }
@@ -2267,7 +2267,9 @@ async function wbSave() {
         const proj = document.getElementById('iProject');
         const projectName = fields.company || fields.merchant || '';
         if (proj && projectName && [...proj.options].some(o => o.value === projectName)) proj.value = projectName;
-        // 收款方式已从界面移除（V5）：收款方银行直接作为账户
+        const pay = document.getElementById('iPayMethod');
+        const payName = fields.bank_receiver || fields.bank_payer || (fields.account_tail ? '尾号' + fields.account_tail : '');
+        if (pay && payName && [...pay.options].some(o => o.value === payName)) pay.value = payName;
         const acc = document.getElementById('iAccount');
         const accName = fields.bank_receiver || fields.bank_payer || (options.accounts && options.accounts[0]) || '';
         if (acc && accName && [...acc.options].some(o => o.value === accName)) acc.value = accName;
@@ -2542,23 +2544,15 @@ function initAiPanel() {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
       try {
+        _pendingLocalFiles = [file];
         await openWorkbenchForFile(file);
-        const img = document.getElementById('wbImg');
-        showToast('📷 正在识别单据…');
-        const res = await wbLocalOcrV2(img);
-        if (res && res.text) {
-          showWbOcr(res.text);
-          fillWbFields(res.fields);
-          const found = ['date', 'amount', 'merchant', 'company', 'bank_payer', 'bank_receiver', 'account_tail', 'tax'].filter(k => res.fields[k] != null && res.fields[k] !== '').length;
-          showToast(`✅ 识别完成，已填入 ${found} 个字段`);
-        } else {
-          showWbOcr('');
-          showToast('未识别到有效内容，请检查图片清晰度', 'error');
-        }
-      } catch (err) {
-        console.error('[ocr] 工作台本地识别失败:', err);
+        const extractBtn = document.getElementById('wbExtractBtn');
+        if (extractBtn) extractBtn.textContent = '🔍 开始识别';
         showWbOcr('');
-        showToast('本地识别失败: ' + (err && err.message || err), 'error');
+        showToast('图片已载入。确认无误后点击「开始识别」');
+      } catch (err) {
+        console.error('[ocr] 工作台图片预览失败:', err);
+        showToast('图片预览失败: ' + (err && err.message || err), 'error');
       }
       try { wbFile.value = ''; } catch (err) { /* ignore */ }
     });

@@ -186,28 +186,20 @@
           needRetry = avgConf < o.fallbackThreshold; // 无执行计划模块 → 旧行为
         }
         if (needRetry) {
-          console.warn(`[ocr] 主引擎置信度偏低(${avgConf.toFixed(1)}%)，多版本增强重试`);
-          next('rescue-multipass', null);
-          // 3a) 淡字/模糊 → 增强版本重试主引擎（对比度/二值化可能显著提升）
-          let best = result;
-          try {
-            const versions = global.OcrKit.preprocess.multipass(input, {});
-            for (const v of versions) {
-              if (v.name === 'original') continue;
-              global.OcrKit.preprocess.throwIfAborted(o.signal, 'enhance-retry:version');
-              try {
-                next('multipass-v' + v.name, primaryName);
-                const vr = await primary.engine.recognize(v.canvas, primary.opts);
-                if (vr && avgConfidence(vr) > avgConfidence(best)) best = vr;
-              } catch (e2) { /* 单版本失败继续 */ }
-            }
-            if (best !== result) { result = best; result._multipass = true; }
-          } catch (e3) { /* multipass 失败不影响 */ }
-          // 3b) Tesseract 二次识别对比合并
-          global.OcrKit.preprocess.throwIfAborted(o.signal, 'fallback');
-          next('rescue-fallback-merge', null);
-          const fb = await this._fallback(input, primaryName);
-          if (fb) result = mergeResults(result, fb);
+          // V6.1：禁止因“全文平均置信偏低”连续重跑整张图。
+          // 金额/日期/商户等关键字段的救援由业务层 RegionRetry 对小 ROI 执行，
+          // 避免 4 个增强版本 × 全图 Paddle + Tesseract 导致 40~90 秒延迟。
+          console.warn(`[ocr] 关键字段需救援(${avgConf.toFixed(1)}%)：跳过全文 multipass，交给 ROI RegionRetry`);
+          next('defer-to-region-retry', primaryName);
+
+          // 只有“几乎没识别出任何东西”的灾难性结果才允许一次全文回退。
+          const wordCount = (result && result.words && result.words.length) || 0;
+          if (avgConf < 25 || wordCount < 2) {
+            global.OcrKit.preprocess.throwIfAborted(o.signal, 'catastrophic-fallback');
+            next('catastrophic-fallback', null);
+            const fb = await this._fallback(input, primaryName);
+            if (fb) result = mergeResults(result, fb);
+          }
         }
       }
 
@@ -508,15 +500,6 @@
         console.log('[ocr] ServerOcrEngine 已注册（sm_ocr_server_engine=1）');
       }
     } catch (e) { console.warn('[ocr] ServerOcrEngine 注册失败:', e); }
-    // V6 optional GLM-OCR adapter: NEVER default. Requires explicit user-controlled endpoint.
-    try {
-      const endpoint = (function () { try { return global.localStorage && global.localStorage.getItem('sm_glm_ocr_endpoint') || ''; } catch (e) { return ''; } })();
-      const enabled = (function () { try { return global.localStorage && global.localStorage.getItem('sm_glm_ocr_enabled') === '1'; } catch (e) { return false; } })();
-      if (enabled && endpoint && global.OcrKit.GlmOcrEngine) {
-        mgr.register(new global.OcrKit.GlmOcrEngine({ endpoint }));
-        console.log('[ocr] GLM-OCR optional engine registered:', endpoint);
-      }
-    } catch (e) { console.warn('[ocr] GLM-OCR optional engine registration failed:', e); }
     _singleton = mgr;
     return mgr;
   }
