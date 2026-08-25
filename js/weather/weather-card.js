@@ -327,6 +327,7 @@
     },
   };
   global.WeatherKit.WeatherCard = Object.assign(API, { settings: SettingsAPI });
-  global.WeatherCard = global.WeatherCard || {};
+  // 全局 WeatherCard：内联 onclick（WeatherCard.openDetail/toggleDay/toggleHourly）走这里
+  global.WeatherCard = Object.assign(global.WeatherCard || {}, API, { settings: SettingsAPI });
   global.WeatherSettings = SettingsAPI; // 内联 onclick 便捷入口
 })(typeof window !== 'undefined' ? window : globalThis);
