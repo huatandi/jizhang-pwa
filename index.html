@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=73">
+  <link rel="stylesheet" href="css/style.css?v=74">
   <!-- PaddleOCR SDK 裸模块 import map（V5 §75：vendor/paddleocr/index.mjs 内的 js-yaml / clipper-lib /
        @techstark/opencv-js / onnxruntime-web 是裸 ESM，需 import map 解析。onnxruntime-web 必须与
        vendor/onnx 同版本(1.24.3)——此前误指 1.19.2 造成 JS glue 与 .wasm 版本错配 → function import requires a callable。 -->
@@ -128,6 +128,11 @@
           <h2>📊 数据总览</h2>
           <p class="subtitle" id="dashRangeText">全部分析基于当前日期范围</p>
         </header>
+
+        <!-- 天气预备（Weather Intelligence） -->
+        <div class="chart-card wide weather-card" id="weatherMiniCard">
+          <div class="weather-mini-host" id="weatherMiniHost"><div class="weather-mini weather-mini-empty">天气加载中…</div></div>
+        </div>
 
         <!-- 参考汇率工具 -->
         <div class="chart-card wide fx-card" id="fxCard" hidden>
@@ -785,6 +790,44 @@
             <div class="settings-note" style="margin-top:6px">💡 仅保存在本机（IndexedDB）。识别正确时自动记一次；识别错误你改掉后自动学习，下次直接识别。</div>
           </div>
 
+          <!-- 天气设置（Weather Intelligence） -->
+          <div class="settings-section">
+            <div class="settings-title">🌤️ 天气预备 <span class="settings-sub">数据总览顶部显示今日天气 + 降雨/大风智能提醒（Open-Meteo 免费接口，无需注册）</span></div>
+            <div class="opt-add-row" style="margin-bottom:6px">
+              <input type="text" id="weatherCity" placeholder="城市名（如 Mexicali / 北京 / CDMX）">
+              <button class="btn-primary" onclick="WeatherSettings.saveCity()">💾 保存城市</button>
+              <button class="btn-small" onclick="WeatherSettings.useGPS()" title="用当前定位（需授权）">📍 定位</button>
+            </div>
+            <div class="recur-hint" id="weatherCityHint">例：Mexicali、北京、Mexico City。保存后总览页自动显示天气。</div>
+            <div class="alarm-settings-row" style="margin-top:8px;flex-wrap:wrap;gap:8px">
+              <label class="switch-row"><span>☔ 降雨提醒</span><input type="checkbox" id="weatherRainOn" checked></label>
+              <label class="switch-row"><span>💨 大风提醒</span><input type="checkbox" id="weatherWindOn" checked></label>
+            </div>
+            <div class="opt-add-row" style="margin-top:6px;gap:8px">
+              <label style="font-size:12px;color:var(--text-2);white-space:nowrap">降雨提前
+                <select id="weatherRainAdvance" class="query-select" style="width:auto">
+                  <option value="0">准时</option><option value="15">15分钟</option><option value="30" selected>30分钟</option>
+                  <option value="60">1小时</option><option value="120">2小时</option>
+                </select>
+              </label>
+              <label style="font-size:12px;color:var(--text-2);white-space:nowrap">大风提前
+                <select id="weatherWindAdvance" class="query-select" style="width:auto">
+                  <option value="0">准时</option><option value="30">30分钟</option><option value="60" selected>1小时</option>
+                  <option value="120">2小时</option>
+                </select>
+              </label>
+            </div>
+            <div class="opt-add-row" style="margin-top:6px;gap:8px">
+              <label style="font-size:12px;color:var(--text-2);white-space:nowrap">温度
+                <select id="weatherUnitTemp" class="query-select" style="width:auto"><option value="c" selected>°C</option><option value="f">°F</option></select>
+              </label>
+              <label style="font-size:12px;color:var(--text-2);white-space:nowrap">风速
+                <select id="weatherUnitWind" class="query-select" style="width:auto"><option value="kmh" selected>km/h</option><option value="mph">mph</option></select>
+              </label>
+            </div>
+            <div class="recur-hint" style="margin-top:6px">💡 预报变化会自动更新提醒；网络中断时显示上次数据并标注更新时间。iOS 下 App 完全关闭后无法后台查天气，打开 App 时会自动刷新。</div>
+          </div>
+
           <!-- 月度预算 -->
           <div class="settings-section">
             <div class="settings-title">🎯 月度支出预算 <span class="settings-sub">在数据总览显示预算使用进度</span></div>
@@ -873,6 +916,17 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- ======== 天气详情 Modal（Weather Intelligence） ======== -->
+  <div class="modal-overlay" id="weatherModal">
+    <div class="modal weather-modal">
+      <div class="modal-header">
+        <h3>🌤️ 天气预备</h3>
+        <button class="modal-close" onclick="closeModal('weatherModal')">×</button>
+      </div>
+      <div class="modal-body weather-modal-body"></div>
+    </div>
   </div>
 
   <!-- ======== 收入 Modal ======== -->
@@ -1358,6 +1412,21 @@
   <script src="js/exchange-rate/rate-calculator.js?v=38"></script>
   <script src="js/exchange-rate/exchange-rate-engine.js?v=38"></script>
   <script src="js/exchange-rate/fx-tool.js?v=48"></script>
+  <!-- Weather Intelligence（天气预备）：数据层 → 事件引擎 → 提醒 → UI（先于 boot 加载，供全局 WeatherKit） -->
+  <script src="js/weather/weather-types.js?v=1"></script>
+  <script src="js/weather/weather-config.js?v=1"></script>
+  <script src="js/weather/weather-provider.js?v=1"></script>
+  <script src="js/weather/open-meteo-provider.js?v=1"></script>
+  <script src="js/weather/weather-normalizer.js?v=1"></script>
+  <script src="js/weather/weather-cache.js?v=1"></script>
+  <script src="js/weather/rain-event-resolver.js?v=1"></script>
+  <script src="js/weather/wind-event-resolver.js?v=1"></script>
+  <script src="js/weather/weather-event-engine.js?v=1"></script>
+  <script src="js/weather/weather-diff-engine.js?v=1"></script>
+  <script src="js/weather/weather-reminder-engine.js?v=1"></script>
+  <script src="js/weather/weather-voice-intent.js?v=1"></script>
+  <script src="js/weather/weather-service.js?v=1"></script>
+  <script src="js/weather/weather-card.js?v=1"></script>
   <script src="js/boot.js?v=54"></script>
 </body>
 </html>

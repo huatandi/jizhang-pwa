@@ -1608,6 +1608,11 @@ function refreshSettingUI() {
     try { ve = localStorage.getItem('sm_voice_engine_mode') || 'auto'; } catch (e) {}
     veEl.value = ['auto', 'local', 'online'].includes(ve) ? ve : 'auto';
   }
+  // 天气设置回填（WeatherSettings.fill）
+  try {
+    const ws = window.WeatherSettings;
+    if (ws && ws.fill) ws.fill();
+  } catch (e) { console.warn('[weather] 设置回填跳过:', e && e.message || e); }
 }
 
 /* ================== 当地国家：语言 / 货币 / 银行 ================== */
@@ -3019,6 +3024,17 @@ async function initAfterLogin() {
   fillQuerySelect();
   runQuery();
   await renderDashboard();
+  // Weather Intelligence：登录后刷新天气小卡 + 调度自动刷新（启动/回前台/间隔）
+  try {
+    const wk = window.WeatherKit;
+    if (wk && wk.WeatherService) {
+      wk.WeatherService.refresh({}).then((res) => {
+        const host = document.getElementById('weatherMiniHost');
+        if (host && wk.WeatherCard) wk.WeatherCard.renderMini(host, res);
+      }).catch(() => {});
+      wk.WeatherService.scheduleAutoRefresh({});
+    }
+  } catch (e) { console.warn('[weather] 初始化跳过（不影响主应用）:', e && e.message || e); }
   // 登录后主页面刚显示，图表可能以 0 宽度初始化 → 延迟重排一次（修复堆积左侧）
   resizeVisibleCharts();
   renderIncome();
