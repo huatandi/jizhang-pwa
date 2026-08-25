@@ -152,15 +152,39 @@
           const progressCb = (p) => {
             if (this.onProgress) this.onProgress(p.progress || 0, p.file || p.status || '');
           };
-          const pl = await pipeFn(this.config.task, this.config.modelRepo, {
-            device,
-            dtype: this.config.dtype,
-            progress_callback: progressCb,
-            language: this._resolveLang(),
-            chunk_length_s: this.config.chunkLengthSec,
-          });
+          // 模型下载源：官方 huggingface.co 优先；中国大陆常超时/被墙 →
+          // 失败自动切换国内镜像 hf-mirror.com 重试一次（transformers.js env.remoteHost 可改）。
+          const tryInit = async (host) => {
+            if (host && env && env.remoteHost && env.remoteHost !== host) {
+              console.warn('[asr] 模型下载源切换: ' + env.remoteHost + ' → ' + host);
+              env.remoteHost = host;
+            }
+            return pipeFn(this.config.task, this.config.modelRepo, {
+              device,
+              dtype: this.config.dtype,
+              progress_callback: progressCb,
+              language: this._resolveLang(),
+              chunk_length_s: this.config.chunkLengthSec,
+            });
+          };
+          let pl;
+          try {
+            pl = await tryInit(null); // 默认 remoteHost（huggingface.co）
+          } catch (e1) {
+            // 官方源失败（多为网络超时/区域封锁）→ 镜像重试一次
+            if (env && env.remoteHost && env.remoteHost.indexOf('hf-mirror.com') === -1) {
+              try {
+                pl = await tryInit('https://hf-mirror.com/');
+              } catch (e2) {
+                console.warn('[asr-runtime] Whisper init FAILED (mirror too) model=' + this.config.modelRepo + ' : ' + (e2 && e2.message || e2));
+                throw e2;
+              }
+            } else {
+              throw e1;
+            }
+          }
           this.modelName = this.config.modelRepo;
-          console.log('[asr-runtime] Whisper init SUCCESS model=' + this.config.modelRepo + ' device=' + device + ' dtype=' + this.config.dtype);
+          console.log('[asr-runtime] Whisper init SUCCESS model=' + this.config.modelRepo + ' device=' + device + ' dtype=' + this.config.dtype + ' host=' + (env && env.remoteHost || ''));
           return pl;
         } catch (e) {
           pipelines.delete(key); // 失败允许重试;不同 key(base/tiny)互不影响
