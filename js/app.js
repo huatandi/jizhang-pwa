@@ -517,8 +517,8 @@ async function renderDashboard() {
     // 最近明细（按日期分组，一天一行，参考收入记账页）
     const [incomes, expenses] = await Promise.all([api('/income'), api('/expense')]);
     const all = [
-      ...incomes.slice(0, 30).map(r => ({ date: r.date, type: '收入', tag: 'green', name: r.project || r.account, account: r.account, amount: r.amount, remark: r.remark })),
-      ...expenses.slice(0, 30).map(r => ({ date: r.date, type: '支出', tag: 'red', name: r.category, account: r.account, amount: -r.amount, remark: r.remark }))
+      ...incomes.slice(0, 30).map(r => ({ id: r.id, kind: 'income', date: r.date, type: '收入', tag: 'green', name: r.project || r.account, account: r.account, amount: r.amount, remark: r.remark })),
+      ...expenses.slice(0, 30).map(r => ({ id: r.id, kind: 'expense', date: r.date, type: '支出', tag: 'red', name: r.category, account: r.account, amount: -r.amount, remark: r.remark }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
     // 按日期分组
@@ -533,9 +533,9 @@ async function renderDashboard() {
     const tbody = document.querySelector('#recentTable tbody');
     tbody.innerHTML = dates.map(date => {
       const items = groups[date];
-      // 当日明细：每笔记录显示类型+账户+金额，收入支出一目了然
+      // 当日明细：每笔记录显示类型+账户+金额，收入支出一目了然；双击弹出该笔账目编辑弹窗
       const details = items.map(r => `
-        <span class="income-pair">
+        <span class="income-pair" ondblclick="${r.kind === 'income' ? `editIncome(${r.id})` : `editExpense(${r.id})`}" title="双击编辑该笔明细">
           ${catIconHtml(r.name || '', r.type === '收入' ? 'income' : 'expense')}
           <span class="tag tag-${r.tag}">${r.type}</span>
           <span class="tag tag-blue">${escapeHtml(r.account || '未填')}</span>
@@ -543,11 +543,14 @@ async function renderDashboard() {
           ${r.remark ? `<span class="pair-remark">${escapeHtml(r.remark)}</span>` : ''}
         </span>`).join('');
       const total = items.reduce((s, r) => s + (r.amount || 0), 0);
+      // 双击日期/当日合计 → 编辑该日第一条记录（可在弹窗改数据与日期）
+      const first = items[0] || null;
+      const dblDay = first ? (first.kind === 'income' ? `editIncome(${first.id})` : `editExpense(${first.id})`) : '';
       return `
       <tr>
-        <td class="date-cell"><span class="tag tag-blue">${fmtDate(date)}</span></td>
+        <td class="date-cell"><span class="tag tag-blue" ondblclick="${dblDay}" title="双击编辑日期/内容">${fmtDate(date)}</span></td>
         <td class="account-details">${details}</td>
-        <td class="amount ${total >= 0 ? 'positive' : 'negative'}">¥${fmtMoney(total)}</td>
+        <td class="amount ${total >= 0 ? 'positive' : 'negative'}" ondblclick="${dblDay}" title="双击编辑">¥${fmtMoney(total)}</td>
       </tr>`;
     }).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
 

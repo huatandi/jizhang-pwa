@@ -433,7 +433,7 @@ td.amount.negative { color: var(--red); }
   margin: 2px 10px 2px 0;
   transition: var(--transition);
 }
-.income-pair:hover { border-color: var(--primary); background: #24344d; }
+.income-pair:hover { border-color: var(--primary); background: #24344d; cursor: pointer; }
 .income-pair .amount { font-size: 15px; }
 .pair-remark {
   font-size: 12px; color: var(--text-3);
