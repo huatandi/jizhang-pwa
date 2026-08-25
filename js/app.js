@@ -1601,6 +1601,13 @@ function refreshSettingUI() {
   fillDataRangeUI();
   // 当地国家选择器回填（国家 → 语言/货币/银行）
   fillCountrySelect();
+  // 语音识别引擎模式回填（localStorage，跟随 VoiceSR）
+  const veEl = document.getElementById('voiceEngineMode');
+  if (veEl) {
+    let ve = 'auto';
+    try { ve = localStorage.getItem('sm_voice_engine_mode') || 'auto'; } catch (e) {}
+    veEl.value = ['auto', 'local', 'online'].includes(ve) ? ve : 'auto';
+  }
 }
 
 /* ================== 当地国家：语言 / 货币 / 银行 ================== */
@@ -1825,6 +1832,11 @@ async function saveSettings(close = true) {
   try {
     settings = await api('/settings', 'POST', settings);
   } catch (e) { return showToast('保存失败: ' + e.message, 'error'); }
+  // 语音识别引擎模式（localStorage，VoiceSR 读取）
+  const veEl2 = document.getElementById('voiceEngineMode');
+  if (veEl2) {
+    try { localStorage.setItem('sm_voice_engine_mode', ['auto', 'local', 'online'].includes(veEl2.value) ? veEl2.value : 'auto'); } catch (e) {}
+  }
   applySettings();
   // 保存的数据范围生效：更新侧边栏 + 当前范围
   if (settings.dataRange) {

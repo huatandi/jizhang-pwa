@@ -47,13 +47,12 @@
     setCallback(cb) { this.cb = cb || {}; }
     setLang(lang) { this.lang = lang || defaultAsrBcp47(); }
 
-    /** V5 Phase1 保险13/14：隐私门——LOCAL_ONLY 模式下本地失败也绝不启用 WebSpeech(在线) */
+    /** 隐私门：拦截「AI 数据外发」（OCR/文本 AI 分析），不拦截系统语音识别。
+     *  WebSpeech（webkitSpeechRecognition）是浏览器系统能力（Apple/Google 语音转文字），
+     *  只处理语音片段，不把账目数据发给第三方——local_only 语义针对 AI 分析外发。
+     *  语音是否联网由 VoiceSR 按「语音识别引擎」设置控制（auto/local/online）。 */
     _privacyAllowsOnline() {
-      try {
-        const P = global.AIPrivacy;
-        if (P && typeof P.getMode === 'function') return P.getMode() !== 'local_only';
-      } catch (e) { /* ignore */ }
-      return true;
+      return true; // 语音系统识别放行；AI 分析外发由 ai-router/AIPrivacy 单独拦截
     }
 
     _emit(name, payload) {

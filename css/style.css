@@ -1917,15 +1917,23 @@ select option {
 .fx-meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: #94a3b8; }
 
 .fx-fav { margin-bottom: 12px; }
-.fx-fav-title { font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 8px; }
+.fx-fav-title { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 8px; }
+.fx-fav-label { display: inline-flex; align-items: center; }
 .fx-fav-hint { font-size: 11px; font-weight: 400; color: #94a3b8; }
-.fx-fav-edit {
-  float: right; font-size: 11px; font-weight: 600; color: var(--primary);
+/* 标题行内「添加」小按钮：与「常用/编辑」同字号，缩小容器 */
+.fx-fav-add { display: inline-flex; margin: 0; }
+.fx-fav-add-btn {
+  font-size: 13px; font-weight: 600; color: var(--primary);
   cursor: pointer; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--surface); transition: var(--transition); user-select: none;
+  background: var(--surface); transition: var(--transition); user-select: none; line-height: 1.4;
+}
+.fx-fav-add-btn:hover { border-color: var(--primary); background: var(--primary-soft); }
+.fx-fav-edit {
+  font-size: 13px; font-weight: 600; color: var(--primary);
+  cursor: pointer; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface); transition: var(--transition); user-select: none; line-height: 1.4;
 }
 .fx-fav-edit:hover { border-color: var(--primary); background: var(--primary-soft); }
-.fx-fav-add { margin-top: 8px; text-align: center; }
 .fx-fav-item.editing { cursor: default; }
 .fx-fav-item .fx-fav-del {
   position: absolute; top: 4px; right: 4px; width: 20px; height: 20px;
