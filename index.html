@@ -832,18 +832,6 @@
             </div>
           </div>
 
-          <!-- 多币种与汇率（功能补充 P4） -->
-          <div class="settings-section">
-            <div class="settings-title">💱 多币种与汇率 <span class="settings-sub">记账时选择币种，按汇率自动换算为基准币种（MXN）入账</span></div>
-            <div class="rate-add-row">
-              <select id="rateCurrency" class="currency-select"></select>
-              <input type="number" id="rateValue" min="0.0001" step="0.0001" placeholder="1 MXN = ? 该币种">
-              <button class="btn-primary" onclick="saveExchangeRate()">💾 保存汇率</button>
-            </div>
-            <div class="recur-hint" id="rateHint">例：USD 汇率填 0.055 → 1 MXN = 0.055 USD，100 USD 入账自动换算为 ≈1818 MXN。</div>
-            <div class="rate-list" id="rateList"></div>
-          </div>
-
           <!-- 安全设置 -->
           <div class="settings-section">
             <div class="settings-title">🔒 登录安全 <span class="settings-sub">开店经营 / 家庭明细 共用一个登录密码</span></div>
@@ -1003,7 +991,7 @@
           <table id="supplierTable" style="min-width:620px;width:100%;">
             <thead>
               <tr>
-                <th>供应商名称</th><th>进货笔数</th><th>进货总额</th><th>已付货款</th><th>未付 / 折扣</th><th>折扣率</th><th>操作</th>
+                <th>供应商名称</th><th>折扣金额</th><th>进货总额</th><th>已付货款</th><th>未付 / 折扣</th><th>折扣率</th><th>操作</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -1343,7 +1331,7 @@
   <script src="js/voice/reminders.js?v=74"></script>
   <script src="js/voice/correction-engine.js?v=1"></script>
   <script src="js/voice/quick-voice.js?v=72"></script>
-  <script src="js/ledger-crud.js?v=44"></script>
+  <script src="js/ledger-crud.js?v=45"></script>
   <script src="js/ai/ai-workbench.js?v=77"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=38"></script>

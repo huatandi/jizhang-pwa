@@ -205,7 +205,7 @@ async function renderSuppliers() {
     return `
     <tr>
       <td><span class="tag tag-blue">${escapeHtml(r.name)}</span> ${cleared}</td>
-      <td class="amount">${r.purchase_count}</td>
+      <td class="amount">${Number(r.discount) ? (Number(r.discount) > 0 ? '¥' + fmtMoney(r.discount) : '超付 ¥' + fmtMoney(-r.discount)) : ''}</td>
       <td class="amount">¥${fmtMoney(r.total_amount)}</td>
       <td class="amount positive">${Number(r.paid_amount) ? '¥' + fmtMoney(r.paid_amount) : ''}</td>
       <td class="amount">${bal}</td>
