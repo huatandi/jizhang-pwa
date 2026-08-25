@@ -199,8 +199,51 @@
     return retryField(result, manager, field, Object.assign({}, opts, { sourceCanvas }));
   }
 
+
+
+  /**
+   * V7：按模板学习到的相对 ROI 直接救援字段。
+   * 已知模板无需再次在全文里猜 TOTAL 位置；只裁小区域，速度远快于整图重跑。
+   */
+  async function retryTemplateRegion(result, sourceCanvas, manager, field, anchor, opts) {
+    const o=opts||{};
+    if(!sourceCanvas||!anchor||!Array.isArray(anchor.roi)||anchor.roi.length!==4)return null;
+    if(anchor.suspended)return null;
+    const W=sourceCanvas.width,H=sourceCanvas.height;
+    const r=anchor.roi;
+    const padX=field==='amount'?0.10:0.06, padY=field==='amount'?0.035:0.05;
+    const region=[
+      Math.max(0,(r[0]-padX)*W), Math.max(0,(r[1]-padY)*H),
+      Math.min(W,(r[2]+padX)*W), Math.min(H,(r[3]+padY)*H)
+    ];
+    if(region[2]-region[0]<8||region[3]-region[1]<6)return null;
+    let reg=upscale(cropCanvas(sourceCanvas,region),o.scale||2.4);
+    // 淡字票：局部增强，不污染原图；仅一个增强版本，避免 multipass 爆炸。
+    if(o.enhance!==false){
+      try{ if(global.OcrKit&&global.OcrKit.preprocess){
+        reg=global.OcrKit.preprocess.enhance(global.OcrKit.preprocess.toGrayscale(reg),'high_contrast');
+      }}catch(e){}
+    }
+    let rr=null;
+    try{ rr=await manager.recognize(reg,{engine:o.engine||null,profile:'balanced',maxEdge:Math.max(700,Math.min(1200,reg.width)),enhanceMode:'none',deskew:false,glowReduce:false,autoRotate:false,longReceipt:false}); }catch(e){}
+    if(!rr)return null;
+    const rawText=String(rr.text||rr.fullText||'').replace(/\s+/g,' ').trim();
+    let value=null;
+    if(field==='amount'){
+      const vals=[]; const re=/(?:[$¥€£￥₩]\s*)?(-?\d{1,3}(?:[ ,]\d{3})+(?:[.,]\d{2})|-?\d+[.,]\d{2}|-?\d+)/g; let m;
+      while((m=re.exec(rawText))){let x=m[1]; if(/^-?\d+,\d{2}$/.test(x)&&!x.includes('.'))x=x.replace(',','.'); else x=x.replace(/[ ,]/g,''); const n=Number(x); if(Number.isFinite(n))vals.push(n);}
+      if(vals.length)value=String(Math.round(vals[vals.length-1]*100)/100);
+    }else{
+      const vre=VALUE_RES[field]; const m=vre&&rawText.match(vre); if(m)value=m[1];
+    }
+    if(value==null)return null;
+    let conf=0.82;
+    if(rr.words&&rr.words.length)conf=rr.words.reduce((a,w)=>a+(Number(w.confidence)||0),0)/rr.words.length;
+    return {value:String(value),confidence:conf,region,rawText,engine:rr.engine,template:true};
+  }
+
   global.OcrKit = global.OcrKit || {};
   Object.assign(global.OcrKit, {
-    regionRetry: { retryField, retry, findLabelLine, findLabelWord, cropCanvas, upscale, FIELD_LABELS, VALUE_RES },
+    regionRetry: { retryField, retry, retryTemplateRegion, findLabelLine, findLabelWord, cropCanvas, upscale, FIELD_LABELS, VALUE_RES },
   });
 })(typeof window !== 'undefined' ? window : globalThis);

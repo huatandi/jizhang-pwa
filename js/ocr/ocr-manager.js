@@ -35,15 +35,20 @@
     const ua = navigator.userAgent || '';
     const isIOS = /iPhone|iPad|iPod/i.test(ua);
     const isAndroid = /Android/i.test(ua);
-    // iPhone：统一按 balanced（实测 1800px 在 Safari 上内存/速度平衡）
+    // V7：GitHub Pages 下 Paddle 通常是 WASM 单线程；桌面也不能默认 2200px high。
+    // 只有真正可用的 WebGPU 路径才放宽到 high；其余首轮 balanced，低端 Android 用 low。
     if (isIOS) return 'balanced';
-    // Android：按 deviceMemory 分档
     if (isAndroid) {
       if (LOW_MEMORY_HINT <= 3) return 'low';
-      if (LOW_MEMORY_HINT >= 6) return 'high';
       return 'balanced';
     }
-    return 'high';
+    let webgpuFast = false;
+    try {
+      const rtk = global.AsrKit && global.AsrKit.runtime;
+      const exp = !!(rtk && rtk.isEnabled && rtk.isEnabled('paddleWebGpuExperimental'));
+      webgpuFast = !!(navigator.gpu && (global.crossOriginIsolated || exp));
+    } catch (e) {}
+    return webgpuFast ? 'high' : 'balanced';
   }
 
   function detectEnhanceMode(profile, srcType) {

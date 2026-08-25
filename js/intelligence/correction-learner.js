@@ -205,7 +205,9 @@
     const out = {};
     if (!fields) return out;
     const rules = await global.OcrMemoryStore.all(RULES);
-    const map = { amount: 'amount', merchant: 'merchant' };
+    // V7：绝不把 amount 的历史 wrong→right 当成固定替换。票据金额每次都会变化，
+    // 金额纠正应学习模板锚点/ROI/角色/数学关系；固定值替换会把上一张金额污染下一张。
+    const map = { merchant: 'merchant' };
     for (const [field, fkey] of Object.entries(map)) {
       const cur = fields[fkey];
       if (cur == null || String(cur) === '') continue;

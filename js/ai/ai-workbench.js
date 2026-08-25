@@ -699,6 +699,8 @@ function aiRefreshAll() {
 let wbDocId = null;       // 当前工作台文档 id
  let wbOcrText = '';       // 当前工作台 OCR 原文
 let wbOcrMeta = null;     // V5 §42-57：本次识别的指纹/模板/地区元数据（纠错学习用）
+let wbLastOcrResult = null; // V7：保留本次 OCR 结构结果，人工纠错时学习字段锚点/ROI
+let wbLastOcrAudit = null;  // V7：Document Intelligence 裁决轨迹（错误归因/候选审计）
 let wbFileName = '';      // V5：当前工作台图片文件名（对号入座显示）
 
 // 渲染已上传单据预览网格
@@ -1607,6 +1609,26 @@ async function wbLocalOcrV2(img) {
       }
     } catch (e) { console.warn('[ocr] Region Router 跳过（不影响主结果）:', e); }
   }
+  // V7：先做文档指纹/模板匹配。模板仅提供‘锚点/ROI/商户身份’证据，不直接写死金额。
+  let fpV7 = null, templateMatchV7 = null;
+  if (window.OcrKit && window.OcrKit.documentFingerprint && window.OcrKit.templateEngine) {
+    try {
+      fpV7 = window.OcrKit.documentFingerprint.build(result, { region: regionCode, docType });
+      templateMatchV7 = await window.OcrKit.templateEngine.match(fpV7);
+      if (templateMatchV7 && templateMatchV7.template) {
+        result.template = { id: templateMatchV7.template.id, score: templateMatchV7.score, level: templateMatchV7.level };
+      }
+      wbOcrMeta = {
+        fingerprint: fpV7,
+        templateId: (templateMatchV7 && templateMatchV7.template) ? templateMatchV7.template.id : null,
+        templateScore: (templateMatchV7 && templateMatchV7.score) || 0,
+        merchantId: (templateMatchV7 && templateMatchV7.template && templateMatchV7.template.merchantId) || null,
+        merchantName: (templateMatchV7 && templateMatchV7.template && templateMatchV7.template.merchantName) || null,
+        region: regionCode || null, docType: docType || null, engine: result.engine || null, preprocessProfile: result.profile || null,
+      };
+    } catch (e) { console.warn('[ocr-v7] 预模板匹配跳过:', e); }
+  }
+
   // 3. 通用兜底提取（任何地区都执行；MexicoParser 结构化字段缺失时补位）
   const V = window.ValidateKit || {};
   const common = extractCommonFields(fullText, words);
@@ -1654,6 +1676,41 @@ async function wbLocalOcrV2(img) {
     } catch (e) { /* 语义补全失败不影响 */ }
   }
 
+  // V7 Document Intelligence：OCR 负责候选，Resolver 负责最终字段。
+  // 重点修复：TOTAL 已看见却选成 0.51/2/83；CANT/AGOSTO/PAGADO/POR/ESR 被误当商户。
+  let v7audit = null;
+  try {
+    const DI = window.OcrKit && window.OcrKit.documentIntelligenceV7;
+    if (DI && typeof DI.resolve === 'function') {
+      v7audit = DI.resolve(result, fields, {
+        semantic, region: regionCode, docType, templateMatch: templateMatchV7
+      });
+      if (v7audit.documentClass && v7audit.documentClass.type && (!docType || docType === 'receipt')) {
+        docType = v7audit.documentClass.type;
+      }
+      if (v7audit.amount && v7audit.amount.value != null) {
+        const oldAmount = fields.amount;
+        fields.amount = String(v7audit.amount.value);
+        fields.amountConfidence = v7audit.amount.confidence;
+        fields.amountSource = v7audit.amount.source;
+        fields.__amountReason = v7audit.amount.reason;
+        fields.__amountCandidates = v7audit.amount.candidates;
+        fields.__amountMath = v7audit.amount.math;
+        fields.__needsAmountRoi = !!v7audit.amount.needsRoi;
+        if (oldAmount != null && String(oldAmount) !== fields.amount) fields.__amountOriginal = String(oldAmount);
+      }
+      if (v7audit.merchant && v7audit.merchant.value) {
+        fields.merchant = String(v7audit.merchant.value);
+        fields.__merchantConfidence = v7audit.merchant.confidence;
+        fields.__merchantCandidates = v7audit.merchant.candidates;
+      }
+      if (v7audit.date && v7audit.date.value) {
+        fields.date = String(v7audit.date.value);
+        fields.__dateConfidence = v7audit.date.confidence;
+      }
+    }
+  } catch (e) { console.warn('[ocr-v7] Document Intelligence 跳过（保持旧字段）:', e); }
+
   // V5 §57：实体别名自动套用 —— 用户纠正过的商户/对方名称（"RECIBO"→"TANIA PAMELA..."）下次识别自动生效
   try {
     const kb = window.RecognitionCore && window.RecognitionCore.knowledgeBase;
@@ -1669,7 +1726,7 @@ async function wbLocalOcrV2(img) {
     }
   } catch (e) { /* 别名解析失败不影响 */ }
 
-  // V5 §52-56：学习规则套用 —— 同一上下文下被用户反复纠正的"金额"（如固定房租），OCR 又给出同样错误值→ 套用已学正确值
+  // V7：学习规则套用仅用于稳定实体别名；金额不再 wrong→right 死值替换，改由模板锚点/ROI/数学关系学习
   try {
     const CL = window.OcrKit && window.OcrKit.correctionLearner;
     if (CL && typeof CL.applyLearned === 'function') {
@@ -1707,25 +1764,35 @@ async function wbLocalOcrV2(img) {
     } catch (e) { console.warn('[ocr] 金额智能跳过（不影响主结果）:', e); }
   }
 
-  // V4.5 Region Retry：金额低置信（max-guess 0.45 / importe 0.80）→ 定位 TOTAL 区域裁剪重识别
-  if ((fields.amount == null || (fields.amountConfidence || 0) < 0.65) &&
-      window.OcrKit && window.OcrKit.regionRetry && result._canvas && result.lines && result.lines.length) {
+  // V7 Field Rescue：只救低置信金额；已知模板优先直接裁学习到的 ROI，禁止整图重跑。
+  if ((fields.amount == null || (fields.amountConfidence || 0) < 0.72) &&
+      window.OcrKit && window.OcrKit.regionRetry && result._canvas) {
     try {
       const mgr = await getOcrManager();
-      const rr = await window.OcrKit.regionRetry.retry(result, result._canvas, mgr, 'amount');
+      let rr = null;
+      const tpl = templateMatchV7 && templateMatchV7.template;
+      const anchor = tpl && tpl.fieldAnchors && (tpl.fieldAnchors.TOTAL_AMOUNT || tpl.fieldAnchors.amount);
+      if (anchor && typeof window.OcrKit.regionRetry.retryTemplateRegion === 'function') {
+        rr = await window.OcrKit.regionRetry.retryTemplateRegion(result, result._canvas, mgr, 'amount', anchor);
+      }
+      if (!rr && result.lines && result.lines.length) {
+        rr = await window.OcrKit.regionRetry.retry(result, result._canvas, mgr, 'amount');
+      }
       if (rr && rr.value != null && rr.value !== '') {
-        // 仅当区域识别出更合理的值（数字）时采用
         const num = Number(String(rr.value).replace(/[^\d.-]/g, ''));
         if (Number.isFinite(num) && num > 0) {
           const prev = fields.amount != null ? String(fields.amount) : null;
-          fields.amount = String(num);
-          fields.amountConfidence = Math.max(fields.amountConfidence || 0, 0.85);
-          fields.amountSource = 'region-retry';
-          // 溯源：保留 OCR 原值（供 EvidenceEngine）
-          if (prev && prev !== fields.amount) fields.__amountOriginal = prev;
+          // ROI 是救援证据，但仍交 V7 票面候选/数学判断；若原金额已有强数学证据，不让低质量 ROI 覆盖。
+          const strongCurrent = v7audit && v7audit.amount && v7audit.amount.strong && (fields.amountConfidence || 0) >= 0.85;
+          if (!strongCurrent || prev == null) {
+            fields.amount = String(num);
+            fields.amountConfidence = Math.max(fields.amountConfidence || 0, rr.template ? 0.90 : 0.84);
+            fields.amountSource = rr.template ? 'template-roi-retry' : 'region-retry';
+            if (prev && prev !== fields.amount) fields.__amountOriginal = prev;
+          }
         }
       }
-    } catch (e) { console.warn('[ocr] 区域重试失败（不影响主结果）:', e); }
+    } catch (e) { console.warn('[ocr-v7] 金额 ROI 救援失败（不影响主结果）:', e); }
   }
   // V5 §34 Region Retry 扩展：date/merchant 缺失时定位标签区域重识别（其余字段供模板/学习阶段接入）
   if (window.OcrKit && window.OcrKit.regionRetry && result._canvas && result.lines && result.lines.length) {
@@ -1742,13 +1809,12 @@ async function wbLocalOcrV2(img) {
       }
     } catch (e) { /* ignore */ }
   }
-  // V5 §42-47/§55：模板匹配 + 负样本抑制（记忆层，失败不影响主结果）
-  if (window.OcrKit && window.OcrKit.documentFingerprint && window.OcrKit.templateEngine) {
+  // V7：模板元数据 + 负样本抑制。复用前面已经完成的指纹匹配，避免重复计算。
+  if (fpV7) {
     try {
-      const fp = window.OcrKit.documentFingerprint.build(result, { region: regionCode, docType });
-      const match = await window.OcrKit.templateEngine.match(fp);
+      const match = templateMatchV7;
       wbOcrMeta = {
-        fingerprint: fp,
+        fingerprint: fpV7,
         templateId: (match && match.template) ? match.template.id : null,
         templateScore: (match && match.score) || 0,
         merchantId: (match && match.template && match.template.merchantId) || null,
@@ -1758,8 +1824,6 @@ async function wbLocalOcrV2(img) {
         engine: result.engine || null,
         preprocessProfile: result.profile || null,
       };
-      if (match && match.template) result.template = { id: match.template.id, score: match.score, level: match.level };
-      // §55 负样本抑制：被证明错的候选 → 置信下调（不静默入账）
       if (fields.amount != null && window.OcrKit.correctionLearner) {
         const ctx = wbOcrMeta.templateId || wbOcrMeta.merchantId || wbOcrMeta.docType || 'global';
         const suppressed = await window.OcrKit.correctionLearner.isSuppressed('amount', fields.amount, ctx);
@@ -1768,10 +1832,12 @@ async function wbLocalOcrV2(img) {
           fields.__amountSuppressed = true;
         }
       }
-    } catch (e) { console.warn('[ocr] 模板记忆跳过（不影响主结果）:', e); }
+    } catch (e) { console.warn('[ocr-v7] 模板元数据失败（不影响主结果）:', e); }
   } else {
     wbOcrMeta = null;
   }
+  wbLastOcrResult = result;
+  wbLastOcrAudit = v7audit;
   if (job) job.finish(); // 任务正常结束（§73）
   return {
     text: fullText,
@@ -1784,6 +1850,7 @@ async function wbLocalOcrV2(img) {
     lines: result.lines || [],
     processingMs: result.processingTimeMs || 0,
     engine: result.engine || null,
+    audit: v7audit || null,
   };
 }
 
@@ -2138,6 +2205,30 @@ function wbCollectFields() {
   };
 }
 
+// V7：人工纠错本身就是训练。先确保当前票据有 candidate template，
+// 这样第一次纠错也能学习 TOTAL/商户等字段的相对 ROI，而不是等到第二次才有模板。
+async function wbEnsureTemplateForLearning(fields) {
+  try {
+    const TE = window.OcrKit && window.OcrKit.templateEngine;
+    const meta = wbOcrMeta;
+    if (!TE || !meta || !meta.fingerprint) return null;
+    if (meta.templateId) return meta.templateId;
+    const changedIds = ['wbAmount','wbDate','wbMerchant','wbCompany','wbTax','wbReference'];
+    const hasCorrection = changedIds.some(id => {
+      const el = document.getElementById(id);
+      return el && el.value && wbAiValues[id] != null && String(el.value).trim() !== String(wbAiValues[id]).trim();
+    });
+    if (!hasCorrection && !(fields && fields.amount)) return null;
+    const tpl = await TE.save({
+      merchantName: (fields && (fields.merchant || fields.company)) || meta.merchantName || null,
+      docType: meta.docType || null, region: meta.region || null, fingerprint: meta.fingerprint,
+      fieldAnchors: null, status: 'candidate'
+    });
+    if (tpl) { meta.templateId = tpl.id; meta.merchantName = tpl.merchantName || meta.merchantName; return tpl.id; }
+  } catch (e) { console.warn('[ocr-v7] 创建学习模板失败:', e); }
+  return null;
+}
+
 // ===== 纠错学习（§三十一）：用户修正 AI 识别 → 记入本地知识库 + V5 §48 LearningEvent =====
 function wbLearnCorrections(fields) {
   // 1) 别名学习（merchant/bank/category/remark 是"实体别名"，合理用途，保留）
@@ -2177,6 +2268,10 @@ function wbLearnCorrections(fields) {
       const aiVal = wbAiValues[fieldId];
       const userVal = String(el.value).trim();
       if (aiVal != null && String(aiVal).trim() !== userVal) {
+        const DI = window.OcrKit && window.OcrKit.documentIntelligenceV7;
+        const errorType = DI && DI.attributeCorrection
+          ? DI.attributeCorrection(field, String(aiVal), userVal, wbLastOcrResult, wbLastOcrAudit)
+          : 'resolver_or_ocr_error';
         CL.record({
           field, originalOcr: String(aiVal), corrected: userVal,
           fingerprint: meta.fingerprint || null,
@@ -2187,8 +2282,16 @@ function wbLearnCorrections(fields) {
           engine: meta.engine || null,
           preprocessProfile: meta.preprocessProfile || null,
           mathContext: wbAiValues.__amountReason || null,
+          errorType,
+          beforeEvidence: field === 'amount' ? (wbLastOcrAudit && wbLastOcrAudit.amount) : null,
           scope: meta.templateId ? 'template' : 'instance',
         }).catch(() => {});
+        // V7 核心：学习字段锚点/相对 ROI，而不是背 corrected 的死值。
+        const TE = window.OcrKit && window.OcrKit.templateEngine;
+        if (TE && meta.templateId && wbLastOcrResult && typeof TE.learnFieldCorrection === 'function') {
+          const tplField = field === 'amount' ? 'amount' : (field === 'merchant' ? 'merchant' : field);
+          TE.learnFieldCorrection(meta.templateId, tplField, wbLastOcrResult, userVal, { errorType }).catch(() => {});
+        }
       }
     }
     // 负样本（§55）：AI 低置信猜测金额被用户改掉 → 记录该值在该上下文是错的
@@ -2204,7 +2307,8 @@ function wbLearnCorrections(fields) {
 // 「保存」：对号入座 —— 把工作台识别字段填入记账表单(支出/收入弹窗)，用户核对后点弹窗保存入账
 async function wbSave() {
   const fields = wbCollectFields();
-  wbLearnCorrections(fields); // 纠错学习：用户修正 → 知识库 + LearningEvent
+  await wbEnsureTemplateForLearning(fields); // V7：第一次纠错也先建立 candidate template
+  wbLearnCorrections(fields); // 纠错学习：值变化 + 错误归因 + 模板锚点/ROI
   // V5 §52/§63/§65-66：模板画像记录 + 候选模板创建（记忆层；失败不影响保存）
   try {
     const TE = window.OcrKit && window.OcrKit.templateEngine;

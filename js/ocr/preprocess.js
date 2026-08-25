@@ -12,9 +12,11 @@
 (function (global) {
   // 设备档位 → 最长边目标
   const PROFILES = {
-    high:    2200,
-    balanced: 1800,
-    low:     1400,
+    // V7：PP-OCRv5 在 GitHub Pages 的 WASM 单线程上，2200px 会让真机/桌面单票达到 20~85 秒。
+    // 首轮目标改为 1300~1900；小字/淡字不靠整图无限放大，而由 ROI 以原字段区域局部放大救援。
+    high:    1900,
+    balanced: 1600,
+    low:     1300,
   };
 
   /** 从任意图像源加载 HTMLImageElement */

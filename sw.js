@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v141';
+const CACHE_NAME = 'jizhang-pwa-v160-final-intelligence';
 const APP_SHELL = [
   './',
   './index.html',
@@ -13,6 +13,20 @@ const APP_SHELL = [
   './js/offline-db.js',
   './js/offline-backend.js',
   './js/offline-ocr.js',
+  './js/weather/weather-types.js',
+  './js/weather/weather-provider.js',
+  './js/weather/weather-normalizer.js',
+  './js/weather/weather-config.js',
+  './js/weather/weather-cache.js',
+  './js/weather/open-meteo-provider.js',
+  './js/weather/rain-event-resolver.js',
+  './js/weather/wind-event-resolver.js',
+  './js/weather/weather-event-engine.js',
+  './js/weather/weather-diff-engine.js',
+  './js/weather/weather-reminder-engine.js',
+  './js/weather/weather-voice-intent.js',
+  './js/weather/weather-service.js',
+  './js/weather/weather-card.js',
   './js/voice-engine.js',
   './js/validation/validators.js',
   './js/validation/confidence.js',
@@ -71,6 +85,7 @@ const APP_SHELL = [
   './js/intelligence/document-fingerprint.js',
   './js/intelligence/template-engine.js',
   './js/intelligence/correction-learner.js',
+  './js/intelligence/document-intelligence-v7.js',
   './js/learning/learning-engine.js',
   // app.js 拆分模块（app.js v69 拆分）
   './js/voice/reminders.js',

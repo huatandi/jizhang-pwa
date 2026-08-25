@@ -36,6 +36,7 @@
     task: 'automatic-speech-recognition',
     chunkLengthSec: 10,
     checkModelFile: true,  // 初始化前预检模型仓库文件可用性，避免下载后失败退出
+    modelMirror: null,     // V7：浏览器默认不再自动切 hf-mirror（其 CORS 会阻断 GitHub Pages）；需要时显式配置
   };
 
   let module = null;
@@ -152,8 +153,9 @@
           const progressCb = (p) => {
             if (this.onProgress) this.onProgress(p.progress || 0, p.file || p.status || '');
           };
-          // 模型下载源：官方 huggingface.co 优先；中国大陆常超时/被墙 →
-          // 失败自动切换国内镜像 hf-mirror.com 重试一次（transformers.js env.remoteHost 可改）。
+          // 模型下载源：官方 Hugging Face 优先。
+          // V7：浏览器端不再自动切 hf-mirror.com——该镜像对 GitHub Pages 常缺 CORS 头，
+          // 会造成一次必败的额外下载等待。若部署方确认镜像支持 CORS，可显式传 modelMirror。
           const tryInit = async (host) => {
             if (host && env && env.remoteHost && env.remoteHost !== host) {
               console.warn('[asr] 模型下载源切换: ' + env.remoteHost + ' → ' + host);
@@ -171,12 +173,11 @@
           try {
             pl = await tryInit(null); // 默认 remoteHost（huggingface.co）
           } catch (e1) {
-            // 官方源失败（多为网络超时/区域封锁）→ 镜像重试一次
-            if (env && env.remoteHost && env.remoteHost.indexOf('hf-mirror.com') === -1) {
+            if (this.config.modelMirror) {
               try {
-                pl = await tryInit('https://hf-mirror.com/');
+                pl = await tryInit(this.config.modelMirror);
               } catch (e2) {
-                console.warn('[asr-runtime] Whisper init FAILED (mirror too) model=' + this.config.modelRepo + ' : ' + (e2 && e2.message || e2));
+                console.warn('[asr-runtime] Whisper init FAILED (configured mirror too) model=' + this.config.modelRepo + ' : ' + (e2 && e2.message || e2));
                 throw e2;
               }
             } else {

@@ -145,6 +145,90 @@
     return t;
   }
 
+
+
+  /**
+   * V7：从人工纠正中学习“字段在哪里/靠什么标签定位”，而不是记住上一张票的死值。
+   * - amount：优先寻找包含 corrected 金额的 OCR 行；找不到时退到 TOTAL/应付/应收标签行。
+   * - merchant：商户通常是模板稳定实体，可更新 merchantName，同时记录顶部 ROI。
+   * ROI 使用 0~1 相对坐标，允许拍照缩放/分辨率变化。
+   */
+  async function learnFieldCorrection(id, field, result, corrected, opts) {
+    const t = await global.OcrMemoryStore.get(STORE, id);
+    if (!t || !result) return null;
+    const o = opts || {};
+    const W = Number(result.width) || 0, H = Number(result.height) || 0;
+    const lines = Array.isArray(result.lines) ? result.lines : [];
+    function boxOf(line) {
+      const b = line && (line.bbox || line.box);
+      if (!b) return null;
+      if (Array.isArray(b) && b.length === 4 && typeof b[0] === 'number') return b;
+      if (Array.isArray(b) && b.length >= 4 && Array.isArray(b[0])) {
+        const xs=b.map(p=>Number(p[0])||0), ys=b.map(p=>Number(p[1])||0);
+        return [Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)];
+      }
+      return null;
+    }
+    function rel(b) { return (b && W && H) ? [b[0]/W,b[1]/H,b[2]/W,b[3]/H].map(v=>Math.round(v*10000)/10000) : null; }
+    function nMoney(v) {
+      const x=Number(String(v==null?'':v).replace(/[\s,$¥€£￥₩]/g,''));
+      return Number.isFinite(x) ? Math.round(x*100)/100 : null;
+    }
+    function amounts(txt) {
+      const out=[]; const re=/(?:[$¥€£￥₩]\s*)?(-?\d{1,3}(?:[ ,]\d{3})+(?:\.\d{2})|-?\d+[.,]\d{2}|-?\d+)/g; let m;
+      while((m=re.exec(String(txt||'')))){let raw=m[1];let n;
+        if (/^-?\d+,\d{2}$/.test(raw) && !raw.includes('.')) n=Number(raw.replace(',','.'));
+        else n=Number(raw.replace(/[ ,]/g,''));
+        if(Number.isFinite(n))out.push(Math.round(n*100)/100);
+      } return out;
+    }
+    t.fieldAnchors = t.fieldAnchors || {};
+    const key = field === 'amount' ? 'TOTAL_AMOUNT' : field;
+    let anchorLine=null, anchor='';
+    if (field === 'amount') {
+      const target=nMoney(corrected);
+      if (target != null) {
+        anchorLine=lines.find(l=>amounts(l.text).some(v=>Math.abs(v-target)<=0.011)) || null;
+      }
+      if (!anchorLine) anchorLine=lines.find(l=>/total\s+a\s+(?:pagar|cobrar)|importe\s+cobrado|gran\s+total|\btotal\b|合计|总计/i.test(String(l.text||''))) || null;
+      const txt=String(anchorLine&&anchorLine.text||'');
+      const lm=txt.match(/total\s+a\s+pagar|total\s+a\s+cobrar|importe\s+cobrado|gran\s+total|\btotal\b|合计|总计/i);
+      anchor=lm?lm[0]:'TOTAL';
+    } else if (field === 'merchant') {
+      const cor=String(corrected||'').trim().toLowerCase();
+      anchorLine=lines.find(l=>cor && String(l.text||'').toLowerCase().includes(cor)) || null;
+      if (corrected) t.merchantName=String(corrected).trim();
+      anchor='HEADER';
+    } else {
+      const cor=String(corrected||'').trim().toLowerCase();
+      anchorLine=lines.find(l=>cor && String(l.text||'').toLowerCase().includes(cor)) || null;
+      anchor=field.toUpperCase();
+    }
+    const b=boxOf(anchorLine), roi=rel(b);
+    const old=t.fieldAnchors[key] || {};
+    t.fieldAnchors[key] = Object.assign({}, old, {
+      anchor,
+      relation: field==='amount'?'sameLineOrNearestMoney':'sameRegion',
+      roi: roi || old.roi || null,
+      supportCount: (old.supportCount||0)+1,
+      failureCount: old.failureCount||0,
+      lastCorrectedAt: Date.now(),
+      learnedFrom: o.errorType || 'user_correction',
+    });
+    t.updatedAt=Date.now();
+    await global.OcrMemoryStore.put(STORE,id,t);
+    return t;
+  }
+
+  /** V7：字段锚点失败时降权，避免模板换版后死套。 */
+  async function markFieldFailure(id, field) {
+    const t=await global.OcrMemoryStore.get(STORE,id); if(!t||!t.fieldAnchors)return t;
+    const key=field==='amount'?'TOTAL_AMOUNT':field; const a=t.fieldAnchors[key]; if(!a)return t;
+    a.failureCount=(a.failureCount||0)+1;
+    if(a.failureCount>=3 && (a.supportCount||0)<a.failureCount) a.suspended=true;
+    t.updatedAt=Date.now(); await global.OcrMemoryStore.put(STORE,id,t); return t;
+  }
+
   /** 模板置信度（§54：可解释规则置信） */
   function confidence(t) {
     if (!t) return 0;
@@ -173,7 +257,7 @@
 
   global.OcrKit = global.OcrKit || {};
   global.OcrKit.templateEngine = {
-    save, match, record, confidence, archive, get, list, remove,
+    save, match, record, learnFieldCorrection, markFieldFailure, confidence, archive, get, list, remove,
     getMerchant, listMerchants, THRESHOLD, STATUS,
   };
 })(typeof window !== 'undefined' ? window : globalThis);
