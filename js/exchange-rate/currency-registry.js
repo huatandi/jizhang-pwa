@@ -53,7 +53,7 @@
   }
 
   // 默认常用货币（无本币偏好时的兜底：国际主流）
-  const DEFAULT_FAVORITES = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'CAD', 'AUD', 'CHF'];
+  const DEFAULT_FAVORITES = ['USD', 'EUR'];
 
   // 本地化货币名称（浏览器语言）
   let _displayNames = null;

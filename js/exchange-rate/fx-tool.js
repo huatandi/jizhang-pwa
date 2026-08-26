@@ -54,7 +54,10 @@
 
   // 获取本币：优先记忆用户上次在汇率工具里选择的本币（刷新不丢），其次记账系统 base_currency
   function homeCurrency() {
-    // 1) 汇率工具记忆（用户手动改过 from → 刷新后保持）
+    // V7：永远跟随"系统国家"本币(记账系统的 options.base_currency)为第一个；用户手动改过的 from 仅作兜底。
+    try {
+      if (typeof options !== 'undefined' && options.base_currency) return String(options.base_currency).toUpperCase();
+    } catch (e) { /* ignore */ }
     try {
       const saved = localStorage.getItem('fx_prefs');
       if (saved) {
@@ -62,25 +65,15 @@
         if (p.home && /^[A-Za-z]{3}$/.test(String(p.home))) return String(p.home).toUpperCase();
       }
     } catch (e) { /* ignore */ }
-    // 2) 记账系统本币
-    try {
-      if (typeof options !== 'undefined' && options.base_currency) return String(options.base_currency).toUpperCase();
-    } catch (e) { /* ignore */ }
     return 'USD';
   }
 
   // ---- 初始化 ----
   async function init() {
-    state.base = homeCurrency();
+    state.base = homeCurrency(); // 系统国家货币(第一个)
     state.from = state.base;
-    // 从 localStorage 读取用户偏好（默认目标货币）
-    try {
-      const saved = localStorage.getItem('fx_prefs');
-      if (saved) {
-        const p = JSON.parse(saved);
-        if (p.to) state.to = p.to;
-      }
-    } catch (e) { /* ignore */ }
+    // V7：默认对 = 系统国货币 → 中国货币 CNY（手机系统语言中文 → 以 CNY 为参照）。载入即此对；用户可手动改(pick)。
+    state.to = 'CNY';
     if (state.to === state.from) state.to = state.to === 'USD' ? 'EUR' : 'USD';
     bindEvents();
     // 首屏：立即用缓存渲染（如果有），再后台刷新
