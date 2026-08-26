@@ -12,6 +12,7 @@
  */
 (function (global) {
 let quickType = 'expense';
+let quickTypeManual = false; // 用户手动选过收支类型后，语音不再自动覆盖（防止语音一直错导致手动失效）
 let quickCategory = '';
 // V4.5 字段状态：已确认字段不被低置信新段覆盖（连续语音"后面内容框乱掉"修复）
 // { amount: true, account: true, ... } — true = 用户确认过/改口过，常规解析不再覆盖
@@ -107,7 +108,8 @@ function cancelQuick() {
   showToast('已取消记账');
 }
 
-function setQuickType(t, btn) {
+function setQuickType(t, btn, manual) {
+  if (manual) quickTypeManual = true; // 用户手动选择 → 锁定，语音不再自动覆盖
   quickType = t;
   quickCategory = '';
   document.querySelectorAll('#page-quick .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
@@ -1183,7 +1185,8 @@ function applyVoiceText(buffer) {
     return;
   }
   if (parsed.cmd === 'income' || parsed.cmd === 'expense') {
-    if (quickType !== parsed.cmd) {
+    // 用户已手动锁定类型 → 语音不再自动改，避免"语音一直错 → 手动失效"
+    if (!quickTypeManual && quickType !== parsed.cmd) {
       const seg = document.querySelector(`#page-quick .seg-btn[data-type="${parsed.cmd}"]`);
       if (seg) setQuickType(parsed.cmd, seg);
     }
