@@ -23,6 +23,22 @@
       check(db) { return !columnExists(db, 'expense', 'payee'); },
       up(db) { db.exec("ALTER TABLE expense ADD COLUMN payee TEXT DEFAULT ''"); },
     },
+    {
+      version: 2,
+      id: 'add-ledger-indexes',
+      description: '收入/支出/进货高频查询索引（V3.0 §九：date+mode 组合，10 万条账目可用）',
+      check(db) {
+        // 已建 idx_income_date_mode 即视为完成（幂等）
+        return !indexExists(db, 'idx_income_date_mode');
+      },
+      up(db) {
+        db.exec("CREATE INDEX IF NOT EXISTS idx_income_date_mode ON income(date, mode)");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_expense_date_mode ON expense(date, mode)");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_purchase_date_mode ON purchase(doc_date, mode)");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_income_category_mode ON income(project, mode)");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_expense_category_mode ON expense(category, mode)");
+      },
+    },
     // 未来迁移示例（勿启用）：
     // {
     //   version: 2,
@@ -39,6 +55,13 @@
       const rows = db.exec(`PRAGMA table_info(${table})`);
       if (!rows || !rows.length || !rows[0].values) return false;
       return rows[0].values.some(r => r[1] === col);
+    } catch (e) { return false; }
+  }
+
+  function indexExists(db, indexName) {
+    try {
+      const r = db.exec(`SELECT name FROM sqlite_master WHERE type='index' AND name='${indexName}'`);
+      return !!(r && r.length && r[0].values && r[0].values.length);
     } catch (e) { return false; }
   }
 

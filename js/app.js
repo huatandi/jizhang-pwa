@@ -3080,17 +3080,31 @@ async function initAfterLogin() {
   }
   // 语音模型后台静默预热：页面加载后延迟触发，不显示任何下载提示。
   // 首次会静默下载 Whisper 模型（缓存后离线可用）；下载中不打扰用户，点击说话时若未就绪再实时准备。
-  if (window.VoiceSR && typeof window.VoiceSR.warmup === 'function') {
-    setTimeout(() => {
-      window.VoiceSR.warmup().catch(() => {});
-    }, 3000);
-  }
+  // V3.0 §十一/§十二：经 RuntimeAssetManager 统一管理（能力门控 + 状态 + 预热）
+  try {
+    const RA = window.AppCore && window.AppCore.RuntimeAssets;
+    if (RA) {
+      if (!RA.getStatus('whisper')) RA.register('whisper', {
+        flagName: 'whisperLocal',
+        load: async () => { if (window.VoiceSR && window.VoiceSR.warmup) await window.VoiceSR.warmup(); return true; },
+        dispose: () => { if (window.VoiceSR && window.VoiceSR.stop) { try { window.VoiceSR.stop(); } catch (e) {} } },
+      });
+      setTimeout(() => RA.warmup('whisper').catch(() => {}), 3000);
+    } else if (window.VoiceSR && typeof window.VoiceSR.warmup === 'function') {
+      setTimeout(() => { window.VoiceSR.warmup().catch(() => {}); }, 3000);
+    }
+  } catch (e) { /* ignore */ }
   // PvM 个人语音记忆预热：加载本地记忆缓存（voice-engine 同步解析需要）
   if (window.PersonalVoiceMemory && typeof window.PersonalVoiceMemory.warmup === 'function') {
     setTimeout(() => {
       window.PersonalVoiceMemory.warmup().catch(() => {});
     }, 800);
   }
+  // AppServices 注册（V3.0 §二十九）：把既有全局登记入注册表，供新模块经 AppServices 访问
+  try {
+    const AS = window.AppCore && window.AppCore.AppServices;
+    if (AS && AS.autoRegister) AS.autoRegister();
+  } catch (e) { /* ignore */ }
   // 顶栏模式徽章（当前登录模式：开店/家庭）
   updatePageModeBadge();
 }

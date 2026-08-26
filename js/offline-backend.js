@@ -416,7 +416,12 @@
         if (start) { conds.push(dateCol + ' >= ?'); params.push(start); }
         if (end) { conds.push(dateCol + ' <= ?'); params.push(end); }
         const order = table === 'purchase' ? 'id DESC' : 'date DESC, id DESC';
-        const rows = DB.prepare(`SELECT * FROM ${table} WHERE ${conds.join(' AND ')} ORDER BY ${order}`).all(...params);
+        // V3.0 §九：DB 级分页（WHERE+ORDER BY+LIMIT/OFFSET，禁 JS filter）
+        const limit = query.limit != null ? Math.min(Number(query.limit) || 0, 1000) : 0;
+        const offset = query.offset != null ? Math.max(Number(query.offset) || 0, 0) : 0;
+        const sql = `SELECT * FROM ${table} WHERE ${conds.join(' AND ')} ORDER BY ${order}` +
+          (limit > 0 ? ` LIMIT ${limit} OFFSET ${offset}` : '');
+        const rows = DB.prepare(sql).all(...params);
         return ok(rows);
       }
       if (!id && method === 'POST') {

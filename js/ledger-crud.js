@@ -13,6 +13,26 @@
 (function (global) {
 // 收入搜索词（主文件 incomeSearchQ 同源，此处不再重复声明）
 
+// V3.0 §十：DOM 分页状态（每列表最多渲染 PAGE_SIZE 组，点击"加载更多"追加）
+const PAGE_SIZE = 200;
+let incomePageRows = null;   // 当前收入分页全量数据（分组后）
+let expensePageRows = null;
+let purchasePageRows = null;
+let incomePageLen = 0, expensePageLen = 0, purchasePageLen = 0;
+
+/** 生成"加载更多"行（若还有未渲染数据） */
+function moreRow(tbodyId, len, total, kind) {
+  const moreBtn = `<tr class="pager-more-row"><td colspan="8" style="text-align:center;padding:10px">
+    <button class="btn-small" onclick="loadMoreRows('${kind}')">⬇ 加载更多（${total - len} 条）</button></td></tr>`;
+  return len < total ? moreBtn : '';
+}
+/** 加载更多（kind: income|expense|purchase）——重新渲染当前已见部分 + 追加 */
+function loadMoreRows(kind) {
+  if (kind === 'income') { incomePageLen += PAGE_SIZE; renderIncome(); }
+  else if (kind === 'expense') { expensePageLen += PAGE_SIZE; renderExpense(); }
+  else if (kind === 'purchase') { purchasePageLen += PAGE_SIZE; renderPurchase(); }
+}
+
 async function renderIncome() {
   let rows = await api('/income');
   const q = (incomeSearchQ || '').toLowerCase();
@@ -33,8 +53,14 @@ async function renderIncome() {
   }
   const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
 
+  // V3.0 §十：DOM 分页（最多 PAGE_SIZE 组日期；loadMoreRows 追加）
+  if (incomePageLen === 0 || incomePageRows !== dates.length) {
+    incomePageRows = dates.length; incomePageLen = PAGE_SIZE;
+  }
+  const visible = dates.slice(0, incomePageLen);
+
   const tbody = document.querySelector('#incomeTable tbody');
-  tbody.innerHTML = dates.map(date => {
+  const bodyHtml = visible.map(date => {
     const items = groups[date];
     // 账户明细：每笔记录在账户明细列内堆叠，带操作按钮
     const accountDetails = items.map(r => `
@@ -63,7 +89,10 @@ async function renderIncome() {
       <td>${escapeHtml(payMethods)}</td>
       <td class="amount positive">¥${fmtMoney(total)}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
+  }).join('');
+  tbody.innerHTML = visible.length
+    ? bodyHtml + moreRow('incomeTable', incomePageLen, dates.length, 'income')
+    : '<tr><td colspan="6" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
 }
 
 let editingIncomeId = null;
@@ -320,8 +349,13 @@ async function renderPurchase() {
     countEl.textContent = (q ? `匹配 ${rows.length} 条 · ` : '') +
       `总计金额 ¥${fmtMoney(t)} · 已付 ¥${fmtMoney(p)} · 未付 ¥${fmtMoney(Math.min(unpaidAll, Math.max(0, t - p)))}`;
   }
+  // V3.0 §十：DOM 分页（进货按行分页）
+  if (purchasePageLen === 0 || purchasePageRows !== rows.length) {
+    purchasePageRows = rows.length; purchasePageLen = PAGE_SIZE;
+  }
+  const visibleRows = rows.slice(0, purchasePageLen);
   const tbody = document.querySelector('#purchaseTable tbody');
-  tbody.innerHTML = rows.map(r => {
+  const bodyHtml = visibleRows.map(r => {
     const total = Number(r.total_amount) || 0;
     const paid = Number(r.paid_amount) || 0;
     const clearDate = clearMap[r.supplier];
@@ -341,7 +375,10 @@ async function renderPurchase() {
         <button class="action-btn" onclick="editPurchase(${r.id})" title="编辑">✏️</button>
         <button class="action-btn delete" onclick="deletePurchase(${r.id})" title="删除">🗑️</button>
       </td>
-    </tr>`}).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
+    </tr>`}).join('');
+  tbody.innerHTML = visibleRows.length
+    ? bodyHtml + moreRow('purchaseTable', purchasePageLen, rows.length, 'purchase')
+    : '<tr><td colspan="8" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
 }
 
 let editingPurchaseId = null;
@@ -441,8 +478,14 @@ async function renderExpense() {
   }
   const dates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
 
+  // V3.0 §十：DOM 分页
+  if (expensePageLen === 0 || expensePageRows !== dates.length) {
+    expensePageRows = dates.length; expensePageLen = PAGE_SIZE;
+  }
+  const visible = dates.slice(0, expensePageLen);
+
   const tbody = document.querySelector('#expenseTable tbody');
-  tbody.innerHTML = dates.map(date => {
+  const bodyHtml = visible.map(date => {
     const items = groups[date];
     // 项目明细：每笔记录堆叠，带操作按钮
     const catDetails = items.map(r => `
@@ -468,7 +511,10 @@ async function renderExpense() {
       <td>${accounts ? `<a class="query-link" onclick="openQuery('account','${escJs(accounts)}')">${escapeHtml(accounts)}</a>` : ''}</td>
       <td class="amount negative">¥${fmtMoney(total)}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
+  }).join('');
+  tbody.innerHTML = visible.length
+    ? bodyHtml + moreRow('expenseTable', expensePageLen, dates.length, 'expense')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
 }
 
 let editingExpenseId = null;
