@@ -3239,10 +3239,29 @@ async function loadMembers() {
   if (!rows.length) {
     listEl.innerHTML = '<div class="recur-hint">暂无成员。第一个添加的成员将成为「所有者」。</div>';
     if (labelEl) labelEl.textContent = '账本主人';
+    const chipName = document.getElementById('activeMemberName');
+    if (chipName) chipName.textContent = '账本主人';
+    const swList = document.getElementById('memberSwitchList');
+    if (swList) swList.innerHTML = '<div class="recur-hint">暂无成员</div>';
     return;
   }
   const active = rows.find(m => m.member_id === activeId) || rows[0];
   if (labelEl) labelEl.textContent = active ? active.name : '账本主人';
+  // 侧边栏"当前记账人"徽章 + 切换弹窗列表（登录后/各页均可见）
+  const chipName = document.getElementById('activeMemberName');
+  if (chipName) chipName.textContent = active ? active.name : '账本主人';
+  const swList = document.getElementById('memberSwitchList');
+  if (swList) {
+    swList.innerHTML = rows.map(m => {
+      const isOn = active && active.member_id === m.member_id;
+      return `<button class="member-switch-item ${isOn ? 'member-switch-active' : ''}" onclick="setActiveMember('${escJs(m.member_id)}','${escJs(m.name)}')">
+        <span class="member-badge">${isOn ? '✓' : '○'}</span>
+        <span class="member-switch-name">${escapeHtml(m.name)}</span>
+        <span class="member-role member-role-${m.role}">${MEMBER_ROLE_LABEL[m.role] || m.role}</span>
+        ${isOn ? '<span class="member-switch-tag">当前</span>' : ''}
+      </button>`;
+    }).join('');
+  }
   listEl.innerHTML = rows.map(m => {
     const isOn = active && active.member_id === m.member_id;
     const delBtn = m.role === 'owner' && rows.filter(x => x.role === 'owner').length <= 1
@@ -3303,7 +3322,14 @@ async function removeLedgerMember(mid) {
 async function setActiveMember(mid, name) {
   setSmActor(mid, name);
   await loadMembers();
+  // 若切换弹窗打开，关闭它
+  try { document.getElementById('memberSwitcherModal').classList.remove('active'); __unlockBodyScroll(); } catch (e) { /* ignore */ }
   showToast('当前记账人：' + name + '（此后记账归属到TA）');
+}
+
+async function openMemberSwitcher() {
+  await loadMembers();
+  openModal('memberSwitcherModal');
 }
 
 init();

@@ -121,6 +121,9 @@
         <button class="nav-item" data-page="reminder"><span class="nav-icon">⏰</span>语音提醒</button>
       </nav>
       <div class="sidebar-footer">
+        <button class="member-chip" id="activeMemberChip" onclick="openMemberSwitcher()" title="当前记账人（点击切换）">
+          <span class="member-chip-label">👤 当前：<b id="activeMemberName">账本主人</b></span>
+        </button>
         <button class="btn-settings" onclick="gotoPage('settings')">⚙️ 设置</button>
         <button class="btn-logout" onclick="logout()">🚪 退出登录</button>
         <!-- 数据范围已移至设置页管理（设置 → 数据范围），此处不再显示 -->
@@ -1524,5 +1527,16 @@
   <!-- 导出（V3.0 §八 CSV V2） -->
   <script src="js/export/export-csv.js?v=70dfa464"></script>
   <script src="js/boot.js?v=143a19ce"></script>
+
+  <!-- 当前记账人切换弹窗（多成员共享） -->
+  <div class="modal-overlay" id="memberSwitcherModal">
+    <div class="modal" style="max-width:400px">
+      <div class="modal-header"><h3>👤 选择当前记账人</h3><button class="modal-close" onclick="closeModal('memberSwitcherModal')">×</button></div>
+      <div class="modal-body">
+        <div class="recur-hint" style="margin-bottom:10px">当前记账人决定新账记到谁名下。切换后，之后每笔账归属到TA。</div>
+        <div class="member-switch-list" id="memberSwitchList"></div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

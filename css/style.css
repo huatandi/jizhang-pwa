@@ -545,6 +545,15 @@ td.amount.negative { color: var(--red); }
   display: inline-flex; align-items: center; gap: 2px;
   margin-left: 2px;
 }
+/* 记账人归属徽章：多成员共享时,每笔显示"谁记的" */
+.pair-created-by {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600; color: var(--text-2);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border));
+  border-radius: 999px; padding: 1px 8px; margin-left: 6px;
+  white-space: nowrap;
+}
 .pair-actions .action-btn {
   opacity: 0.35; font-size: 14px; padding: 2px 4px;
   transition: var(--transition);
@@ -2040,6 +2049,28 @@ select option {
 }
 .member-add-row input[type="text"]:focus { border-color: var(--primary); }
 .member-add-row .btn-primary { padding: 8px 14px; }
+/* 侧边栏"当前记账人"徽章（点击切换） */
+.member-chip {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; padding: 8px 10px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface2); color: var(--text);
+  cursor: pointer; transition: var(--transition); font-size: 13px;
+}
+.member-chip:hover { border-color: var(--primary); background: var(--primary-soft); }
+.member-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 切换弹窗成员列表 */
+.member-switch-list { display: flex; flex-direction: column; gap: 8px; }
+.member-switch-item {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); cursor: pointer;
+  transition: var(--transition); text-align: left; font-size: 14px;
+}
+.member-switch-item:hover { border-color: var(--primary); background: var(--primary-soft); }
+.member-switch-item.member-switch-active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); }
+.member-switch-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-switch-tag { font-size: 10px; font-weight: 800; color: var(--primary); background: var(--primary-soft); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
 
 .settings-sub { font-size: 11px; font-weight: 400; color: #94a3b8; }
 .settings-tag {

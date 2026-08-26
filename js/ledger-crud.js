@@ -69,6 +69,7 @@ async function renderIncome() {
         <span class="tag tag-blue"><a class="query-link" onclick="openQuery('income_category','${escJs(r.project || '')}')">${escapeHtml(r.project || '未填')}</a></span>
         <span class="tag tag-green"><a class="query-link" onclick="openQuery('account','${escJs(r.account || '')}')">${escapeHtml(r.account || '未填')}</a></span>
         <b class="amount positive">¥${fmtMoney(r.amount)}</b>
+        ${r.created_by ? `<span class="pair-created-by" title="记账人">👤${escapeHtml(r.created_by)}</span>` : ''}
         <span class="pair-actions">
           ${r.voucher ? `<button class="action-btn" onclick="showVoucher('${escJs(r.voucher)}')" title="查看凭证">🖼️</button>` : ''}
           <button class="action-btn" onclick="editIncome(${r.id})" title="编辑">✏️</button>
@@ -370,7 +371,7 @@ async function renderPurchase() {
       <td>${escapeHtml(r.status)}</td>
       <td class="amount positive">${paid ? '¥' + fmtMoney(paid) : ''}</td>
       <td class="amount ${unpaid > 0 ? 'negative' : ''}">${st.cleared ? clearedBadge : (unpaid > 0 ? '¥' + fmtMoney(unpaid) : '')}</td>
-      <td>${escapeHtml(r.remark)}</td>
+      <td>${escapeHtml(r.remark)}${r.created_by ? ` <span class="pair-created-by" title="记账人">👤${escapeHtml(r.created_by)}</span>` : ''}</td>
       <td>
         <button class="action-btn" onclick="editPurchase(${r.id})" title="编辑">✏️</button>
         <button class="action-btn delete" onclick="deletePurchase(${r.id})" title="删除">🗑️</button>
@@ -493,6 +494,7 @@ async function renderExpense() {
         ${catIconHtml(r.category || '', 'expense')}
         <span class="tag tag-orange"><a class="query-link" onclick="openQuery('expense_category','${escJs(r.category || '')}')">${escapeHtml(r.category || '未填')}</a></span>
         <b class="amount negative">¥${fmtMoney(r.amount)}</b>
+        ${r.created_by ? `<span class="pair-created-by" title="记账人">👤${escapeHtml(r.created_by)}</span>` : ''}
         <span class="pair-actions">
           ${r.voucher ? `<button class="action-btn" onclick="showVoucher('${escJs(r.voucher)}')" title="查看凭证">🖼️</button>` : ''}
           <button class="action-btn" onclick="editExpense(${r.id})" title="编辑">✏️</button>
