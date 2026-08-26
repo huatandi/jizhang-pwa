@@ -1267,15 +1267,19 @@ function applyVoiceText(buffer) {
 
   renderVoicePreview();
   setVoiceBtnState('done');
-  if (effectiveVoiceLang() === 'es-MX') {
-    showToast(filled ? '✔ Reconocido. Sigue hablando o di "guardar"' : 'Texto reconocido, di el monto');
-    if (filled) speak('Reconocido');
-  } else if (effectiveVoiceLang() === 'en-US') {
-    showToast(filled ? '✔ Recognized. Keep talking or say "save"' : 'Text recognized, say the amount');
-    if (filled) speak('Recognized');
-  } else {
-    showToast(filled ? '✔ 已识别，可继续说或说“保存”' : '已识别文本，请补充金额');
-    if (filled) speak('识别成功');
+  // V7 说话不打断：仍在聆听时不播"识别成功"、不弹大提示（草稿由 voiceTip 实时展示 showVoiceDraft）；
+  // 只在会话结束（说保存/终结词后）才给出"识别成功/草稿完成"确认，避免半路打断用户说话。
+  if (!voiceSessionActive) {
+    if (effectiveVoiceLang() === 'es-MX') {
+      showToast(filled ? '✔ Reconocido. Revisa y guarda' : 'Texto reconocido, di el monto');
+      if (filled) speak('Reconocido');
+    } else if (effectiveVoiceLang() === 'en-US') {
+      showToast(filled ? '✔ Recognized. Review and save' : 'Text recognized, say the amount');
+      if (filled) speak('Recognized');
+    } else {
+      showToast(filled ? '✔ 已识别，请核对后保存' : '已识别文本，请补充金额');
+      if (filled) speak('识别成功');
+    }
   }
   // 短暂展示绿色确认后，若仍在持续聆听则恢复红色脉冲
   setTimeout(() => {
