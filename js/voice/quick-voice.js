@@ -552,6 +552,9 @@ function voiceHandleResult(r) {
 
 // TTS 语音播报（浏览器合成，离线可用）
 function speak(text, onend) {
+  // 录音中(voiceSessionActive)静默：绝不发声——避免系统在用户说话时"自言自语/重复我的话"打断；
+  // 只有说终结词后(voiceSessionActive=false)才发声确认(如"草稿完成，请核对后保存")。
+  if (voiceSessionActive) { if (onend) setTimeout(onend, 200); return; }
   try {
     if (!('speechSynthesis' in window)) { if (onend) setTimeout(onend, 300); return; }
     const u = new SpeechSynthesisUtterance(text);
