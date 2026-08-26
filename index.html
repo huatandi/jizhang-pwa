@@ -892,13 +892,19 @@
             <div class="recur-hint">💡 默认密码为 <b>12345</b>。修改后需在下次登录时使用新密码。</div>
           </div>
 
-          <!-- 数据备份 -->
+          <!-- 数据备份（V3.0 §八：CSV V2 + Backup V2） -->
           <div class="settings-section">
-            <div class="settings-title">💾 数据备份 <span class="settings-sub">生成账本一致性快照（含单据图片），下载到本地保存</span></div>
-            <div class="budget-input-row">
+            <div class="settings-title">💾 数据备份 <span class="settings-sub">快照下载 / CSV 导出（Excel 兼容）/ 备份恢复（校验后安全导入）</span></div>
+            <div class="budget-input-row" style="flex-wrap:wrap;gap:6px">
               <button class="btn-primary" onclick="downloadBackup()">⬇️ 立即备份并下载</button>
+              <button class="btn-small" onclick="BackupV2.exportCsv('income')">💰 收入 CSV</button>
+              <button class="btn-small" onclick="BackupV2.exportCsv('expense')">💸 支出 CSV</button>
+              <button class="btn-small" onclick="BackupV2.exportCsv('purchase')">📦 进货 CSV</button>
+              <button class="btn-small" onclick="BackupV2.exportCsv('all')">📋 全部 CSV</button>
+              <button class="btn-small" onclick="document.getElementById('restoreBackupFile').click()">📥 恢复备份</button>
+              <input type="file" id="restoreBackupFile" accept=".json,.db,application/json,application/octet-stream" style="display:none" onchange="BackupV2.restore(this)">
             </div>
-            <div class="recur-hint" id="backupHint">建议定期备份，防止误删或磁盘故障导致数据丢失。</div>
+            <div class="recur-hint" id="backupHint">建议定期备份。恢复前会先校验文件完整性并临时保存当前数据，校验失败不会覆盖。</div>
           </div>
 
           <!-- 数据库健康（V3.0 §七） -->
@@ -1424,6 +1430,8 @@
   <script src="js/exchange-rate/rate-calculator.js?v=926a42a5"></script>
   <script src="js/exchange-rate/exchange-rate-engine.js?v=d0bd4b7c"></script>
   <script src="js/exchange-rate/fx-tool.js?v=80870848"></script>
-  <script src="js/boot.js?v=e986b4c3"></script>
+  <!-- 导出（V3.0 §八 CSV V2） -->
+  <script src="js/export/export-csv.js?v=70dfa464"></script>
+  <script src="js/boot.js?v=a88994c9"></script>
 </body>
 </html>

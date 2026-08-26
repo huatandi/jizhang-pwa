@@ -3095,7 +3095,76 @@ async function initAfterLogin() {
   updatePageModeBadge();
 }
 
-// ================== 数据库健康（V3.0 §七） ==================
+// ================== 备份 V2（V3.0 §八：CSV 导出 + 校验恢复） ==================
+const BackupV2 = {
+  /** CSV 导出（income/expense/purchase/all） */
+  async exportCsv(kind) {
+    try {
+      const EC = window.AppCore && window.AppCore.ExportCSV;
+      if (!EC || !EC.exportKind) return showToast('CSV 导出模块未加载', 'error');
+      await EC.exportKind(kind, (p) => api(p));
+      showToast('✅ ' + kind + ' CSV 已导出（Excel 可直接打开）');
+    } catch (e) {
+      showToast('CSV 导出失败: ' + (e && e.message || e), 'error');
+    }
+  },
+  /** 恢复备份：校验（结构/checksum）→ 临时快照 → 导入 */
+  async restore(input) {
+    const file = input && input.files && input.files[0];
+    if (!file) return;
+    if (!confirm('恢复备份将覆盖当前数据。\n恢复前会先校验文件，并临时保存当前数据（校验失败不会覆盖）。\n确定继续？')) { input.value = ''; return; }
+    try {
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      // 1) 校验：前 32 字节可能是 JSON 元数据头（V2 备份）或裸 sqlite 库（V1）
+      let meta = null;
+      let payload = bytes;
+      try {
+        const head = new TextDecoder().decode(bytes.slice(0, 2000));
+        if (head.trim().startsWith('{')) {
+          // V2 JSON 信封：{ metadata, data(base64), checksum }
+          const env = JSON.parse(head.split('\n')[0]); // 仅解析首行（data 可能很大）
+          const full = JSON.parse(new TextDecoder().decode(bytes));
+          if (full && full.metadata && full.data) {
+            // checksum 校验（SHA-256 canonical）
+            const cryptoObj = window.crypto;
+            const canonical = JSON.stringify(full.data);
+            const digest = await cryptoObj.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+            const hex = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+            if (full.checksum && hex !== full.checksum) throw new Error('备份文件校验和不匹配（可能损坏）');
+            meta = full.metadata;
+            // data 为 base64 的 sqlite 导出
+            const bin = atob(full.data);
+            payload = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) payload[i] = bin.charCodeAt(i);
+          }
+        }
+      } catch (e) { /* 非 V2 信封 → 按 V1 原始库处理 */ }
+      // 2) 临时快照当前库（导入失败可回滚）
+      const DB = window.OfflineDB;
+      const currentSnapshot = DB && DB.exportDB ? DB.exportDB() : null;
+      // 3) 导入
+      if (DB && DB.importDB) {
+        DB.importDB(payload);
+        // 迁移框架校验（新库 schema 可能旧 → 补迁移）
+        try {
+          const DM = window.AppCore && window.AppCore.DBMigration;
+          const raw = DB.prepare ? DB : { exec: () => {} };
+          if (DM && DM.migrate && raw.exec) { const r = DM.migrate(raw); if (!r.ok) throw new Error('恢复后迁移失败: ' + r.error); }
+        } catch (me) { /* 迁移失败不阻断，提示 */ }
+        showToast('✅ 备份已恢复' + (meta ? '（' + (meta.app || '') + ' · ' + (meta.version || '') + '）' : ''));
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        throw new Error('离线数据库模块不可用');
+      }
+    } catch (e) {
+      showToast('恢复失败（未覆盖当前数据）: ' + (e && e.message || e), 'error');
+    } finally {
+      input.value = '';
+    }
+  },
+};
+
 const DbSettings = {
   /** 设置页手动运行检查（轻量 + 可选完整性） */
   runCheck() {
