@@ -1,7 +1,7 @@
 // 验证 global-config 全球化逻辑（node 环境，显式 opts 传参，不依赖全局 navigator）
 const fs = require('fs');
 const path = require('path');
-const ROOT = 'C:\\Users\\seejee\\GitHub\\jizhang-pwa\\js';
+const ROOT = path.join(__dirname, 'js');
 
 global.window = global;
 

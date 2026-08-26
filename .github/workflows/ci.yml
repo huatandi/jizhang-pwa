@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main, beta]
+  pull_request:
+    branches: [main, beta]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build committed
+        # V3.0 §五：build 后 git diff 必须为空，否则提示开发者先本地 build 再提交
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::BUILD_NOT_COMMITTED — 请先本地执行 npm run build 并提交构建产物再 push"
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Test
+        run: npm test

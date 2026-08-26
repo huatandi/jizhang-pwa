@@ -126,9 +126,16 @@ function main() {
   const buildId = computeBuildId(assets);
   applySw(buildId);
 
+  // 幂等：相同 buildId 保留原 generatedAt（避免无谓 git diff 噪音；V3.0 §二 相同代码重复构建不制造变化）
+  let generatedAt = new Date().toISOString();
+  try {
+    const prev = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
+    if (prev.buildId === buildId && prev.generatedAt) generatedAt = prev.generatedAt;
+  } catch (e) { /* 首次构建或 manifest 损坏 → 用当前时间 */ }
+
   const manifest = {
     buildId,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     assets: Object.fromEntries([...assets.entries()].sort()),
   };
   fs.writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2), 'utf8');

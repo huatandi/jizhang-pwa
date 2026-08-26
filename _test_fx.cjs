@@ -1,7 +1,7 @@
 // 验证汇率模块核心逻辑（node 环境，模拟浏览器全局）
 const fs = require('fs');
 const path = require('path');
-const ROOT = 'C:\\Users\\seejee\\GitHub\\jizhang-pwa\\js\\exchange-rate';
+const ROOT = path.join(__dirname, 'js', 'exchange-rate');
 
 global.window = global;
 global.AbortController = AbortController;

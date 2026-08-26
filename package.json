@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node build/build-version.js",
     "verify": "node build/verify-build.js",
-    "test": "node tests/run-all.js"
+    "test": "node tests/run-all.cjs"
   },
   "engines": {
     "node": ">=18"
