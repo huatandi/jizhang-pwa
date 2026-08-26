@@ -286,6 +286,56 @@ function fillWbFields(f) {
       if (!wbLockedFields.has('wbCategory')) sel.value = f.category;
     }
   }
+  // V7.2 UI 透明化：低置信/未识别 → 标黄 + placeholder + 候选点选
+  try {
+    const conf = Number(f.amountConfidence) || 0;
+    const amtEl = document.getElementById('wbAmount');
+    if (amtEl) {
+      if (f.amount == null && !wbLockedFields.has('wbAmount')) {
+        // 未识别 → 留空 + placeholder 提示（No-Guess 诚实）
+        amtEl.placeholder = '未识别，请填写';
+        amtEl.classList.remove('wb-low-conf');
+      } else if (conf > 0 && conf < 0.60 && !wbLockedFields.has('wbAmount')) {
+        amtEl.classList.add('wb-low-conf');
+        amtEl.title = '低置信 · 请核对（' + Math.round(conf * 100) + '%）';
+      } else {
+        amtEl.classList.remove('wb-low-conf');
+      }
+      // 候选数据（V7 candidates 或 No-Guess 数字）：低置信/未识别时提供点选
+      const cands = (f.__amountCandidates && f.__amountCandidates.length)
+        ? f.__amountCandidates
+        : (f.__amountCandidateNumbers || []).map(v => ({ value: String(v) }));
+      if (cands && cands.length && conf < 0.60) {
+        wbAiValues.__amountCandidates = cands.map(c => c.value);
+        // P0-4：本地 OCR 低置信/未识别 → 金额字段挂候选按钮（复用服务端候选弹层）
+        try {
+          const label = amtEl.closest('label');
+          if (label && !label.querySelector('.wb-cand-btn')) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'wb-cand-btn' + (f.amount == null ? ' needs' : '');
+            btn.textContent = f.amount == null ? '⛔ 未识别·候选' : '🎯 候选ⓘ';
+            btn.title = '点击选择候选金额';
+            btn.onclick = (ev) => {
+              ev.stopPropagation();
+              const field = {
+                candidates: cands.map((c, i) => ({
+                  value: String(c.value != null ? c.value : c),
+                  tag: '本地OCR',
+                  score: i === 0 ? 0.5 : 0.3 - i * 0.05,
+                  bbox: null,
+                })),
+                recommended: f.amount,
+                value: f.amount,
+              };
+              wbToggleCandPop(btn, 'amount', field);
+            };
+            label.appendChild(btn);
+          }
+        } catch (e) { /* 候选按钮失败不影响 */ }
+      }
+    }
+  } catch (e) { /* 透明化失败不影响 */ }
 }
 
 // 刷新队列进度
@@ -1485,15 +1535,22 @@ function extractCommonFields(fullText, words) {
     if (m) { f.amountSource = 'importe'; f.amountConfidence = 0.80; }
   }
   if (!m) {
-    // 兜底：剔除现金/找零标签及其金额后，取剩余最大金额（排除 EFECTIVO/CAMBIO 行）
+    // V7.2 No-Guess：无 TOTAL/IMPORTE 标签 → 绝不猜最大金额（发票号/日期/数量都可能被误当金额）。
+    // 数字仍收集为候选（供 UI 点选 + V7 数学验证），但最终字段留空，诚实"未识别"。
     let cleaned = t.replace(new RegExp(CASH_LABEL_RE.source + '\\s*[=:]?\\s*[$¥€£￥₩]?\\s*[\\d][\\d,]*\\.?\\d*', 'gi'), ' ');
     let all = cleaned.match(/\d{1,3}(?:,\s?\d{3})*\.\d{2}|\d+\.\d{2}/g);
     if (!all || !all.length) {
-      // 剔除失败（标签与金额分行）→ 移除标签词本身再取最大
       cleaned = t.replace(CASH_LABEL_RE, ' ');
       all = cleaned.match(/\d{1,3}(?:,\s?\d{3})*\.\d{2}|\d+\.\d{2}/g);
     }
-    if (all && all.length) { const best = Math.max(...all.map(numMoney)); f.amount = String(best); f.amountSource = 'max'; f.amountConfidence = 0.45; }
+    // 候选保留（不写入最终字段）：按金额降序，供 V7/UI 参考
+    if (all && all.length) {
+      f.__amountCandidateNumbers = all.map(numMoney).filter(Number.isFinite).sort((a, b) => b - a).slice(0, 6);
+    }
+    // amount 保持 null（No Guess）；置信 0
+    f.amount = null;
+    f.amountSource = null;
+    f.amountConfidence = 0;
   } else {
     f.amount = String(numMoney(m[1]));
   }
@@ -1514,10 +1571,11 @@ function extractCommonFields(fullText, words) {
       else if (!f.merchant) f.merchant = clean;
     }
   }
-  // 商户兜底：全文首个全大写词（OXXO / WALMART 等，≥3 字母，排除标签词/银行词）
+  // V7.2 No-Guess 商户：无明确标签（NOMBRE/RAZON SOCIAL/商户 等）→ 绝不取"首个大写词"（发票头 TOTAL/IVA/RFC 旁大写词都会被误当商户）。
+  // 候选仍收集（供 V7 布局评分/UI 点选），但最终字段留空，由 V7 resolver 决定。
   if (!f.merchant && !f.company) {
     const words2 = t.split(/\s+/).filter(w => /^[A-Z][A-ZÁÉÍÓÚÑ0-9&.]{2,25}$/.test(w) && !/^(TOTAL|FECHA|IMPORTE|MONTO|FOLIO|RFC|IVA|SUBTOTAL|CANTIDAD|DESCRIPCION|CLABE|BANCO)$/.test(w));
-    if (words2.length) f.merchant = words2[0];
+    if (words2.length) f.__merchantCandidateWords = words2.slice(0, 8); // 候选保留，不写入最终字段
   }
   // 银行（付款/收款）
   const bankChar = 'A-ZÁÉÍÓÚÑ0-9&. \\u4e00-\\u9fff';

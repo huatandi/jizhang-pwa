@@ -1,6 +1,6 @@
 {
-  "buildId": "3bae8d43",
-  "generatedAt": "2026-08-26T00:55:23.991Z",
+  "buildId": "1b813d1a",
+  "generatedAt": "2026-08-26T04:07:14.971Z",
   "assets": {
     "css/style.css": "489766c4",
     "js/ai/ai-cache.js": "a1d968ff",
@@ -9,7 +9,7 @@
     "js/ai/ai-provider.js": "a4ceba66",
     "js/ai/ai-router.js": "ac30417d",
     "js/ai/ai-validator.js": "e12b11bc",
-    "js/ai/ai-workbench.js": "f8af0055",
+    "js/ai/ai-workbench.js": "c1b12506",
     "js/ai/engine-manager.js": "b7c87a85",
     "js/ai/global-config.js": "b3ecc67e",
     "js/ai/multimodal.js": "9736bfda",
@@ -47,7 +47,7 @@
     "js/intelligence/constraint-engine.js": "157295f4",
     "js/intelligence/correction-learner.js": "839f00d3",
     "js/intelligence/document-fingerprint.js": "c497dbf1",
-    "js/intelligence/document-intelligence-v7.js": "108460cf",
+    "js/intelligence/document-intelligence-v7.js": "0ab01d5c",
     "js/intelligence/evidence-engine.js": "96d63660",
     "js/intelligence/ocr-confusion-model.js": "d6b9a4ba",
     "js/intelligence/ocr-memory-store.js": "32a79911",

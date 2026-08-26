@@ -229,10 +229,28 @@
     const expectedCash = (cash!=null&&change!=null) ? cash-change : null;
     const tol=0.03;
     const hasExplicitDue = [...byVal.values()].some(c=>c.roles.has('total_due'));
+    // V7.2：数学推导 —— 当 TOTAL 类候选与“小计+税-折扣”的数学闭合严重冲突时
+    // （如 OCR 把 TOTAL 识别成 "2"），用闭合值合成候选并降权冲突的 TOTAL。
+    // 只干预严重偏差（>5% 且超过舍入容差），贴近舍入差（如 CFE 56 vs 56.12）不动，
+    // 未识别的业务调整（如未标注的小折扣）也不会被误伤。
+    const conflictKeys=new Set();
+    if(expectedFinancial!=null){
+      const totalCands=[...byVal.values()].filter(c=>c.roles.has('total')||c.roles.has('total_due')||c.roles.has('total_paid'));
+      if(totalCands.length){
+        const rt=Math.max(1.00, Math.abs(expectedFinancial)*0.005);
+        const sevT=Math.max(rt, Math.abs(expectedFinancial)*0.05);
+        const conflicts=totalCands.filter(c=>Math.abs(c.value-expectedFinancial)>sevT);
+        if(conflicts.length===totalCands.length){
+          add(expectedFinancial,{ score:1.10, reasons:['math:derived-subtotal+tax-discount'], roles:new Set(['derived-total']) });
+          conflicts.forEach(c=>conflictKeys.add(c.key));
+        }
+      }
+    }
     for(const c of byVal.values()){
       if(expectedFinancial!=null && Math.abs(c.value-expectedFinancial)<=tol){ c.score+=0.52;c.reasons.push('math:subtotal+tax-discount'); }
       if(expectedCash!=null && Math.abs(c.value-expectedCash)<=tol){ c.score+=0.52;c.reasons.push('math:cash-change'); }
       if(c.occurrences>=2){c.score+=Math.min(0.24,0.08*(c.occurrences-1));c.reasons.push('repeated-value');}
+      if(conflictKeys.has(c.key)){ c.score-=0.80; c.reasons.push('math:total-conflict-demoted'); }
       // “TOTAL A PAGAR / TOTAL A COBRAR / AMOUNT DUE”是用户实际要支付的业务字段，
       // 在账单中可与会计计算总额存在舍入差（如 CFE 56 vs 56.12），应优先于普通 TOTAL。
       if(c.roles.has('total_due')) { c.score+=0.62; c.reasons.push('business:explicit-due'); }
@@ -323,6 +341,9 @@
     if(m)return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
     m=String(text||'').toLowerCase().match(/\b(\d{1,2})[\/\-.\s]+([a-záéíóúñü]{3,10})[\/\-.\s]+(\d{2,4})\b/i);
     if(m&&MONTHS[m[2]]){let y=+m[3];if(y<100)y+=2000;return `${y}-${String(MONTHS[m[2]]).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}`;}
+    // V7.2：OCR 粘连日期（20AGO2026 / 20AGOSTO2026）——无分隔，月名夹在数字间
+    m=String(text||'').toLowerCase().match(/\b(\d{1,2})([a-záéíóúñü]{3,10})(\d{2,4})\b/i);
+    if(m&&MONTHS[m[2]]){let y=+m[3];if(y<100)y+=2000;const mo=MONTHS[m[2]];const d=+m[1];if(d>=1&&d<=31&&mo>=1&&mo<=12)return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
     return null;
   }
   function resolveDate(result,baseFields){
