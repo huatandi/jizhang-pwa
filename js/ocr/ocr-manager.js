@@ -92,10 +92,60 @@
      *                         signal, autoRotate, longReceipt, worker, srcType }
      * @returns {Promise<OcrResult>}
      */
+    /** 加载图像源到 Canvas（仅用于质量分析；dataURL / HTMLImageElement / HTMLCanvasElement） */
+    _analysisCanvas(src) {
+      return new Promise((resolve) => {
+        try {
+          if (typeof HTMLCanvasElement !== 'undefined' && src instanceof HTMLCanvasElement) { resolve({ canvas: src, w: src.width, h: src.height }); return; }
+          const finish = (image) => {
+            try {
+              const c = (typeof OffscreenCanvas !== 'undefined') ? new OffscreenCanvas(image.naturalWidth || image.width, image.naturalHeight || image.height) : global.document.createElement('canvas');
+              c.width = image.naturalWidth || image.width; c.height = image.naturalHeight || image.height;
+              const ctx = c.getContext('2d'); ctx.drawImage(image, 0, 0);
+              resolve({ canvas: c, w: c.width, h: c.height });
+            } catch (e) { resolve(null); }
+          };
+          if (typeof HTMLImageElement !== 'undefined' && src instanceof HTMLImageElement && src.naturalWidth) { finish(src); return; }
+          const dataUrl = (typeof src === 'string') ? src : ((typeof HTMLImageElement !== 'undefined' && src instanceof HTMLImageElement) ? src.src : null);
+          if (!dataUrl) { resolve(null); return; }
+          const im = new Image();
+          im.onload = () => finish(im);
+          im.onerror = () => resolve(null);
+          im.src = dataUrl;
+        } catch (e) { resolve(null); }
+      });
+    }
+
+    /** V5 动态 maxEdge：按图片清晰度/文字密度/单据类型自适应（不整图降分辨率，保小字精度；失败回退 baseEdge） */
+    async _dynamicMaxEdge(src, baseEdge, docType, signal) {
+      let edge = Number(baseEdge) || 1800;
+      try {
+        const iq = global.OcrKit.imageQuality;
+        const load = await this._analysisCanvas(src);
+        const can = load && load.canvas;
+        if (iq && iq.analyze && can && can.width > 200) {
+          const q = iq.analyze(can);
+          // 模糊/低对比 → 需要更多细节 → 提高上限
+          if (q.blurScore > 0.55 || q.contrastScore < 0.35) edge = Math.max(edge, 2000);
+          // 清晰 + 大字 + 低文字密度 → 可降上限提速
+          else if (q.blurScore < 0.3 && q.textDensity < 0.06) edge = Math.min(edge, 1500);
+          // 小字/发票/CFDI/收据 → 保精度提高
+          const dt = String(docType || '').toLowerCase();
+          if (/factura|invoice|cfdi|recibo|thermal|small/.test(dt)) edge = Math.max(edge, 2000);
+        }
+      } catch (e) { /* 分析失败 → 用 baseEdge */ }
+      return Math.max(1400, Math.min(2200, Math.round((edge || baseEdge) / 50) * 50));
+    }
+
     async recognize(src, opts) {
       const o = Object.assign({}, DEFAULT_OPTS, opts || {});
       const profile = o.profile === 'auto' ? detectProfile() : o.profile;
-      const maxEdge = o.maxEdge || (global.OcrKit.preprocess.PROFILES[profile] || 1800);
+      const baseEdge = o.maxEdge || (global.OcrKit.preprocess.PROFILES[profile] || 1800);
+      // V5 动态 maxEdge：未显式指定且未禁用时，按清晰度/类型自适应（分析失败回退 baseEdge）
+      let maxEdge = baseEdge;
+      if (!o.maxEdge && o.dynamicMaxEdge !== false) {
+        maxEdge = await this._dynamicMaxEdge(src, baseEdge, o.documentType, o.signal);
+      }
       // V5 §13/§14：enhanceMode 'auto' 交由 pipeline 内质量分析器决策（分析器缺失时回退启发式）
       const enhanceMode = o.enhanceMode;
 
