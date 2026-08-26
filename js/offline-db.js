@@ -160,12 +160,6 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
     const saved = await idbLoad(DB_KEY);
     if (saved && saved.length) {
       db = new SQL.Database(new Uint8Array(saved));
-      // 旧库迁移：expense 表补 payee 收款人列（历史版本无此列）
-      try {
-        const cols = db.exec("PRAGMA table_info(expense)");
-        const hasPayee = cols.length && cols[0].values.some(v => v[1] === 'payee');
-        if (!hasPayee) db.exec('ALTER TABLE expense ADD COLUMN payee TEXT DEFAULT \'\'');
-      } catch (e) { /* 表不存在或已迁移则跳过 */ }
     } else {
       db = new SQL.Database();
       db.exec(SCHEMA_SQL);
@@ -176,12 +170,19 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
       stmt.free();
       save();
     }
-    // 旧库迁移（V5）：expense 表缺 payee 列（收款人）→ 补列
-    try {
-      const cols = db.exec("PRAGMA table_info(expense)");
-      const hasPayee = cols && cols[0] && cols[0].values.some(r => r[1] === 'payee');
-      if (!hasPayee) db.exec("ALTER TABLE expense ADD COLUMN payee TEXT DEFAULT ''");
-    } catch (e) { /* 迁移失败不影响 */ }
+    // DB Migration Framework（V3.0 §六）：注册表迁移 + user_version + 失败安全模式
+    const DM = global.AppCore && global.AppCore.DBMigration;
+    if (DM && DM.migrate) {
+      const r = DM.migrate(db);
+      if (!r.ok) {
+        // 迁移失败 → 进入安全模式（禁止继续写入，但允许导出备份）；不中断启动但标记
+        console.error('[db] 迁移失败（安全模式）:', r.error);
+        try { global.localStorage && global.localStorage.setItem('db_safe_mode', '1'); } catch (e) { /* ignore */ }
+      } else {
+        try { global.localStorage && global.localStorage.removeItem('db_safe_mode'); } catch (e) { /* ignore */ }
+        if (r.applied && r.applied.length) save(); // 迁移改了 schema → 落盘
+      }
+    }
     return db;
   }
 

@@ -3094,4 +3094,44 @@ async function initAfterLogin() {
   // 顶栏模式徽章（当前登录模式：开店/家庭）
   updatePageModeBadge();
 }
+
+// ================== 数据库健康（V3.0 §七） ==================
+const DbSettings = {
+  /** 设置页手动运行检查（轻量 + 可选完整性） */
+  runCheck() {
+    const statusEl = document.getElementById('dbHealthStatus');
+    const detailEl = document.getElementById('dbHealthDetail');
+    const show = (txt, cls) => { if (statusEl) { statusEl.textContent = txt; statusEl.className = cls || ''; } };
+    try {
+      const DH = window.AppCore && window.AppCore.DbHealth;
+      const DB = window.OfflineDB;
+      if (!DH || !DB) { show('不可用', 'recur-hint'); return; }
+      // 完整检查（手动触发，PRAGMA integrity_check）
+      const ic = DH.integrityCheck(DB);
+      const r = DH.check(DB);
+      let detail = [];
+      if (r.missingTables.length) detail.push('缺表: ' + r.missingTables.join(','));
+      for (const [t, cols] of Object.entries(r.missingColumns)) detail.push('缺列(' + t + '): ' + cols.join(','));
+      detail.push('schema v' + r.userVersion);
+      detail.push('完整性: ' + (ic.ok ? '正常' : '异常'));
+      if (detailEl) detailEl.textContent = detail.join(' · ');
+      if (r.status === 'ok' && ic.ok) show('✅ 正常', 'recur-hint');
+      else if (r.status === 'migration') show('⚠️ 需要迁移', 'recur-hint');
+      else show('❌ 异常', 'recur-hint');
+    } catch (e) {
+      show('检查失败: ' + (e && e.message || e), 'recur-hint');
+    }
+  },
+};
+// 启动轻量健康检查（不阻塞，仅标记）
+setTimeout(() => {
+  try {
+    const DH = window.AppCore && window.AppCore.DbHealth;
+    const DB = window.OfflineDB;
+    if (DH && DB) {
+      const r = DH.check(DB);
+      if (r.status !== 'ok') console.warn('[db-health] 异常:', JSON.stringify(r));
+    }
+  } catch (e) { /* ignore */ }
+}, 2500);
 init();

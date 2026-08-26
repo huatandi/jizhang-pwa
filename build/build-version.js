@@ -123,6 +123,12 @@ function main() {
   const assets = new Map([...idx2.assets, ...boot2.assets]);
   console.log('[build] 资源数: ' + assets.size);
 
+  // 阶段2写回：boot.js 被阶段1改写后自身 hash 变化，index 中 boot.js 版本须用最终 hash。
+  // 用收敛后的 assets 再替换一次（此时 index/boot 内容与阶段1一致，替换是幂等的）。
+  const { h: h2, b: b2 } = applyVersions(idx2.html, boot2.js, assets);
+  fs.writeFileSync(INDEX, h2, 'utf8');
+  fs.writeFileSync(BOOT, b2, 'utf8');
+
   const buildId = computeBuildId(assets);
   applySw(buildId);
 
