@@ -26,8 +26,75 @@
   --radius-sm: 10px;
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.45);
+  --sidebar-bg: #0d1526;
+  --login-bg: linear-gradient(160deg, #0b1120 0%, #0d1526 50%, #101b30 100%);
   --transition: all 0.2s ease;
 }
+
+/* ============ 秋色主题（亮色暖调「试穿」） ============
+   :root[data-theme="autumn"] 只做变量覆盖，复用现有局部变量名，不破坏既有消费者；
+   默认（无 data-theme）仍是 :root 暗色兜底。 */
+:root[data-theme="autumn"] {
+  --bg: #f7f0e6;        /* 奶黄暖底 */
+  --surface: #fffaf1;   /* 暖白卡片 */
+  --surface2: #f0e4cf;
+  --border: #e2cfae;
+  --border-soft: #ecdcbf;
+  --card-bg: #fffaf1;
+  --primary: #c9702b;   /* 焦糖橙 */
+  --primary-hover: #b8622a;
+  --primary-soft: #f3e3cc;
+  --text: #4a3520;      /* 深暖棕 */
+  --text-2: #7a5c3c;
+  --text-3: #a98a68;
+  --green: #7a9b4c; --green-soft: #e5ecc9;
+  --red: #b5533a; --red-soft: #f2d9cc;
+  --blue: #6a8bb0; --purple: #9a7fb0; --brown: #8a6a4a;
+  --orange: #c9702b; --orange-soft: #f3e3cc;
+  --amber: #c9702b; --amber-soft: #f3e3cc;
+  --shadow: 0 2px 10px rgba(122, 92, 60, 0.08);
+  --shadow-lg: 0 6px 20px rgba(122, 92, 60, 0.12);
+  --sidebar-bg: #efe2c8;
+  --login-bg: linear-gradient(160deg, #f7f0e6 0%, #efe2c8 50%, #f3e3cc 100%);
+}
+
+/* ============ 秋色主题 · 参考汇率（fx-card）色调统一 ============
+   默认给每种货币一个专属高饱和色（绿/蓝/紫/红/青/粉…），在暖色主题下格外突兀。
+   此处把各币种的 --fx-color 收敛为统一的暖色系（焦糖橙·深/中/浅 + 暖棕），
+   保证色调和谐、不跳色；仅作用于 data-theme="autumn"，暗色主题不受影响。 */
+:root[data-theme="autumn"] .fx-fav-item[data-code],
+:root[data-theme="autumn"] .fx-side[data-code],
+:root[data-theme="autumn"] .fx-pick-item[data-code] {
+  --fx-color: #c9702b; /* 焦糖橙·基调 */
+}
+/* 少数币种按明度微调层次，避免完全同色失去可读性 */
+:root[data-theme="autumn"] .fx-fav-item[data-code="USD"],
+:root[data-theme="autumn"] .fx-fav-item[data-code="MXN"],
+:root[data-theme="autumn"] .fx-fav-item[data-code="BRL"],
+:root[data-theme="autumn"] .fx-side[data-code="USD"],
+:root[data-theme="autumn"] .fx-side[data-code="MXN"],
+:root[data-theme="autumn"] .fx-side[data-code="BRL"],
+:root[data-theme="autumn"] .fx-pick-item[data-code="USD"],
+:root[data-theme="autumn"] .fx-pick-item[data-code="MXN"],
+:root[data-theme="autumn"] .fx-pick-item[data-code="BRL"] { --fx-color: #8a6a4a; } /* 暖棕 */
+:root[data-theme="autumn"] .fx-fav-item[data-code="JPY"],
+:root[data-theme="autumn"] .fx-fav-item[data-code="GBP"],
+:root[data-theme="autumn"] .fx-fav-item[data-code="CAD"],
+:root[data-theme="autumn"] .fx-side[data-code="JPY"],
+:root[data-theme="autumn"] .fx-side[data-code="GBP"],
+:root[data-theme="autumn"] .fx-side[data-code="CAD"],
+:root[data-theme="autumn"] .fx-pick-item[data-code="JPY"],
+:root[data-theme="autumn"] .fx-pick-item[data-code="GBP"],
+:root[data-theme="autumn"] .fx-pick-item[data-code="CAD"] { --fx-color: #b8622a; } /* 焦糖橙·深 */
+:root[data-theme="autumn"] .fx-fav-item[data-code="CHF"],
+:root[data-theme="autumn"] .fx-fav-item[data-code="AUD"],
+:root[data-theme="autumn"] .fx-fav-item[data-code="NZD"],
+:root[data-theme="autumn"] .fx-side[data-code="CHF"],
+:root[data-theme="autumn"] .fx-side[data-code="AUD"],
+:root[data-theme="autumn"] .fx-side[data-code="NZD"],
+:root[data-theme="autumn"] .fx-pick-item[data-code="CHF"],
+:root[data-theme="autumn"] .fx-pick-item[data-code="AUD"],
+:root[data-theme="autumn"] .fx-pick-item[data-code="NZD"] { --fx-color: #d9a25e; } /* 浅暖金 */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -63,7 +130,7 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 /* ============ 侧边栏 ============ */
 .sidebar {
   width: 240px;
-  background: #0d1526;
+  background: var(--sidebar-bg);
   color: var(--text);
   display: flex;
   flex-direction: column;
@@ -81,7 +148,7 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 }
 .logo-icon {
   width: 44px; height: 44px;
-  background: linear-gradient(135deg, #ffb020, #f59e0b);
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
   border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
   font-size: 22px;
@@ -89,7 +156,7 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 }
 .logo-text h1 {
   font-size: 20px; font-weight: 800; letter-spacing: 2px;
-  background: linear-gradient(135deg, #ffb020, #f59e0b);
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -220,6 +287,22 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
 .page-header h2 { font-size: 24px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* 主题切换按钮（秋色「试穿」）：一个小圆角按钮，切秋色/暗色 */
+.btn-theme-toggle {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface); color: var(--text);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: var(--transition);
+}
+.btn-theme-toggle:hover { border-color: var(--primary); transform: translateY(-1px); }
+.btn-theme-toggle .tt-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent);
+}
 /* 页面顶栏模式徽章：提示当前登录模式（开店/家庭），点击可一键切换（所有页面） */
 .page-mode-badge {
   display: inline-flex;
@@ -256,7 +339,7 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
 .subtitle { color: var(--text-3); font-size: 13px; margin-top: 4px; }
 
 .btn-primary {
-  background: linear-gradient(135deg, #ffb020, #f59e0b);
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
   color: #fff; border: none;
   padding: 11px 22px; border-radius: var(--radius-sm);
   font-size: 14px; font-weight: 600; cursor: pointer;
@@ -1511,7 +1594,7 @@ select option {
     top: 0; left: 0; right: 0;
     z-index: 99;
     padding: 6px 10px;
-    background: #0d1526;
+    background: var(--sidebar-bg);
     border-bottom: 1px solid var(--border);
     padding-top: calc(6px + env(safe-area-inset-top, 0));
   }
@@ -1537,7 +1620,7 @@ select option {
     width: 100%;
     max-width: 100%;
     z-index: 100;
-    background: #0d1526;
+    background: var(--sidebar-bg);
     border-top: 1px solid var(--border);
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
@@ -1792,6 +1875,34 @@ select option {
 .budget-rem { margin-top: 10px; font-size: 13px; color: var(--text-3); }
 
 /* ============ 设置页面（独立页面，与收入/支出/进货一致） ============ */
+/* 懒猫主题 hero（圆底打盹的猫）：卡片化展示 + 右侧说明 */
+.theme-hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  max-width: 760px;
+  margin: 0 0 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 8%, var(--surface)), var(--card-bg) 70%);
+  box-shadow: var(--shadow);
+}
+.theme-hero .cat-art {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  width: 150px; height: 106px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  color: var(--primary); /* SVG 里 currentColor 的落点 */
+}
+.theme-hero .cat-art svg { display: block; }
+.theme-hero-text h3 { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.theme-hero-text p { font-size: 13px; color: var(--text-3); line-height: 1.6; }
+@media (max-width: 600px) {
+  .theme-hero { flex-direction: column; text-align: center; }
+  .theme-hero-text p { text-align: center; }
+}
 .settings-body { max-width: 760px; }
 .settings-save-bar {
   display: flex;
@@ -1835,6 +1946,59 @@ select option {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* ============ 功能入口——彩色图标网格（借鉴「蓝猫」设置样式，理念照搬、实现自研） ============
+   分组标题（黄色小竖条）+ 3 列大圆角卡片；每卡：彩色圆角图标块 + 名称竖排 + 右上角胶囊。 */
+.fn-group { margin: 0 0 18px; }
+.fn-group-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 800; color: var(--text);
+  margin-bottom: 12px;
+}
+.fn-group-title::before {
+  content: ''; width: 4px; height: 16px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--primary), var(--primary-hover));
+}
+.fn-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.fn-card {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px;
+  padding: 16px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card-bg);
+  box-shadow: var(--shadow);
+  transition: var(--transition);
+}
+.fn-card:hover { transform: translateY(-2px); border-color: var(--primary); box-shadow: var(--shadow-lg); }
+.fn-icon {
+  width: 52px; height: 52px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.25), var(--shadow);
+}
+.fn-name { font-size: 13px; font-weight: 600; color: var(--text); text-align: center; }
+.fn-sub { font-size: 11px; color: var(--text-3); text-align: center; margin-top: 2px; }
+/* 右上角胶囊/VIP 标记（借鉴蓝猫） */
+.fn-badge {
+  position: absolute; top: 8px; right: 8px;
+  font-size: 9px; font-weight: 800; letter-spacing: 1px;
+  padding: 2px 6px; border-radius: 999px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  color: #fff;
+  opacity: 0.92;
+  box-shadow: var(--shadow);
+}
+@media (max-width: 600px) {
+  .fn-grid { gap: 10px; }
+  .fn-icon { width: 46px; height: 46px; font-size: 22px; border-radius: 12px; }
+  .fn-card { padding: 14px 6px 12px; }
 }
 .settings-sub { font-size: 11px; font-weight: 400; color: #94a3b8; }
 .settings-tag {
@@ -1921,11 +2085,12 @@ select option {
 .fx-fav-label { display: inline-flex; align-items: center; }
 .fx-fav-hint { font-size: 11px; font-weight: 400; color: #94a3b8; }
 /* 标题行内「添加」小按钮：与「常用/编辑」同字号，缩小容器 */
-.fx-fav-add { display: inline-flex; margin: 0; }
+.fx-fav-add { display: inline-flex; margin: 0; align-items: center; }
 .fx-fav-add-btn {
   font-size: 13px; font-weight: 600; color: var(--primary);
   cursor: pointer; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border);
   background: var(--surface); transition: var(--transition); user-select: none; line-height: 1.4;
+  font-family: inherit; display: inline-flex; align-items: center;
 }
 .fx-fav-add-btn:hover { border-color: var(--primary); background: var(--primary-soft); }
 .fx-fav-edit {
@@ -2724,7 +2889,7 @@ select option {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(160deg, #0b1120 0%, #0d1526 50%, #101b30 100%);
+  background: var(--login-bg);
   overflow: hidden;
   padding: 24px;
 }

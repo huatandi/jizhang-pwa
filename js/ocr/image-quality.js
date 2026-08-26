@@ -125,7 +125,8 @@
     if (srcType === 'low_light') { out.enhanceMode = 'low_light'; return out; }
     if (scores) {
       // fade 仅适用于"纸面偏亮"的热敏淡字（暗图低对比不是淡字，走 low_light）
-      if (scores.fadeScore >= 0.55 && scores.brightness >= 0.45) out.enhanceMode = 'thermal';
+      // V7：淡字优先走 fade（自动对比度+伽马，不二值化，避免吃掉浅灰字）；热敏纸仍可显式指定 thermal
+      if (scores.fadeScore >= 0.55 && scores.brightness >= 0.45) out.enhanceMode = 'fade';
       else if (scores.brightness < 0.30) out.enhanceMode = 'low_light'; // 低亮度优先于低对比
       else if (scores.contrastScore < 0.30) out.enhanceMode = 'high_contrast';
       else if (scores.blurScore > 0.62) out.enhanceMode = 'normal';

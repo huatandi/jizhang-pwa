@@ -49,6 +49,9 @@
   <!-- DB 基础设施（V3.0 Phase0D）：迁移框架 + 健康检查（先于 offline-db 加载） -->
   <script src="js/db/migrations.js?v=81149420"></script>
   <script src="js/db/health-check.js?v=f3ea0214"></script>
+  <!-- 主题切换（秋色「试穿」）：head 尽早加载，读 localStorage 设 data-theme，避免主题闪烁。
+       data-theme 与 <meta name="theme-color"> 联动由 theme.js 的 apply() 统一处理。 -->
+  <script src="js/theme.js?v=15357496"></script>
 </head>
 <body>
   <!-- ======== 登录页面（开店经营 / 家庭明细 双入口） ======== -->
@@ -189,11 +192,11 @@
             <div class="fx-fav-title">
               ⭐ 常用
               <span class="fx-fav-edit" id="fxFavEditBtn" onclick="FxTool.toggleEditFav()" title="编辑">✏️</span>
+              <span class="fx-fav-add" id="fxFavAddRow">
+                <button class="fx-fav-add-btn" onclick="FxTool.openFavPicker()">＋ 添加</button>
+              </span>
             </div>
             <div class="fx-fav-grid" id="fxFavGrid"></div>
-            <div class="fx-fav-add" id="fxFavAddRow" hidden>
-              <button class="btn-small" onclick="FxTool.openFavPicker()">＋ 添加</button>
-            </div>
           </div>
         </div>
 
@@ -693,9 +696,71 @@
       <section class="page" id="page-settings">
         <header class="page-header">
           <h2>⚙️ 设置</h2>
+          <button class="btn-theme-toggle" id="themeToggle" type="button" title="切换主题（秋色 / 暗色）">
+            <span class="tt-dot"></span>
+            <span class="tt-label">🍂 秋色试穿</span>
+          </button>
         </header>
 
+        <div class="theme-hero" id="themeHero">
+          <!-- 懒猫 SVG：圆底打盹的猫，全部用 currentColor/CSS 变量，随主题变色 -->
+          <div class="cat-art" aria-hidden="true">
+            <svg viewBox="0 0 200 140" width="140" height="98" role="img" aria-label="打盹的懒猫">
+              <!-- 圆底垫子（主题色） -->
+              <ellipse cx="100" cy="112" rx="78" ry="18" fill="color-mix(in srgb, var(--primary) 16%, transparent)"/>
+              <ellipse cx="100" cy="110" rx="82" ry="18" fill="none" stroke="var(--border-soft)" stroke-width="2"/>
+              <!-- 身体 -->
+              <g>
+                <ellipse cx="98" cy="92" rx="42" ry="30" fill="color-mix(in srgb, var(--primary) 90%, var(--text))"/>
+                <!-- 背部毛色（暖斑） -->
+                <ellipse cx="98" cy="78" rx="34" ry="20" fill="color-mix(in srgb, var(--primary) 65%, var(--surface))"/>
+                <!-- 尾（卷在身侧） -->
+                <path d="M138 96 q22 -2 18 -26 q-2 -14 -16 -12 q-12 2 -6 14" fill="none" stroke="var(--primary)" stroke-width="7" stroke-linecap="round"/>
+                <!-- 头 -->
+                <circle cx="58" cy="66" r="22" fill="currentColor"/>
+                <!-- 耳朵 -->
+                <path d="M42 54 L48 38 L56 50 Z" fill="currentColor"/>
+                <path d="M72 50 L80 40 L78 56 Z" fill="currentColor"/>
+                <path d="M44 52 L48 42 L54 50 Z" fill="var(--primary)" opacity="0.7"/>
+                <path d="M73 50 L78 43 L76 54 Z" fill="var(--primary)" opacity="0.7"/>
+                <!-- 闭眼（打盹） -->
+                <path d="M50 66 q4 3 8 0" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round"/>
+                <path d="M64 66 q4 3 8 0" fill="none" stroke="var(--text)" stroke-width="2" stroke-linecap="round"/>
+                <!-- 鼻／须 -->
+                <path d="M59 71 q4 2 6 0" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round"/>
+                <path d="M44 73 l-8 -3 M44 76 l-8 2 M72 73 l8 -3 M72 76 l8 2" stroke="var(--text-3)" stroke-width="1.6" stroke-linecap="round" opacity="0.8"/>
+                <!-- 腮红（秋色暖晕） -->
+                <circle cx="47" cy="72" r="4" fill="var(--red-soft)"/>
+                <circle cx="70" cy="72" r="4" fill="var(--red-soft)"/>
+                <!-- zZ 呼噜 -->
+                <text x="118" y="46" font-size="14" fill="var(--text-3)" font-weight="700" opacity="0.9">z</text>
+                <text x="132" y="34" font-size="11" fill="var(--text-3)" font-weight="700" opacity="0.6">z</text>
+              </g>
+            </svg>
+          </div>
+          <div class="theme-hero-text">
+            <h3>🍂 秋色主题</h3>
+            <p>亮色暖调「试穿」：焦糖橙 + 奶黄暖底。点击右上角按钮切换，默认仍是暗色兜底。</p>
+          </div>
+        </div>
         <div class="settings-body">
+          <!-- 快捷功能入口——彩色图标网格（借鉴「蓝猫」的彩色圆角图标卡片理念，映射的是本系统真实页面，点击即跳转） -->
+          <div class="fn-group">
+            <div class="fn-group-title">🍂 快捷功能</div>
+            <div class="fn-grid">
+              <div class="fn-card" onclick="gotoPage('dashboard')"><span class="fn-icon" style="background:linear-gradient(135deg,#f59e0b,#f97316)">📊</span><span class="fn-name">数据总览</span></div>
+              <div class="fn-card" onclick="gotoPage('income')"><span class="fn-icon" style="background:linear-gradient(135deg,#22c55e,#16a34a)">💰</span><span class="fn-name">收入记账</span></div>
+              <div class="fn-card" onclick="gotoPage('expense')"><span class="fn-icon" style="background:linear-gradient(135deg,#ef4444,#dc2626)">💸</span><span class="fn-name">支出记账</span></div>
+              <div class="fn-card" onclick="gotoPage('purchase')"><span class="fn-icon" style="background:linear-gradient(135deg,#3b82f6,#2563eb)">📦</span><span class="fn-name">进货台账</span></div>
+              <div class="fn-card" onclick="gotoPage('monthly')"><span class="fn-icon" style="background:linear-gradient(135deg,#a855f7,#7c3aed)">📅</span><span class="fn-name">月度统计</span></div>
+              <div class="fn-card" onclick="gotoPage('query')"><span class="fn-icon" style="background:linear-gradient(135deg,#14b8a6,#0d9488)">🔍</span><span class="fn-name">明细查询</span></div>
+              <div class="fn-card" onclick="gotoPage('scan')"><span class="fn-icon" style="background:linear-gradient(135deg,#06b6d4,#0891b2)">📷</span><span class="fn-name">扫描识别</span></div>
+              <div class="fn-card" onclick="gotoPage('quick')"><span class="fn-icon" style="background:linear-gradient(135deg,#ec4899,#db2777)">⚡</span><span class="fn-name">快速记账</span></div>
+              <div class="fn-card" onclick="gotoPage('reminder')"><span class="fn-icon" style="background:linear-gradient(135deg,#f97316,#ea580c)">⏰</span><span class="fn-name">语音提醒</span></div>
+              <div class="fn-card" onclick="gotoPage('settings')"><span class="fn-icon" style="background:linear-gradient(135deg,#64748b,#475569)">⚙️</span><span class="fn-name">设置</span></div>
+            </div>
+          </div>
+
           <!-- 数据范围（日期期间设置） -->
           <div class="settings-section">
             <div class="settings-title">📆 数据范围 <span class="settings-sub">总览/统计/查询的日期期间；不设置则从首次启用本系统之日起</span></div>

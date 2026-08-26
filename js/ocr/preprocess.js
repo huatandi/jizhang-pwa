@@ -263,19 +263,60 @@
   }
 
   // 对比度/亮度调整（线性拉伸）——非破坏性：克隆后处理，返回新 canvas
-  function contrast(canvas, amount) {
+  // V7 增强：默认开启"自动对比度"（把实际 min~max 拉伸到 0~255）+ 可选伽马校正。
+  // 对褪色/偏灰/动态范围窄的小票（淡字）提升最明显 —— 线性系数拉伸对这类图收效甚微。
+  // amount: 强度系数(1=标准)。autostretch=true 时先按 1/98~2/98 百分位求下/上界，避免极值噪声。
+  function contrast(canvas, amount, autostretch) {
     const out = cloneCanvas(canvas);
     const ctx = out.getContext('2d');
     const imgData = ctx.getImageData(0, 0, out.width, out.height);
     const d = imgData.data;
-    const f = (255 * (amount || 1.4)) / 100;
+    const n = d.length / 4;
+
+    // 亮度直方图，用于自动对比度拉伸的百分位界
+    let lo = 0, hi = 255;
+    if (autostretch !== false) {
+      const hist = new Array(256).fill(0);
+      for (let i = 0; i < d.length; i += 4) {
+        hist[Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2])]++;
+      }
+      // 累计到 1% / 99% 分位（容忍少量极值/噪点）
+      const total = n;
+      let acc = 0, cut = Math.max(1, Math.round(total * 0.01));
+      lo = 0;
+      for (let i = 0; i < 256; i++) { acc += hist[i]; if (acc > cut) { lo = i; break; } }
+      acc = 0; hi = 255;
+      for (let i = 255; i >= 0; i--) { acc += hist[i]; if (acc > cut) { hi = i; break; } }
+      if (hi - lo < 16) { lo = lo - 8; hi = hi + 8; } // 动态范围太窄，适当放宽避免过冲
+      if (lo < 0) lo = 0; if (hi > 255) hi = 255;
+    }
+
+    // 伽马：自动拉伸后，若均值偏暗(<0.45)则提亮中间调（淡字/阴影小票）
+    let gamma = 1;
+    const mean = arrayMeanLum(d);
+    if (mean < 0.42) gamma = 0.8;
+    else if (mean < 0.52) gamma = 0.9;
+
+    const range = (hi - lo) || 255;
+    const f = (255 * (amount || 1.3)) / 100;
     for (let i = 0; i < d.length; i += 4) {
       for (let c = 0; c < 3; c++) {
-        d[i + c] = Math.max(0, Math.min(255, (d[i + c] - 128) * f + 128));
+        let v = d[i + c];
+        if (autostretch !== false) v = (Math.max(lo, Math.min(hi, v)) - lo) / range * 255; // 归一化到全范围
+        v = (v - 128) * f + 128;                                                          // 强度系数拉伸
+        v = Math.pow(Math.max(0, v) / 255, gamma) * 255;                                   // 伽马（提亮中间调）
+        d[i + c] = Math.max(0, Math.min(255, v));
       }
     }
     ctx.putImageData(imgData, 0, 0);
     return out;
+  }
+
+  // 求整体平均亮度（0~1）
+  function arrayMeanLum(d) {
+    let s = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) { s += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; n++; }
+    return n ? s / (n * 255) : 0.5;
   }
 
   /**
@@ -290,11 +331,17 @@
     const m = mode || 'normal';
     switch (m) {
       case 'thermal':
-        return convolve(binarize(toGrayscale(canvas)), [0, -1, 0, -1, 5, -1, 0, -1, 0], 1);
+        // 热敏纸：先灰度+自动对比度（提淡字）再二值化，最后锐化
+        return convolve(binarize(contrast(toGrayscale(canvas), 1.3, true)), [0, -1, 0, -1, 5, -1, 0, -1, 0], 1);
       case 'high_contrast':
-        return convolve(contrast(canvas, 1.5), [0, -1, 0, -1, 5, -1, 0, -1, 0], 1);
+        // V7：自动对比度拉伸（1%/99% 百分位）+ 伽马，增强褪色/偏灰小票
+        return convolve(contrast(canvas, 1.35, true), [0, -1, 0, -1, 5, -1, 0, -1, 0], 1);
       case 'low_light':
-        return convolve(contrast(canvas, 1.8), [0, -1, 0, -1, 5, -1, 0, -1, 0], 1);
+        // 低亮度/淡字：更强自动对比度 + 伽马提亮
+        return convolve(contrast(canvas, 1.5, true), [0, -1, 0, -1, 5, -1, 0, -1, 0], 1);
+      case 'fade':
+        // 淡字/褪色（低对比、纸面偏亮）：自动对比度 + 伽马 + 锐化，专治浅灰字
+        return convolve(contrast(canvas, 1.6, true), [0, -1, 0, -1, 5, -1, 0, -1, 0], 1);
       case 'none':
         return canvas;
       default:

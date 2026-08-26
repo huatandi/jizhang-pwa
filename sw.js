@@ -3,11 +3,12 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-1b813d1a';
+const CACHE_NAME = 'jizhang-pwa-autumn-1b813d1a-1';
 const APP_SHELL = [
   './',
   './index.html',
   './css/style.css',
+  './js/theme.js',
   './js/boot.js',
   './js/app.js',
   './js/core/error-codes.js',
