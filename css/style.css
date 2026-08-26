@@ -45,8 +45,8 @@
   --primary-hover: #b8622a;
   --primary-soft: #f3e3cc;
   --text: #4a3520;      /* 深暖棕 */
-  --text-2: #7a5c3c;
-  --text-3: #a98a68;
+  --text-2: #6b4c2e;
+  --text-3: #87643f;      /* 次要文字：加深，保证暖底上可读（表头/占位/空状态） */
   --green: #7a9b4c; --green-soft: #e5ecc9;
   --red: #b5533a; --red-soft: #f2d9cc;
   --blue: #6a8bb0; --purple: #9a7fb0; --brown: #8a6a4a;
@@ -57,6 +57,19 @@
   --sidebar-bg: #efe2c8;
   --login-bg: linear-gradient(160deg, #f7f0e6 0%, #efe2c8 50%, #f3e3cc 100%);
 }
+
+/* ============ 秋色主题 · 表格/搜索/次要文字对比度强化 ============
+   暖底偏浅，表头/占位/空状态需比暗色主题更深的文字色、更清晰的悬停高亮。 */
+:root[data-theme="autumn"] th {
+  color: #5f4023;            /* 表头：深暖棕，明显重于默认 --text-3 */
+  font-weight: 700;
+  background: #efe2c8;       /* 表头底：加深，与正文区分 */
+}
+:root[data-theme="autumn"] td { color: #4a3520; }
+:root[data-theme="autumn"] tbody tr:hover { background: rgba(201, 112, 43, 0.10); } /* 悬停：焦糖橙暖高亮（替代不可见的白色） */
+:root[data-theme="autumn"] .income-pair:hover { background: #e8d6b4; }
+:root[data-theme="autumn"] .search-input::placeholder { color: #87643f; opacity: 1; }
+:root[data-theme="autumn"] .search-count { color: #87643f; }
 
 /* ============ 秋色主题 · 参考汇率（fx-card）色调统一 ============
    默认给每种货币一个专属高饱和色（绿/蓝/紫/红/青/粉…），在暖色主题下格外突兀。
