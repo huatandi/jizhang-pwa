@@ -1,0 +1,15 @@
+{
+  "name": "jizhang-pwa",
+  "version": "0.0.1",
+  "private": true,
+  "description": "智账·飞常明细 — Local-First PWA（记账 / OCR / Voice / Weather Intelligence）",
+  "type": "commonjs",
+  "scripts": {
+    "build": "node build/build-version.js",
+    "verify": "node build/verify-build.js",
+    "test": "node tests/run-all.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
