@@ -586,6 +586,43 @@
       }
     }
 
+    // ---- 重复记账检测（新增前提示：日期/金额/分类/账户 命中 ≥2 项即疑似重复） ----
+    // 适用收入/支出/进货；开店/家庭共用一个判定口径。返回 { dup, count, matches }
+    if (path === '/dup-check' && method === 'POST') {
+      const b = body || {};
+      const type = String(b.type || '');       // income | expense | purchase
+      if (!['income', 'expense', 'purchase'].includes(type)) return fail('无效的账目类型');
+      const date = String(b.date || '').slice(0, 10);
+      const category = String(b.category || '').trim();   // project / category / supplier
+      const account = String(b.account || '').trim();
+      const currency = String(b.currency || 'MXN').toUpperCase();
+      let amount = num(b.amount);
+      // 收入/支出金额转 base 再比对；进货按 total_amount
+      const baseAmt = Math.round(toBaseAmount(amount, currency) * 100) / 100;
+      const table = type === 'income' ? 'income' : type === 'expense' ? 'expense' : 'purchase';
+      const dateCol = type === 'purchase' ? 'doc_date' : 'date';
+      const catCol = type === 'income' ? 'project' : type === 'expense' ? 'category' : 'supplier';
+      const amtCol = type === 'purchase' ? 'total_amount' : 'amount';
+      const actCol = type === 'purchase' ? 'pay_method' : 'account';
+      const rows = DB.prepare(`SELECT id, ${dateCol} d, ${amtCol} a, ${catCol} c, ${actCol} ac FROM ${table} WHERE mode=?`).all(mode);
+      let best = null, bestCount = 0;
+      const matches = [];
+      for (const r of rows) {
+        let hit = 0;
+        const rDate = String(r.d || '').slice(0, 10);
+        const rAmt = Math.round((Number(r.a) || 0) * 100) / 100;
+        const rCat = String(r.c || '').trim();
+        const rAc = String(r.ac || '').trim();
+        if (date && rDate === date) hit++;
+        if (baseAmt > 0 && rAmt === baseAmt) hit++;
+        if (category && rCat === category) hit++;
+        if (account && rAc === account) hit++;
+        if (hit >= 2) matches.push({ id: r.id, date: rDate, amount: rAmt, category: rCat, account: rAc, hit });
+        if (hit > bestCount) { bestCount = hit; best = r; }
+      }
+      return ok({ dup: matches.length > 0, count: matches.length, matches: matches.slice(0, 5), topHit: bestCount });
+    }
+
     // ---- query（含全局搜索） ----
     if (path === '/query' && method === 'GET') {
       const type = query.type || 'supplier';

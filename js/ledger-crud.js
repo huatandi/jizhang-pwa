@@ -162,6 +162,30 @@ function withSubmitLock(key, fn) {
     .finally(() => submitLocks.delete(key));
 }
 
+/* 重复记账检测：新增前调用。判定因子 日期/金额/分类/账户，命中 ≥2 即疑似重复 → 弹确认。
+   适用收入/支出/进货；开店/家庭共用。返回 true 表示用户确认继续保存。 */
+async function maybeDup(type, d) {
+  try {
+    const cat = type === 'income' ? d.project : type === 'expense' ? d.category : d.supplier;
+    const act = type === 'purchase' ? d.pay_method : d.account;
+    const field = { date: type === 'purchase' ? 'doc_date' : 'date', amount: type === 'purchase' ? 'total_amount' : 'amount' };
+    const r = await api('/dup-check', 'POST', {
+      type,
+      date: d[field.date],
+      category: cat,
+      account: act,
+      amount: d[field.amount],
+      currency: d.currency,
+    });
+    if (r && r.dup) {
+      const first = r.matches && r.matches[0];
+      const hint = first ? `\n（例：${first.date}｜¥${first.amount}｜${first.category || '-'}｜${first.account || '-'}，命中 ${first.hit} 项）` : '';
+      return confirm(`⚠️ 疑似重复记账！\n已存在与该条目在「日期/金额/分类/账户」中 ≥2 项相同的记录${hint}\n\n继续保存吗？`);
+    }
+    return true;
+  } catch (e) { return true; } // 检查失败不阻塞保存
+}
+
 async function saveIncome() {
   const d = {
     date: document.getElementById('iDate').value,
@@ -186,6 +210,7 @@ async function saveIncome() {
       await api('/income/' + editingIncomeId, 'PUT', d);
       showToast('收入已更新');
     } else {
+      if (!(await maybeDup('income', d))) return;
       await api('/income', 'POST', d);
       showToast('收入已添加');
     }
@@ -440,6 +465,7 @@ async function savePurchase() {
       await api('/purchase/' + editingPurchaseId, 'PUT', d);
       showToast('进货记录已更新');
     } else {
+      if (!(await maybeDup('purchase', d))) return;
       await api('/purchase', 'POST', d);
       showToast('进货记录已添加');
     }
@@ -574,6 +600,7 @@ async function saveExpense() {
       await api('/expense/' + editingExpenseId, 'PUT', d);
       showToast('支出已更新');
     } else {
+      if (!(await maybeDup('expense', d))) return;
       await api('/expense', 'POST', d);
       showToast('支出已添加');
     }
