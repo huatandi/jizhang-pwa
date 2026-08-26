@@ -428,7 +428,8 @@ function resetVoiceIdleTimer() {
 function announceStart() {
   try {
     if (!('speechSynthesis' in window)) return;
-    const u = new SpeechSynthesisUtterance('请说');
+    const say = effectiveVoiceLang() === 'es-MX' ? 'Diga' : effectiveVoiceLang() === 'en-US' ? 'Say' : '请说';
+    const u = new SpeechSynthesisUtterance(say);
     u.lang = effectiveVoiceLang() === 'es-MX' ? 'es-MX' : effectiveVoiceLang() === 'en-US' ? 'en-US' : 'zh-CN';
     u.rate = 1;
     speechSynthesis.cancel();

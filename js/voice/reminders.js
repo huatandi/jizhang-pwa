@@ -577,10 +577,11 @@ function startReminderVoice() {
   resetReminderIdleTimer(); // 60 秒无有效语音自动停止
   // 先播放"请说"提示音，等语音播完（约1秒）再启动麦克风。
   // 否则 speechSynthesis 的输出会被麦克风采集 → 触发 VAD 把提示音当语音 → 无谓推理甚至崩溃。
-  const announce = () => speak('请说');
+  const announce = () => speak(reminderVoiceLang === 'es-MX' ? 'Diga' : reminderVoiceLang === 'en-US' ? 'Say' : '请说');
   try {
     if ('speechSynthesis' in window) {
-      const u = new SpeechSynthesisUtterance('请说');
+      const say = reminderVoiceLang === 'es-MX' ? 'Diga' : reminderVoiceLang === 'en-US' ? 'Say' : '请说';
+      const u = new SpeechSynthesisUtterance(say);
       u.lang = reminderVoiceLang === 'es-MX' ? 'es-MX' : reminderVoiceLang === 'en-US' ? 'en-US' : 'zh-CN';
       u.onend = () => {
         if (reminderVoiceSessionActive && !VoiceSR.isListening()) {

@@ -2978,6 +2978,16 @@ select option {
   justify-content: center;
   gap: 12px;
   flex-wrap: nowrap;
+  /* 悬浮在底栏上方：滚动时置顶可见(移动端底部有 nav,由媒体查询调整 bottom) */
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  background: var(--surface);
+  padding: 10px 4px;
+  border-top: 1px solid var(--border-soft);
+}
+@media (max-width: 900px) {
+  .quick-page-actions { bottom: 62px; } /* 在 mobile-nav 上方(~62px) */
 }
 .quick-page-actions .voice-btn {
   /* 参考提醒事项"三组合"：话筒为圆形按钮，取消/保存分列两侧 */
