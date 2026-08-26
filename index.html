@@ -966,6 +966,23 @@
             <div class="recur-hint">💡 默认密码为 <b>12345</b>。修改后需在下次登录时使用新密码。</div>
           </div>
 
+          <!-- 多成员共享（同设备多人协作，归属+审计） -->
+          <div class="settings-section">
+            <div class="settings-title">👥 成员与权限 <span class="settings-sub">股东/家庭成员共同记账：每笔账记下"谁记的"，可设角色（所有者/记账/只读）</span></div>
+            <div class="recur-hint" style="margin-bottom:10px">当前记账人：<b id="curMemberLabel">账本主人</b>　<span class="settings-sub">进入账本时选择，记录归属到该成员</span></div>
+            <div class="member-list" id="memberList"></div>
+            <div class="member-add-row">
+              <input type="text" id="memberNameInput" placeholder="成员名字，如 张三 / 太太" maxlength="20">
+              <select id="memberRoleInput" class="currency-select" title="角色">
+                <option value="editor">📝 记账成员</option>
+                <option value="viewer">👁️ 只读</option>
+                <option value="owner">👑 所有者</option>
+              </select>
+              <button class="btn-primary" onclick="addLedgerMember()">＋ 添加成员</button>
+            </div>
+            <div class="recur-hint">💡 第一个成员默认设为「所有者」。所有者可加/删成员、改角色；记账成员可增改账；只读成员仅查看。</div>
+          </div>
+
           <!-- 数据备份（V3.0 §八：CSV V2 + Backup V2） -->
           <div class="settings-section">
             <div class="settings-title">💾 数据备份 <span class="settings-sub">快照下载 / CSV 导出（Excel 兼容）/ 备份恢复（校验后安全导入）</span></div>

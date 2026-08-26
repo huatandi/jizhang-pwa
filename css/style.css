@@ -2013,6 +2013,34 @@ select option {
   .fn-icon { width: 46px; height: 46px; font-size: 22px; border-radius: 12px; }
   .fn-card { padding: 14px 6px 12px; }
 }
+/* 多成员共享（同设备协作）：成员列表 + 角色管理 */
+.member-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.member-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); transition: var(--transition);
+}
+.member-item.member-active { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); }
+.member-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.member-badge { font-size: 14px; color: var(--primary); flex-shrink: 0; }
+.member-name { font-size: 14px; font-weight: 600; color: var(--text); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-role { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.member-role-owner { background: var(--primary-soft); color: var(--primary); }
+.member-role-editor { background: var(--green-soft); color: var(--green); }
+.member-role-viewer { background: color-mix(in srgb, var(--blue) 18%, transparent); color: var(--blue); }
+.member-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.member-role-sel {
+  font-size: 12px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text); outline: none; cursor: pointer;
+}
+.member-add-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.member-add-row input[type="text"] {
+  flex: 1; min-width: 160px; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px; outline: none;
+}
+.member-add-row input[type="text"]:focus { border-color: var(--primary); }
+.member-add-row .btn-primary { padding: 8px 14px; }
+
 .settings-sub { font-size: 11px; font-weight: 400; color: #94a3b8; }
 .settings-tag {
   font-size: 10px;

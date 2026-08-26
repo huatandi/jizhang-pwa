@@ -47,6 +47,29 @@
     //   check(db) { return !columnExists(db, 'income', 'recipient'); },
     //   up(db) { db.exec("ALTER TABLE income ADD COLUMN recipient TEXT DEFAULT ''"); },
     // },
+    {
+      version: 3,
+      id: 'add-ledger-members',
+      description: '多成员共享：新增 ledger_members 成员表 + 记账表补 created_by 归属列 + 审计表补 actor 操作人列',
+      check(db) { return !columnExists(db, 'ledger_members', 'member_id'); },
+      up(db) {
+        db.exec("CREATE TABLE IF NOT EXISTS ledger_members (\n" +
+          "  id INTEGER PRIMARY KEY AUTOINCREMENT,\n" +
+          "  member_id TEXT UNIQUE NOT NULL,\n" +
+          "  name TEXT NOT NULL,\n" +
+          "  role TEXT DEFAULT 'editor',\n" +
+          "  mode TEXT DEFAULT 'business',\n" +
+          "  is_default INTEGER DEFAULT 0,\n" +
+          "  created_at TEXT DEFAULT (datetime('now','localtime'))\n" +
+          ")");
+        // 记账表补"谁记的"归属列（各账本默认成员为空 → 归属由前端回填为默认记账人）
+        if (!columnExists(db, 'income', 'created_by')) db.exec("ALTER TABLE income ADD COLUMN created_by TEXT DEFAULT ''");
+        if (!columnExists(db, 'purchase', 'created_by')) db.exec("ALTER TABLE purchase ADD COLUMN created_by TEXT DEFAULT ''");
+        if (!columnExists(db, 'expense', 'created_by')) db.exec("ALTER TABLE expense ADD COLUMN created_by TEXT DEFAULT ''");
+        // 审计表补"谁操作的"
+        if (!columnExists(db, 'accounting_audit_log', 'actor')) db.exec("ALTER TABLE accounting_audit_log ADD COLUMN actor TEXT DEFAULT ''");
+      },
+    },
   ];
 
   // ================= 工具 =================

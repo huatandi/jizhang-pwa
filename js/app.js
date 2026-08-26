@@ -1583,6 +1583,8 @@ function refreshSettingUI() {
   // 功能补充 P4：账户管理 + 汇率
   renderAccountMetaList();
   renderRateList();
+  // 多成员共享（同设备协作）
+  loadMembers();
   // 提醒闹铃设置回填
   const alarm = settings.alarm || {};
   const toneEl = document.getElementById('alarmTone');
@@ -2771,7 +2773,7 @@ async function doLogin() {
   if (!pass) { err.textContent = '请输入密码'; err.hidden = false; return; }
   if (!loginMode) { err.textContent = '请先选择要进入的账本'; err.hidden = false; return; }
   try {
-    const r = await api('/login', 'POST', { mode: loginMode, password: pass });
+    const r = await api('/login', 'POST', { mode: loginMode, password: pass, actor_member_id: smActor() });
     // 鉴权修复：存储服务端签发的 token
     localStorage.setItem(AUTH_KEY, JSON.stringify({ mode: loginMode, at: Date.now(), token: r.token || '' }));
     // 模式切换时需要重新登录换 token（数据隔离），暂存密码（仅会话，刷新即失效）
@@ -3218,4 +3220,90 @@ setTimeout(() => {
     }
   } catch (e) { /* ignore */ }
 }, 2500);
+
+/* ================== 多成员共享（同设备多人协作，归属+审计） ==================
+   本地版：同一账本下多成员各记各的账，每笔记 created_by，操作归属于当前记账人。
+   当前记账人存 localStorage('sm_actor')；默认"账本主人"。云端/跨设备共享留待 Phase B。 */
+const MEMBER_ROLE_LABEL = { owner: '👑 所有者', editor: '📝 记账成员', viewer: '👁️ 只读' };
+function smActor() { try { return localStorage.getItem('sm_actor') || ''; } catch (e) { return ''; } }
+function setSmActor(id, name) { try { localStorage.setItem('sm_actor', id); localStorage.setItem('sm_actor_name', name || ''); } catch (e) { /* ignore */ } }
+
+async function loadMembers() {
+  const listEl = document.getElementById('memberList');
+  const labelEl = document.getElementById('curMemberLabel');
+  if (!listEl) return;
+  let rows = [];
+  try { rows = await api('/ledger-members', 'GET'); } catch (e) { rows = []; }
+  const activeId = smActor();
+  if (!activeId && rows.length) { setSmActor(rows[0].member_id, rows[0].name); }
+  if (!rows.length) {
+    listEl.innerHTML = '<div class="recur-hint">暂无成员。第一个添加的成员将成为「所有者」。</div>';
+    if (labelEl) labelEl.textContent = '账本主人';
+    return;
+  }
+  const active = rows.find(m => m.member_id === activeId) || rows[0];
+  if (labelEl) labelEl.textContent = active ? active.name : '账本主人';
+  listEl.innerHTML = rows.map(m => {
+    const isOn = active && active.member_id === m.member_id;
+    const delBtn = m.role === 'owner' && rows.filter(x => x.role === 'owner').length <= 1
+      ? '' : `<button class="action-btn" onclick="removeLedgerMember('${escJs(m.member_id)}')" title="删除成员">🗑️</button>`;
+    return `<div class="member-item ${isOn ? 'member-active' : ''}">
+      <div class="member-left">
+        <span class="member-badge">${isOn ? '✓' : '○'}</span>
+        <span class="member-name">${escapeHtml(m.name)}</span>
+        <span class="member-role member-role-${m.role}">${MEMBER_ROLE_LABEL[m.role] || m.role}</span>
+      </div>
+      <div class="member-right">
+        <select class="member-role-sel" data-mid="${escJs(m.member_id)}" onchange="setMemberRole('${escJs(m.member_id)}', this.value)" title="角色">
+          <option value="owner" ${m.role === 'owner' ? 'selected' : ''}>👑 所有者</option>
+          <option value="editor" ${m.role === 'editor' ? 'selected' : ''}>📝 记账成员</option>
+          <option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>👁️ 只读</option>
+        </select>
+        <button class="action-btn" ${isOn ? 'disabled title="当前记账人"' : 'title="设为当前记账人"'} onclick="setActiveMember('${escJs(m.member_id)}', '${escJs(m.name)}')">🎯</button>
+        ${delBtn}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function addLedgerMember() {
+  const nameInput = document.getElementById('memberNameInput');
+  const roleInput = document.getElementById('memberRoleInput');
+  const name = (nameInput.value || '').trim();
+  if (!name) return showToast('请输入成员名字', 'error');
+  const role = roleInput ? roleInput.value : 'editor';
+  try {
+    const r = await api('/ledger-members', 'POST', { name, role });
+    // 首个成员自动成为当前记账人
+    if (!smActor()) setSmActor(r.member_id, name);
+    nameInput.value = '';
+    await loadMembers();
+    showToast('已添加成员「' + name + '」');
+  } catch (e) { showToast(e.message || '添加失败', 'error'); }
+}
+
+async function setMemberRole(mid, role) {
+  try {
+    await api('/ledger-members/' + encodeURIComponent(mid), 'PUT', { role });
+    await loadMembers();
+    showToast('角色已更新');
+  } catch (e) { showToast(e.message || '更新失败', 'error'); await loadMembers(); }
+}
+
+async function removeLedgerMember(mid) {
+  if (!confirm('删除该成员？\n（已记账记录会保留，仅从成员列表移除；如记录归属该成员，归属名保留显示）')) return;
+  try {
+    await api('/ledger-members/' + encodeURIComponent(mid), 'DELETE');
+    if (smActor() === mid) { try { localStorage.removeItem('sm_actor'); localStorage.removeItem('sm_actor_name'); } catch (e) {} }
+    await loadMembers();
+    showToast('成员已删除');
+  } catch (e) { showToast(e.message || '删除失败', 'error'); await loadMembers(); }
+}
+
+async function setActiveMember(mid, name) {
+  setSmActor(mid, name);
+  await loadMembers();
+  showToast('当前记账人：' + name + '（此后记账归属到TA）');
+}
+
 init();

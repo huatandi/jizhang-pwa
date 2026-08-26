@@ -126,8 +126,15 @@
       cur.modules = { ...(cur.modules || {}), purchase: (mode === 'business'), reminder: true };
       DB.prepare("INSERT OR REPLACE INTO options (key, value) VALUES ('app_settings', ?)").run(JSON.stringify(cur));
       const token = 'offline-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-      sessions.set(token, { mode });
-      return ok({ ok: true, scene: mode, dataMode: mode, token });
+      // 多成员共享：解出当前记账成员(actor)的名字，作为记账归属 created_by 的显示值
+      let actor = '', actorName = '';
+      const aid = (body && body.actor_member_id) || '';
+      if (aid) {
+        const aRow = DB.prepare('SELECT * FROM ledger_members WHERE member_id=? AND mode=?').get(aid, mode);
+        if (aRow) { actor = aRow.member_id; actorName = aRow.name; }
+      }
+      sessions.set(token, { mode, actor, actorName });
+      return ok({ ok: true, scene: mode, dataMode: mode, token, actor, actorName });
     }
     if (path === '/login/status') {
       return ok({ enabled: true, authenticated: false });
@@ -146,6 +153,9 @@
       if (!publicGet) return fail('未登录或会话已过期', 401);
     }
     const mode = (sess && sess.mode) || DB.mode();
+    // 当前记账成员（多成员共享归属）：登录时记录到会话；无则回退"账本主人"
+    const actor = (sess && sess.actor) || '';
+    const actorName = (sess && sess.actorName) || (actor ? actor : '');
 
     // ---- options ----
     if (path === '/options' && method === 'GET') {
@@ -430,21 +440,21 @@
         let r;
         if (table === 'income') {
           const baseAmount = toBaseAmount(d.amount, currency);
-          r = DB.prepare(`INSERT INTO income (date, project, pay_method, account, amount, handler, remark, discount, card_pending_account, voucher, mode, currency)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-            .run(d.date, d.project || '', d.pay_method || '', d.account || '', baseAmount, d.handler || '', d.remark || '', num(d.discount), d.card_pending_account || '', d.voucher || '', mode, currency);
+          r = DB.prepare(`INSERT INTO income (date, project, pay_method, account, amount, handler, remark, discount, card_pending_account, voucher, mode, currency, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+            .run(d.date, d.project || '', d.pay_method || '', d.account || '', baseAmount, d.handler || '', d.remark || '', num(d.discount), d.card_pending_account || '', d.voucher || '', mode, currency, actorName);
         } else if (table === 'purchase') {
           const totalBase = toBaseAmount(d.total_amount, currency);
           const paidBase = toBaseAmount(d.paid_amount, currency);
-          r = DB.prepare(`INSERT INTO purchase (doc_date, supplier, total_amount, pay_method, paid_amount, status, remark, mode, currency)
-            VALUES (?,?,?,?,?,?,?,?,?)`)
-            .run(d.doc_date || '', d.supplier || '', totalBase, d.pay_method || '', paidBase, d.status || '', d.remark || '', mode, currency);
+          r = DB.prepare(`INSERT INTO purchase (doc_date, supplier, total_amount, pay_method, paid_amount, status, remark, mode, currency, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`)
+            .run(d.doc_date || '', d.supplier || '', totalBase, d.pay_method || '', paidBase, d.status || '', d.remark || '', mode, currency, actorName);
           if (d.supplier) DB.prepare('INSERT OR IGNORE INTO suppliers (name) VALUES (?)').run(d.supplier);
         } else {
           const baseAmount = toBaseAmount(d.amount, currency);
-          r = DB.prepare(`INSERT INTO expense (date, category, amount, account, handler, remark, voucher, mode, currency, payee)
-            VALUES (?,?,?,?,?,?,?,?,?,?)`)
-            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.remark || '', d.voucher || '', mode, currency, d.payee || '');
+          r = DB.prepare(`INSERT INTO expense (date, category, amount, account, handler, remark, voucher, mode, currency, payee, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.remark || '', d.voucher || '', mode, currency, d.payee || '', actorName);
         }
         return ok({ id: r.lastInsertRowid, currency });
       }
@@ -528,6 +538,50 @@
         const cnt = DB.prepare('SELECT COUNT(*) c FROM purchase WHERE supplier=? AND mode=?').get(name, mode).c;
         if (cnt > 0) return fail(`该供货商在当前账本有 ${cnt} 条进货记录，无法删除（可重命名保留历史）`);
         DB.prepare('DELETE FROM suppliers WHERE name=?').run(name);
+        return ok({ ok: true });
+      }
+    }
+
+    // ---- 多成员共享：账本成员（同名设备多人协作，归属+审计） ----
+    if (path === '/ledger-members' && method === 'GET') {
+      const rows = DB.prepare('SELECT * FROM ledger_members WHERE mode = ? ORDER BY is_default DESC, id ASC').all(mode);
+      return ok(rows.map(m => ({ member_id: m.member_id, name: m.name, role: m.role, is_default: !!m.is_default, created_at: m.created_at })));
+    }
+    if (path === '/ledger-members' && method === 'POST') {
+      const name = String((body || {}).name || '').trim();
+      const role = ['owner', 'editor', 'viewer'].includes((body || {}).role) ? body.role : 'editor';
+      if (!name) return fail('成员名字不能为空');
+      const count = DB.prepare('SELECT COUNT(*) c FROM ledger_members WHERE mode = ?').get(mode).c;
+      const mid = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      // 首个成员默认 owner + 记账人；其余默认 editor
+      const effRole = (count === 0) ? 'owner' : role;
+      DB.prepare('INSERT INTO ledger_members (member_id, name, role, mode, is_default) VALUES (?,?,?,?,?)')
+        .run(mid, name, effRole, mode, (count === 0 ? 1 : 0));
+      return ok({ ok: true, member_id: mid, role: effRole });
+    }
+    const lmMatch = path.match(/^\/ledger-members\/([^/]+)$/);
+    if (lmMatch) {
+      const mid = decodeURIComponent(lmMatch[1]);
+      const mRow = DB.prepare('SELECT * FROM ledger_members WHERE member_id=? AND mode=?').get(mid, mode);
+      if (!mRow) return fail('成员不存在');
+      if (method === 'PUT') {
+        const b = body || {};
+        if (b.role) {
+          const newRole = ['owner', 'editor', 'viewer'].includes(b.role) ? b.role : 'editor';
+          const ownerCount = DB.prepare("SELECT COUNT(*) c FROM ledger_members WHERE mode=? AND role='owner'").get(mode).c;
+          if (mRow.role === 'owner' && newRole !== 'owner' && ownerCount <= 1) return fail('账本至少需保留一名所有者');
+          DB.prepare('UPDATE ledger_members SET role=? WHERE member_id=? AND mode=?').run(newRole, mid, mode);
+        }
+        if (b.is_default) {
+          DB.prepare('UPDATE ledger_members SET is_default=0 WHERE mode=?').run(mode);
+          DB.prepare('UPDATE ledger_members SET is_default=1 WHERE member_id=? AND mode=?').run(mid, mode);
+        }
+        return ok({ ok: true });
+      }
+      if (method === 'DELETE') {
+        const ownerCount = DB.prepare("SELECT COUNT(*) c FROM ledger_members WHERE mode=? AND role='owner'").get(mode).c;
+        if (mRow.role === 'owner' && ownerCount <= 1) return fail('账本至少需保留一名所有者，无法删除');
+        DB.prepare('DELETE FROM ledger_members WHERE member_id=? AND mode=?').run(mid, mode);
         return ok({ ok: true });
       }
     }
