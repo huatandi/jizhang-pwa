@@ -339,7 +339,7 @@
     if(m){let d=+m[1],mo=+m[2],y=+m[3];if(mo>12&&d<=12){const x=d;d=mo;mo=x;}if(y<100)y+=2000;if(d>=1&&d<=31&&mo>=1&&mo<=12)return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
     m=String(text||'').match(/\b(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})\b/);
     if(m)return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
-    m=String(text||'').toLowerCase().match(/\b(\d{1,2})[\/\-.\s]+([a-záéíóúñü]{3,10})[\/\-.\s]+(\d{2,4})\b/i);
+    m=String(text||'').toLowerCase().match(/\b(\d{1,2})\s*(?:de|del|di)?\s*([a-záéíóúñü]{3,10})\s*(?:de|del|di)?\s*(\d{2,4})\b/i);
     if(m&&MONTHS[m[2]]){let y=+m[3];if(y<100)y+=2000;return `${y}-${String(MONTHS[m[2]]).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}`;}
     // V7.2：OCR 粘连日期（20AGO2026 / 20AGOSTO2026）——无分隔，月名夹在数字间
     m=String(text||'').toLowerCase().match(/\b(\d{1,2})([a-záéíóúñü]{3,10})(\d{2,4})\b/i);
