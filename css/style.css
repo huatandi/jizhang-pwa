@@ -3591,3 +3591,16 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 /* V7.1 OCR 工作台日期：补齐 CJK 字体，避免 Chromium 把“年/月/日”等 locale 字符渲染成方框；日历图标强制白色 */
 #wbDate { font-family: Arial, "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color-scheme: dark; }
 #wbDate::-webkit-calendar-picker-indicator { filter: invert(1) grayscale(1) brightness(2.4) !important; opacity: 1 !important; cursor: pointer; }
+
+/* 语音转文字 醒目区（V7） */
+.voice-transcript-wrap { margin-top: 12px; }
+.voice-transcript-title { font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 6px; }
+.voice-transcript-hint { font-size: 11px; font-weight: 400; color: var(--text-3); margin-left: 6px; }
+.voice-transcript {
+  min-height: 60px; max-height: 150px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px;
+  font-size: 14px; color: var(--text-1); line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+}
+.voice-transcript-empty { color: var(--text-3); font-size: 13px; }

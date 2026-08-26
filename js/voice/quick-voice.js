@@ -313,10 +313,14 @@ function restoreQuickVoiceState(st) {
   renderVoicePreview();
 }
 function showVoiceDraft(text) {
-  const tip = document.getElementById('voiceTip');
-  if (!tip) return;
   const t = String(text || '').trim();
-  if (t) tip.textContent = '📝 ' + t;
+  const box = document.getElementById('voiceTranscript'); // 语音转文字醒目区
+  if (box) {
+    if (t) box.textContent = t;
+    else box.innerHTML = '<span class="voice-transcript-empty">（点击"点击说话"后，识别文字会实时显示在这里）</span>';
+  }
+  const tip = document.getElementById('voiceTip');
+  if (tip) { if (t) tip.textContent = '🎙️ ' + t; }
 }
 function ensureVoiceDraftSession() {
   if (!voiceDraftSession && window.VoiceDraftSession) voiceDraftSession = new VoiceDraftSession({ lang: voiceLang });

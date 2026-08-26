@@ -671,6 +671,12 @@
               <button class="voice-lang" id="btnVoiceLang" onclick="switchVoiceLang()" title="切换识别语言">中文</button>
               <span class="voice-tip" id="voiceTip">🎙️ 点击说话记账</span>
             </div>
+
+            <!-- 语音转文字 独立醒目区：实时显示识别文字，可据此说「删除/修改/清空」改错 -->
+            <div class="voice-transcript-wrap">
+              <div class="voice-transcript-title">🎤 语音转文字 <span class="voice-transcript-hint">识别文字实时显示；说「删除/修改/修正/改正/清空」可改错</span></div>
+              <div class="voice-transcript" id="voiceTranscript"><span class="voice-transcript-empty">（点击"点击说话"后，识别文字会实时显示在这里）</span></div>
+            </div>
             <div class="quick-page-actions">
               <button class="btn-secondary btn-lg" onclick="cancelQuick()" title="取消并退出记账">取消</button>
               <button class="voice-btn quick-voice-btn" id="btnVoice" onclick="toggleVoice()" title="点击开始/结束说话记账">
