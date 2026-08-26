@@ -34,8 +34,10 @@
     const mode = opts.providerMode || T.ProviderMode.AUTO;
     const urlBase = `${FRANKFURTER_API}/rate/${b}/${q}`;
 
-    // BANXICO 策略：AUTO 且任一端为 MXN 时优先 BANXICO（USD/MXN 或 MXN/USD 都走 FIX）
-    const tryBanxico = (mode === T.ProviderMode.BANXICO) || (mode === T.ProviderMode.AUTO && (q === 'MXN' || b === 'MXN'));
+    // V7：BANXICO via Frankfurter 仅对 USD↔MXN 有稳定 provider 数据。
+    // 旧逻辑对 MXN/CNY、MXN/AUD 也强加 ?providers=BANXICO → 404 并反复重试。
+    const banxicoPair = (b === 'USD' && q === 'MXN') || (b === 'MXN' && q === 'USD');
+    const tryBanxico = banxicoPair && ((mode === T.ProviderMode.BANXICO) || mode === T.ProviderMode.AUTO);
     if (tryBanxico) {
       try {
         const data = await Http.requestJson(urlBase + '?providers=BANXICO', { timeoutMs: opts.timeoutMs });

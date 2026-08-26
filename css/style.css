@@ -3587,3 +3587,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .weather-hour-rain { color: #38bdf8; font-size: 12px; }
 .weather-hour-wind { font-size: 12px; }
 
+
+/* V7.1 OCR 工作台日期：补齐 CJK 字体，避免 Chromium 把“年/月/日”等 locale 字符渲染成方框；日历图标强制白色 */
+#wbDate { font-family: Arial, "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color-scheme: dark; }
+#wbDate::-webkit-calendar-picker-indicator { filter: invert(1) grayscale(1) brightness(2.4) !important; opacity: 1 !important; cursor: pointer; }

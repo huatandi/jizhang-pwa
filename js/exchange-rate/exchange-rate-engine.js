@@ -51,7 +51,9 @@
       };
     }
     const mode = opts.providerMode || T.ProviderMode.AUTO;
-    const provider = mode === T.ProviderMode.BANXICO || (mode === T.ProviderMode.AUTO && (b === 'MXN' || q === 'MXN')) ? T.RateSource.BANXICO : T.RateSource.FRANKFURTER_BLEND;
+    const banxicoPair = (b === 'USD' && q === 'MXN') || (b === 'MXN' && q === 'USD');
+    const provider = banxicoPair && (mode === T.ProviderMode.BANXICO || mode === T.ProviderMode.AUTO)
+      ? T.RateSource.BANXICO : T.RateSource.FRANKFURTER_BLEND;
     const key = cacheKey(b, q, provider, 'latest');
 
     // 1. 内存缓存
