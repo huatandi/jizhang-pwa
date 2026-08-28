@@ -1,0 +1,152 @@
+{
+  "$schema_note": "Voice Golden Dataset fixture 清单 (V7.0 §28)。每个 fixture 对应一句语音输入及其期望解析结果。expected 字段为人工标注的正确答案；识别结果由引擎/浏览器捕获为 tests/voice/results/<id>.json 后，用 node tests/voice/benchmark.cjs 汇总 KPI。expected 中 null 表示该字段不适用/不评估。",
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "voice-zh-clean-001",
+      "lang": "zh-CN",
+      "difficulty": "clean",
+      "source": "manual",
+      "notes": "干净普通话：快速记账一句话。",
+      "utterance": "今天 Costco 买货 850 比索",
+      "expected": {
+        "amount": "850",
+        "currency": "MXN",
+        "merchant": "Costco",
+        "category": "材料",
+        "date": null,
+        "intent": "CONTENT"
+      }
+    },
+    {
+      "id": "voice-zh-amount-002",
+      "lang": "zh-CN",
+      "difficulty": "clean",
+      "source": "manual",
+      "notes": "中文金额口语：一万五 / 三千五 等大额口语。",
+      "utterance": "买了一万五千块的货",
+      "expected": {
+        "amount": "15000",
+        "currency": "CNY",
+        "merchant": null,
+        "category": "材料",
+        "date": null,
+        "intent": "CONTENT"
+      }
+    },
+    {
+      "id": "voice-zh-bank-003",
+      "lang": "zh-CN",
+      "difficulty": "clean",
+      "source": "manual",
+      "notes": "银行名近音（普通话 ASR 把银行名听成中文近音词，验证 bank-resolver）。",
+      "utterance": "从桑坦德账户转 500",
+      "expected": {
+        "amount": "500",
+        "account": "Santander",
+        "merchant": null,
+        "category": null,
+        "date": null,
+        "intent": "CONTENT"
+      }
+    },
+    {
+      "id": "voice-zh-command-004",
+      "lang": "zh-CN",
+      "difficulty": "clean",
+      "source": "manual",
+      "notes": "提交指令：独立'好了'应触发 COMMIT。",
+      "utterance": "好了",
+      "expected": {
+        "amount": null,
+        "date": null,
+        "intent": "COMMIT"
+      }
+    },
+    {
+      "id": "voice-zh-correction-005",
+      "lang": "zh-CN",
+      "difficulty": "correction",
+      "source": "manual",
+      "notes": "重说上一句：'重说上一句'后替换，验证 REPLACE 链路。",
+      "utterance": "重说上一句",
+      "expected": {
+        "amount": null,
+        "date": null,
+        "intent": "REPLACE_LAST_ARMED"
+      }
+    },
+    {
+      "id": "voice-zh-changedmind-006",
+      "lang": "zh-CN",
+      "difficulty": "user-changed-mind",
+      "source": "manual",
+      "notes": "用户改口：'店里300……不对，店里500'。V7.0 §8：必须归为 USER_CHANGED_MIND，不得学习 300→500。",
+      "utterance": "店里300 不对 店里500",
+      "expected": {
+        "amount": "500",
+        "date": null,
+        "intent": "CONTENT",
+        "errorAttribution": "USER_CHANGED_MIND"
+      }
+    },
+    {
+      "id": "voice-es-clean-007",
+      "lang": "es-MX",
+      "difficulty": "clean",
+      "source": "manual",
+      "notes": "西语（墨西哥）：pagué 500 pesos。",
+      "utterance": "pagué 500 pesos",
+      "expected": {
+        "amount": "500",
+        "currency": "MXN",
+        "merchant": null,
+        "category": null,
+        "date": null,
+        "intent": "CONTENT"
+      }
+    },
+    {
+      "id": "voice-en-clean-008",
+      "lang": "en-US",
+      "difficulty": "clean",
+      "source": "manual",
+      "notes": "英语：paid 500 dollars。",
+      "utterance": "paid 500 dollars",
+      "expected": {
+        "amount": "500",
+        "currency": "USD",
+        "merchant": null,
+        "category": null,
+        "date": null,
+        "intent": "CONTENT"
+      }
+    },
+    {
+      "id": "voice-es-command-009",
+      "lang": "es-MX",
+      "difficulty": "clean",
+      "source": "manual",
+      "notes": "西语提交：listo。",
+      "utterance": "listo",
+      "expected": {
+        "amount": null,
+        "date": null,
+        "intent": "COMMIT"
+      }
+    },
+    {
+      "id": "voice-en-command-010",
+      "lang": "en-US",
+      "difficulty": "clean",
+      "source": "manual",
+      "notes": "英语提交：done。",
+      "utterance": "done",
+      "expected": {
+        "amount": null,
+        "date": null,
+        "intent": "COMMIT"
+      }
+    }
+  ]
+}

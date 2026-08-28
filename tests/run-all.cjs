@@ -54,6 +54,19 @@ function main() {
   }
   console.log('\n=== 测试汇总: ' + pass + ' 通过, ' + fail + ' 失败, ' + skipped + ' 跳过 ===');
   if (failures.length) console.log('失败列表: ' + failures.join(', '));
+
+  // Golden benchmark（有 results 出真值 KPI；无 results 用 --demo 验证计算器本身）
+  const runBench = (label, script, args) => {
+    console.log('\n══════ ' + label + ' ══════');
+    const r = spawnSync(process.execPath, [script].concat(args || []), { stdio: 'inherit', cwd: ROOT });
+    if (r.status !== 0) fail++;
+  };
+  if (fail === 0) {
+    runBench('OCR Golden Benchmark', path.join(ROOT, 'tests', 'ocr', 'benchmark.cjs'), ['--demo']);
+    runBench('Voice Golden Benchmark', path.join(ROOT, 'tests', 'voice', 'benchmark.cjs'), ['--demo']);
+  } else {
+    console.log('\n（单元测试有失败，跳过 benchmark）');
+  }
   process.exit(fail ? 1 : 0);
 }
 

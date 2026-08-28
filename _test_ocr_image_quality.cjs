@@ -5,7 +5,7 @@
  *  1. analyze：清晰高对比图 → 低模糊/高对比/低反光/低淡字；均匀灰图 → 高淡字/高模糊
  *  2. 亮斑 → glareScore；暗图 → brightness 低
  *  3. detectOrientation：水平文字行 → 0；竖排文字列 → 90
- *  4. pickPipeline：质量规则（fade→thermal / 低对比→high_contrast / 清晰→none / glare→反光抑制）
+ *  4. pickPipeline：质量规则（fade→fade 自动对比度+伽马 / 低对比→high_contrast / 清晰→none / glare→反光抑制）
  *  5. 只读性：analyze 不修改入参
  */
 const path = require('path');
@@ -64,9 +64,9 @@ console.log('\n[2] 均匀灰图');
   const s = Q.analyze(c);
   assert('对比度≈0', s.contrastScore < 0.1, s.contrastScore);
   assert('模糊高（无细节）', s.blurScore > 0.9, s.blurScore);
-  assert('淡字高（≥0.55 触发 thermal）', s.fadeScore >= 0.55, s.fadeScore);
+  assert('淡字高（≥0.55 触发 fade）', s.fadeScore >= 0.55, s.fadeScore);
   const p = Q.pickPipeline(s, null, 'balanced');
-  assert('淡字 → thermal', p.enhanceMode === 'thermal', p.enhanceMode);
+  assert('淡字 → fade（自动对比度+伽马，不二值化）', p.enhanceMode === 'fade', p.enhanceMode);
 }
 
 // ---------- 3. 反光/阴影/暗图 ----------
