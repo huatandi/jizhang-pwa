@@ -272,9 +272,10 @@ const ReminderParser = {
       .replace(/^(?:同时\s*)?(?:事项|内容|事情|做什么|日期|时间|提醒时间|地点|位置|备注|附注|提醒方式|方式|提醒节点|提前|提早|重复提醒|重复|关联服务|关联|账户|账号|金额|数额|支出分类|收入分类|分类|类别|商户|商家|content|asunto)\s*[:：]?\s*/i, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    // 解析失败时保留原文；但原文若是"命令句"（清空/删除/更改/改为等打头）则视为命令，不写入事项
+    // 解析失败时保留原文；但原文若是"命令句"或纯"重复/提醒方式/提前/备注"等元信息则视为命令，不写入事项
     const CMD_LEAD = /^(?:请|帮我|麻烦|你|给我)?\s*(?:同时\s*)?(?:清空|清除|删掉|删除|删去|去掉|去除|移除|抹掉|擦掉|擦除|清掉|更改|改为|改成|更改为|变更|设为|设定为|设置为|更新为|换成|调整为|修改为|撤销|重新说|重说|重新来|重来|重录)/;
-    if (!content && t && !CMD_LEAD.test(t)) content = t;
+    const META_ONLY = /^(?:重复|重复提醒|每天|每日|天天|每周|每星期|每个星期|每月|每个月|提醒方式|方式|提前|提早|提醒节点|备注|附注|地点|位置|提醒时间|日期|时间|账户|金额|分类|关联|关联服务)\s*(?:重复|提醒|方式|里|中|的|内容|数据|文字|信息|值|：|:)*$/;
+    if (!content && t && !CMD_LEAD.test(t) && !META_ONLY.test(String(t).trim())) content = t;
     return { content, location, datetime, date, time, advance_minutes, method, note, repeat };
   }
 };
@@ -363,6 +364,7 @@ function parseRemindMode(v) {
   const s = String(v || '').trim();
   if (s === 'voice' || s === '' || s === null) return { speak: true, ring: true, vibrate: true };
   if (s === 'manual') return { speak: false, ring: true, vibrate: true };
+  if (s === 'none') return { speak: false, ring: false, vibrate: false };
   const set = s.split(',').map(x => x.trim()).filter(Boolean);
   return {
     speak: set.includes('speak'),
@@ -376,7 +378,7 @@ function readRemindMode() {
   if (g('rModeSpeak')) parts.push('speak');
   if (g('rModeRing')) parts.push('ring');
   if (g('rModeVibrate')) parts.push('vibrate');
-  return parts.length ? parts.join(',') : 'manual'; // 全关 = 手动（仅弹卡片）
+  return parts.length ? parts.join(',') : 'none'; // 全关 = 仅弹卡片（静默）
 }
 function setRemindModeUI(v) {
   const m = parseRemindMode(v);
@@ -401,7 +403,7 @@ function openReminderModal(mode) {
   document.getElementById('rLocation').value = '';
   document.getElementById('rNote').value = '';
   document.getElementById('rAt').value = '';
-  setRemindModeUI('voice'); // 默认：语音播报+响铃+震动
+  ['rModeSpeak', 'rModeRing', 'rModeVibrate'].forEach((id) => { const el = document.getElementById(id); if (el) el.checked = false; }); // 默认：全关，由用户选要哪种提醒
   document.getElementById('rAdvance').value = '0';
   document.getElementById('rRepeat').value = 'none';
   document.getElementById('rLinkType').value = '';
@@ -877,28 +879,23 @@ function tryRemindModeByVoice(text) {
   const VIBRATE = /(?:震动|振动|vibrar|vibrate|vibra)/i;
   const has = { speak: SPEAK.test(t), ring: RING.test(t), vibrate: VIBRATE.test(t) };
   if (!(has.speak || has.ring || has.vibrate)) return false;
-  const ONLY = /(?:只要|仅|只|只开|solo|sólo|only|solamente)/i;
-  const OFF = /(?:不要|不用|无需|关掉|关闭|关|去掉|取消|no\b|off|quitar|desactivar|apagar)/i;
-  const only = ONLY.test(t);
+  const OFF = /(?:不要|不用|无需|关掉|关闭|关|去掉|取消|全关|全关掉|no\b|off|quitar|desactivar|apagar)/i;
   const off = OFF.test(t);
   const set = (id, on) => { const el = document.getElementById(id); if (el) el.checked = on; };
   const changed = (id, on) => { const el = document.getElementById(id); return !!el && el.checked !== on; };
   let any = false;
-  if (only) {
-    // "只要 X" → 只开 X，其余关
-    any |= changed('rModeSpeak', has.speak); set('rModeSpeak', has.speak);
-    any |= changed('rModeRing', has.ring);    set('rModeRing', has.ring);
-    any |= changed('rModeVibrate', has.vibrate); set('rModeVibrate', has.vibrate);
-  } else if (off) {
+  if (off) {
+    // "关闭/不要 语音播报" → 只关提到的（其余保持）
     if (has.speak)   { any |= changed('rModeSpeak', false);   set('rModeSpeak', false); }
     if (has.ring)    { any |= changed('rModeRing', false);    set('rModeRing', false); }
     if (has.vibrate) { any |= changed('rModeVibrate', false); set('rModeVibrate', false); }
   } else {
-    if (has.speak)   { any |= changed('rModeSpeak', true);    set('rModeSpeak', true); }
-    if (has.ring)    { any |= changed('rModeRing', true);     set('rModeRing', true); }
-    if (has.vibrate) { any |= changed('rModeVibrate', true);  set('rModeVibrate', true); }
+    // 互斥多选：提到哪个开哪个，未提到的全部关闭（默认关闭）
+    any |= changed('rModeSpeak', has.speak); set('rModeSpeak', has.speak);
+    any |= changed('rModeRing', has.ring);   set('rModeRing', has.ring);
+    any |= changed('rModeVibrate', has.vibrate); set('rModeVibrate', has.vibrate);
   }
-  const modeDesc = (only ? '仅 ' : '') + [has.speak && '语音播报', has.ring && '响铃', has.vibrate && '震动'].filter(Boolean).join('、');
+  const modeDesc = [has.speak && '语音播报', has.ring && '响铃', has.vibrate && '震动'].filter(Boolean).join('、') || '全关';
   renderReminderVoicePreview();
   if (any) {
     showToast('✔ 提醒方式已设为：' + (off ? '已关闭' : modeDesc));
@@ -989,12 +986,20 @@ function applyReminderVoiceText(buffer) {
   if (parsed.content && !skipField('content', parsed.content)) { writeReminderField('rContent', parsed.content); filled.push('事项'); }
   if (parsed.advance_minutes && !skipField('advance', parsed.advance_minutes)) { writeReminderField('rAdvance', String(parsed.advance_minutes)); filled.push('提前'); }
   if (parsed.note && !skipField('note', parsed.note)) { writeReminderField('rNote', parsed.note); filled.push('备注'); }
-  if (parsed.repeat && parsed.repeat !== 'none') {
+  // 重复提醒：每天/每周/每月 等（含"重复提醒"引导词、多语）
+  let repeatVal = parsed.repeat && parsed.repeat !== 'none' ? parsed.repeat : 'none';
+  if (repeatVal === 'none') {
+    const rb = String(clean || '').toLowerCase();
+    if (/(?:每天|每日|天天|daily|todos los días|todos los dias|cada día|cada dia)/.test(rb)) repeatVal = 'daily';
+    else if (/(?:每周|每星期|每个星期|每礼拜|weekly|cada semana)/.test(rb)) repeatVal = 'weekly';
+    else if (/(?:每月|每个月|monthly|cada mes)/.test(rb)) repeatVal = 'monthly';
+  }
+  if (repeatVal !== 'none') {
     const rp = document.getElementById('rRepeat');
-    if (rp && [...rp.options].some(o => o.value === parsed.repeat)) { rp.value = parsed.repeat; filled.push('重复'); }
+    if (rp && [...rp.options].some(o => o.value === repeatVal)) { rp.value = repeatVal; filled.push('重复'); }
     if (typeof syncRepeatDayUI === 'function') syncRepeatDayUI();
   }
-  setRemindModeUI(parsed.method === 'manual' ? 'manual' : 'voice'); // 语音说"手动"→仅响铃；默认全开
+  if (parsed.method === 'manual') setRemindModeUI('manual'); // 语音说"手动"→仅响铃；否则保持用户已选的提醒方式（互斥多选、默认关闭）
   renderReminderVoicePreview();
   setReminderVoiceBtnState('done');
   if (reminderVoiceLang === 'es-MX') showToast(filled.length ? '✔ Reconocido: ' + filled.join(', ') : 'Texto reconocido, di la hora');
