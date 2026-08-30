@@ -3301,16 +3301,15 @@ select option {
   box-shadow: 0 6px 20px rgba(245, 158, 11, 0.45);
   width: auto;
 }
-/* 快速记账页：取消 · 点击说话 · 保存 悬浮卡片（与语音提醒页三键同款布局） */
+/* 快速记账页：取消 · 点击说话 · 保存 悬浮（与语音提醒页一致）：透明背景 + 水平居中 */
 .quick-page-actions-float {
   width: min(520px, calc(100vw - 40px));
-  background: rgba(13, 21, 38, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--border);
+  margin: 0 auto; /* 水平居中（配合父级 left:0/right:0 或桌面 left:240px/right:0） */
+  background: transparent;
+  border: none;
   border-radius: 18px;
-  padding: 10px 14px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  padding: 8px 14px;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.28));
 }
 /* 页面底部留白：内容可滚到悬浮栏上方，不被遮挡 */
 #page-reminder { padding-bottom: 96px; }

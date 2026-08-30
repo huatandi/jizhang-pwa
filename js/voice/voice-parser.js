@@ -75,22 +75,75 @@
   };
 
   /* ================== 金额解析 ================== */
+  const CN_D = { '零':0,'○':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9 };
+  const CN_SMALL = { '十':10,'百':100,'千':1000 };
+  // 中文整数 → 数字（万/千/百/十/零 + 阿拉伯数字混排；<亿）
+  VK._cnInt = function (s) {
+    const str = String(s || '').replace(/[，,\s]/g, '');
+    if (!str) return null;
+    if (/^\d+$/.test(str)) return parseInt(str, 10);
+    let total = 0, section = 0, num = 0;
+    for (const ch of str) {
+      if (ch >= '0' && ch <= '9') num = num * 10 + Number(ch);
+      else if (CN_D[ch] !== undefined) num = CN_D[ch];
+      else if (CN_SMALL[ch]) { if (num === 0) num = 1; section += num * CN_SMALL[ch]; num = 0; }
+      else if (ch === '万') { section = (section + num) * 10000; total += section; section = 0; num = 0; }
+      else if (ch === '亿') { total = (total + section + num) * 100000000; section = 0; num = 0; }
+      // 零：占位，无值
+    }
+    total += section + num;
+    return total;
+  };
+  // 中文金额（万 零 块/元 毛/角/分 点 + 数字）→ 数字，如 "10万零78.36"→100078.36、"1万零3百二十六块7毛三"→10326.73
+  VK.parseCnMoney = function (text) {
+    const t = String(text || '').trim().replace(/[，,\s]/g, '');
+    if (!t) return null;
+    let s = t.replace(/^(?:人民币|￥|¥|CNY|元|块)?/i, '');
+    let sign = 1;
+    if (/^[-负]/.test(s)) { sign = -1; s = s.replace(/^[-负]/, ''); }
+    // 尾部缩放："3.5万"/"1.2亿" → ×1万/×1亿
+    let scale = 1;
+    const sm = s.match(/([万亿])$/);
+    if (sm) { scale = (sm[1] === '亿') ? 1e8 : 1e4; s = s.slice(0, -1); }
+    const dval = (x) => (CN_D[x] != null ? CN_D[x] : (/^\d$/.test(x) ? Number(x) : 0));
+    let intStr = s, fracStr = '', splitMode = null;
+    let m = String(s).match(/^(.*?)[点.]\s*(.*)$/);
+    if (m && m[1]) { intStr = m[1]; fracStr = m[2]; splitMode = 'point'; }
+    else { m = String(s).match(/^(.*?)(?:块|元|圆)\s*(.*)$/); if (m) { intStr = m[1] || s; fracStr = m[2]; splitMode = 'yuan'; } }
+    intStr = intStr.replace(/^(?:块|元|圆)+/, '').trim();
+    let intVal = VK._cnInt(intStr);
+    if (intVal == null) return null;
+    // 口语化 "三万五" = 35000、"2万5" = 25000（X万 + 单个裸数字 = 该数字×千）
+    const colloq = intStr.match(/^(.*万)([零一二两三四五六七八九0-9])$/);
+    if (colloq && !intStr.includes('零')) intVal = (VK._cnInt(colloq[1]) || 0) + dval(colloq[2]) * 1000;
+    let fracVal = 0;
+    if (fracStr) {
+      if (splitMode === 'point') {
+        fracVal = parseFloat('0.' + fracStr); if (isNaN(fracVal)) fracVal = 0;
+      } else {
+        const fm = fracStr.match(/^([0-9零一二两三四五六七八九]{1,2})?\s*(?:毛|角)?\s*([0-9一二两三四五六七八九])?\s*(?:分|厘)?$/);
+        if (fm) {
+          const jiao = fm[1] ? (CN_D[fm[1]] != null ? CN_D[fm[1]] : parseInt(fm[1], 10)) : 0;
+          const fen = fm[2] ? (CN_D[fm[2]] != null ? CN_D[fm[2]] : parseInt(fm[2], 10)) : 0;
+          fracVal = jiao / 10 + fen / 100;
+        } else {
+          fracVal = parseFloat('0.' + fracStr); if (isNaN(fracVal)) fracVal = 0;
+        }
+      }
+    }
+    let total = (intVal + fracVal) * scale;
+    return sign < 0 ? -total : (Math.round(total * 100) / 100);
+  };
   VK.parseAmount = function (text) {
     const t = String(text || '').trim();
     if (!t) return null;
+    // 中文金额（万/零/块/毛/角/分/亿）
+    if (/[零一两二三四五六七八九十百千万亿元块钱毛角分点]/.test(t)) {
+      const cn = VK.parseCnMoney(t);
+      if (cn != null) return cn;
+    }
     let m = t.match(/(?:¥|￥|\$|MX\$)?\s*([0-9]+(?:\.[0-9]{1,2})?)\s*(?:块|元|圆|块钱|pesos?|比索|刀|dólares?|dolares?|usd)?/i);
     if (m) return Number(m[1]);
-    m = t.match(/([0-9零一两二三四五六七八九十]+)\s*块\s*([0-9零一二三四五六七八九]+)\s*(?:毛|角)?/);
-    if (m) {
-      const w = VK.parseCnNumber(m[1]);
-      const f = VK.parseCnNumber(m[2]);
-      if (w > 0 && f != null) return w + f / 10;
-    }
-    const matchCn = t.match(/([零一两二三四五六七八九十百千万0-9]+)\s*(?:块|元|圆|块钱)?/);
-    if (matchCn && /[一二两三四五六七八九十百千万]/.test(matchCn[1])) {
-      const n = VK.parseCnNumber(matchCn[1]);
-      if (n > 0) return n;
-    }
     const enNum = VK.parseEnNumber(t);
     if (enNum != null) return enNum;
     return null;
@@ -536,7 +589,7 @@
   };
 
   /* ================== 主解析入口 ================== */
-  const AMOUNT_RE = /(?:¥|￥|\$|MX\$)?\s*(?:[0-9]{3,}(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?\s*(?:块|元|圆|块钱|pesos?|比索|刀|dólares?|dolares?|usd)|[零一两二三四五六七八九十百千万]{2,}(?:万|千|百|十)?|[零一二两三四五六七八九十](?:块|元|圆|块钱|万|千|百|十))\s*(?:块|元|圆|块钱|pesos?|比索|刀|dólares?|dolares?|usd)?/gi;
+  const AMOUNT_RE = /(?:¥|￥|\$|MX\$)?\s*[0-9零一二两三四五六七八九十百千万亿][0-9,，零一二两三四五六七八九十百千万亿点.]*(?:\s*(?:块钱|元|圆|块))?(?:\s*(?:[0-9零一二两三四五六七八九]{1,2})?\s*(?:毛|角)\s*(?:[0-9一二两三四五六七八九])?\s*(?:分|厘)?)?/gi;
 
   VK.cleanRemark = function (remark, date) {
     let r = String(remark || '');
