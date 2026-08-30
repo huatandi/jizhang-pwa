@@ -3274,6 +3274,61 @@ select option {
   border: none;
   padding: 0;
 }
+
+/* ================== 悬浮操作栏（紧贴底栏之上） ================== */
+/* 语音提醒页"添加提醒"、快速记账页"取消·点击说话·保存"：
+   固定于内容列底部，移动端正好悬浮在底栏上方 */
+.reminder-float-bar,
+.quick-page-actions-float {
+  position: fixed;
+  left: 240px; /* 桌面：内容列起点（侧边栏 240px） */
+  right: 0;
+  bottom: 24px;
+  z-index: 90;
+  display: flex;
+  justify-content: center;
+  pointer-events: none; /* 容器不挡点击，只让按钮可点 */
+}
+.reminder-float-bar > *,
+.quick-page-actions-float > * { pointer-events: auto; }
+
+/* 语音提醒页：添加提醒 大圆角胶囊按钮 */
+.reminder-float-bar .voice-reminder-btn {
+  padding: 14px 30px;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.45);
+  width: auto;
+}
+/* 快速记账页：取消 · 点击说话 · 保存 悬浮卡片（与语音提醒页三键同款布局） */
+.quick-page-actions-float {
+  width: min(520px, calc(100vw - 40px));
+  background: rgba(13, 21, 38, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 10px 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+/* 页面底部留白：内容可滚到悬浮栏上方，不被遮挡 */
+#page-reminder { padding-bottom: 96px; }
+#page-quick .quick-page-body { padding-bottom: 110px; }
+
+@media (max-width: 900px) {
+  .reminder-float-bar,
+  .quick-page-actions-float { left: 72px; } /* 中屏：侧边栏收起为 72px */
+}
+@media (max-width: 768px) {
+  .reminder-float-bar,
+  .quick-page-actions-float {
+    left: 0;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 62px); /* 悬浮于底栏正上方 */
+  }
+  #page-reminder { padding-bottom: 140px; }
+  #page-quick .quick-page-body { padding-bottom: 150px; }
+}
 .reminder-list {
   display: flex;
   flex-direction: column;

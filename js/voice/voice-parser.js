@@ -215,7 +215,7 @@
       const text2 = t.replace(/(?:帮我|请|麻烦|麻烦你|可以)?\s*(?:保存一下|记好了|确认保存|全部保存|保存|记好|guardar|save|done|listo|确认记账)\s*(?:吧|啦|了|好|完成|一下)?/ig, ' ').replace(/\s+/g, ' ').trim();
       return { cmd: 'save', text: text2 };
     }
-    if (/^(清空|清除|重新来|重新|重来|撤销|取消|清理|borrar|limpiar|borra|undo|clear|reset|start over)/.test(low)) return { cmd: 'clear', text: t.replace(/^(清空|清除|重新来|重新|重来|撤销|取消|清理|borrar|limpiar|borra|undo|clear|reset|start over)\s*/, '') };
+    if (/^(清空|清除|删除|删掉|移除|去除|擦掉|擦除|清空一下|全部清空|清空全部|重新来|重新|重来|撤销|取消|清理|borrar|limpiar|borra|undo|clear|reset|start over)/.test(low)) return { cmd: 'clear', text: t.replace(/^(清空|清除|删除|删掉|移除|去除|擦掉|擦除|清空一下|全部清空|清空全部|重新来|重新|重来|撤销|取消|清理|borrar|limpiar|borra|undo|clear|reset|start over)\s*/, '') };
     if (/^(收入|收钱|记收入|入账|income|ingreso|ingresos|earnings|deposit)/.test(low)) {
       return { cmd: 'income', text: t.replace(/^(收入|收钱|记收入|入账|income|ingreso|ingresos|earnings|deposit)\s*/, '') };
     }
@@ -229,6 +229,124 @@
       return { cmd: 'account', text: t.replace(/^(账户|改账户|account|set account)\s*/i, '') };
     }
     return { cmd: null, text: t };
+  };
+
+  /* ================== 字段操作命令（清空/删除/去掉/更改/改为 + 项目） ================== */
+  // 需求：语音里的 "清空/删除/去掉/更改/改为 + 某个项目(日期/金额/支出分类/账户/备注/事项/提醒时间/地点/提醒方式/提醒节点/重复提醒/关联服务)"
+  // 以及 "同时清空/删除/去除/更改/改为 …" 都是【命令】，不是内容：
+  //   1) 命令命中时被整体消费，绝不写入任何内容字段（事项/备注/商户等）；
+  //   2) 内容解析兜底时也会剥离命令词与字段标签，保证"事项"只收真实内容。
+  const FIELD_CMD_OPS = [
+    // 清空/删除类（长词优先，避免"清"吞掉"清空"；"撤销/取消刚才/undo"留给改口引擎）
+    { op: 'clear', re: /(?:清空|清除|删掉|删除|删去|去掉|去除|移除|抹掉|擦掉|擦除|清掉|vaciar|borrar|eliminar|quitar|clear|delete|remove|erase)/ig },
+    // 更改/改为类
+    { op: 'set', re: /(?:更改为|更改|改为|改成|设为|设定为|设置为|更新为|换成|调整为|修改为|变更|改到|改至|set|change|update|establecer|poner|cambiar)/ig },
+    // "改 + 字段"（改日期/改时间/改金额…）
+    { op: 'set', re: /改(?=[^，。；、\s]{0,3}(?:日期|时间|金额|数额|账户|账号|分类|类别|事项|内容|地点|位置|备注|提醒|重复|关联))/ig }
+  ];
+  const FIELD_LABEL_ENTRIES = [
+    { field: 'amount', re: /(?:金额|数额|多少钱|amount|monto|importe)/ig },
+    { field: 'category', re: /(?:支出分类|收入分类|分类|类别|类目|category|categoría|categoria|tipo)/ig },
+    { field: 'account', re: /(?:账户|账号|银行|卡号|account|cuenta)/ig },
+    { field: 'remark', re: /(?:备注|附注|说明|remark|note|nota)/ig },
+    { field: 'merchant', re: /(?:商户|商家|merchant|comercio)/ig },
+    { field: 'content', re: /(?:事项|事情|做什么|content|asunto)/ig },
+    { field: 'content', re: /(?:内容|文字|数据|信息|东西|值)/ig, generic: true },
+    { field: 'time', re: /(?:提醒时间|时间|几点|time|hora)/ig },
+    { field: 'location', re: /(?:地点|位置|地方|location|lugar|ubicación|ubicacion)/ig },
+    { field: 'method', re: /(?:提醒方式|方式|method|método|metodo)/ig },
+    { field: 'advance', re: /(?:提醒节点|提前|提早|advance|anticipación|anticipacion)/ig },
+    { field: 'repeat', re: /(?:重复提醒|重复|repeat|repetir|frecuencia)/ig },
+    { field: 'link', re: /(?:关联服务|关联账务|关联|link|vincular|asociar)/ig },
+    { field: 'date', re: /(?:日期|date|fecha)/ig }
+  ];
+  function _reHits(re, text) {
+    const hits = [];
+    const r = new RegExp(re.source, re.flags);
+    let m;
+    while ((m = r.exec(text))) {
+      hits.push({ index: m.index, word: m[0] });
+      if (m[0].length === 0) r.lastIndex++;
+    }
+    return hits;
+  }
+  // set 命令的新值：去引导词/连接词/残留字段标签与命令词
+  VK._extractFieldValue = function (raw) {
+    let v = String(raw || '').trim();
+    v = v.replace(/^(?:为|成|到|至|是|设为|改成|改为|设定为|设置为|更新为|换成|调整为|修改为|改到|改至)\s*[:：]?\s*/i, '');
+    v = v.replace(/^(?:同时|还有|然后|接着|以及|和|与|跟|及|、|，|,|。|；|;)\s*/, '');
+    for (const { re } of FIELD_LABEL_ENTRIES) {
+      v = v.replace(new RegExp('^(?:' + re.source + ')\\s*[:：]?\\s*', 'i'), '');
+    }
+    v = v.replace(/^(?:清空|清除|删掉|删除|删去|去掉|去除|移除|更改|改为|改成|变更|撤销|重说|重新说|重新来|重来)\s*/i, '');
+    return v.replace(/[，。；、,;！!？?\s]+$/g, '').trim();
+  };
+  // 解析"操作词 + 字段"命令。命中条件：至少一个操作词 + 至少一个字段标签（防裸"清空"误判、防"改为500"被改口引擎抢走）。
+  // 返回 { matched, commands:[{op:'clear',fields:[...]}|{op:'set',field,value}], rest }
+  VK.parseFieldCommands = function (text) {
+    const t = String(text || '').trim();
+    const out = { matched: false, commands: [], rest: t };
+    if (!t) return out;
+    const opHits = [];
+    for (const { op, re } of FIELD_CMD_OPS) {
+      for (const h of _reHits(re, t)) opHits.push({ op, index: h.index, word: h.word });
+    }
+    if (!opHits.length) return out;
+    const fieldHits = [];
+    for (const { field, re, generic } of FIELD_LABEL_ENTRIES) {
+      for (const h of _reHits(re, t)) fieldHits.push({ field, index: h.index, word: h.word, generic: !!generic });
+    }
+    // 泛化标签（内容/文字/数据/信息）让位给具体字段："清空账户里的内容" → 只清账户
+    if (fieldHits.some((h) => !h.generic) && fieldHits.some((h) => h.generic)) {
+      const keep = fieldHits.filter((h) => !h.generic);
+      fieldHits.length = 0; fieldHits.push(...keep);
+    }
+    if (!fieldHits.length) return out; // 无字段 → 交给全清/改口/内容解析
+    out.matched = true;
+    // 每个字段归属最近的（前/后）操作词
+    const byOp = new Map();
+    for (const f of fieldHits) {
+      let best = null, bestDist = Infinity;
+      for (const o of opHits) {
+        const d = Math.abs(f.index - o.index);
+        if (d < bestDist) { bestDist = d; best = o; }
+      }
+      if (best) {
+        if (!byOp.has(best)) byOp.set(best, []);
+        byOp.get(best).push(f);
+      }
+    }
+    for (const [o, fs] of [...byOp.entries()]) {
+      const fields = fs.sort((a, b) => a.index - b.index).map((x) => x.field);
+      if (o.op === 'clear') out.commands.push({ op: 'clear', fields });
+      else {
+        const f = fs[fs.length - 1]; // set 取最后一个字段标签，其后为新值
+        out.commands.push({ op: 'set', field: f.field, value: VK._extractFieldValue(t.slice(f.index + f.word.length)) });
+      }
+    }
+    // rest：剥掉已消费的操作词与字段标签（供调试/校验）
+    const consumed = [...opHits, ...fieldHits].sort((a, b) => b.index - a.index);
+    let rest = t;
+    for (const c of consumed) rest = rest.slice(0, c.index) + ' ' + rest.slice(c.index + c.word.length);
+    out.rest = rest.replace(/\s+/g, ' ').trim();
+    return out;
+  };
+  // 纯命令句（只有"清空/删除/去掉/清除/重新说"等，未指明字段）→ 由调用方清空整个表单
+  VK.isBareClearUtterance = function (text) {
+    const t = String(text || '').trim();
+    if (!t) return false;
+    const t2 = t
+      .replace(/^(?:请|帮我|麻烦|麻烦你|你|给我)\s*/i, ' ')
+      .replace(/(?:清空|清除|删掉|删除|删去|去掉|去除|移除|抹掉|擦掉|擦除|清掉|清一下|全部清空|清空全部|全部删除|删除全部|重新说|重说|重新来|重来|重录|重新录|重录一遍|vaciar|borrar|eliminar|quitar|clear|delete|remove|erase|reset|borra|limpiar)/gi, ' ')
+      .replace(/(?:表单|全部|所有|一切|内容|文字|数据|信息|东西|这次的|刚才的)/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+    return t2.length === 0;
+  };
+  // 供内容解析兜底：剥离残留的命令词（不含单字"清"，防"清晨"误伤）
+  VK.stripFieldCommandWords = function (text) {
+    return String(text || '')
+      .replace(/(?:清空|清除|删掉|删除|删去|去掉|去除|移除|抹掉|擦掉|擦除|清掉|清一下|vaciar|borrar|eliminar|quitar|clear|delete|remove|erase|更改|改为|改成|更改为|变更|设为|设定为|设置为|更新为|换成|调整为|修改为|改到|改至|撤销|重说|重新说|重新来|重来|undo|reset)\s*/gi, ' ')
+      .replace(/\s+/g, ' ').trim();
   };
 
   /* ================== 时间解析（提醒用，与 ReminderParser 兼容） ================== */
@@ -432,6 +550,9 @@
     }
     r = r.replace(/^(收入|收|入账|支出|花|消费|买了|花了|income|ingreso|ingresos|earnings|expense|gasto|gastos|compra|paid)\s*/i, '');
     r = r.replace(/(支付|付款|付了|完成|帮我|请|麻烦|微信支付|转账|转帐|到账)/g, ' ');
+    // 命令词与字段标签不进备注（"清空金额"这类命令由字段命令引擎整体消费，这里是兜底）
+    r = VK.stripFieldCommandWords(r);
+    r = r.replace(/^(?:同时\s*)?(?:日期|金额|数额|支出分类|收入分类|分类|类别|账户|账号|备注|附注|事项|内容|提醒时间|时间|地点|位置|提醒方式|方式|提醒节点|提前|提早|重复提醒|重复|关联服务|关联|商户|商家)\s*[:：]?\s*/i, ' ');
     r = r.replace(/(^|[\s,，、])\d{1,2}(?=$|[\s,，、。])/g, ' ');
     return r.replace(/\s+/g, ' ').trim();
   };

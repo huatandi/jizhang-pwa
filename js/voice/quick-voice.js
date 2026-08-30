@@ -1070,7 +1070,98 @@ function applyVoiceFieldOverride(field, value, oldValue) {
   return false;
 }
 
+// 语音字段操作命令（清空/删除/去掉/更改/改为 + 项目；含"同时"多字段）：
+// 命令命中即整体消费，绝不落入备注等内容字段。
+function tryQuickFieldCommands(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const fc = (window.VoiceKit && window.VoiceKit.parseFieldCommands) || (typeof VoiceParser !== 'undefined' && VoiceParser.parseFieldCommands);
+  if (!fc) return false;
+  const r = fc(t);
+  if (!r || !r.matched) return false;
+  let acted = false;
+  for (const cmd of r.commands) {
+    if (cmd.op === 'clear') {
+      for (const f of cmd.fields) if (clearQuickFieldByKey(f)) acted = true;
+    } else if (cmd.op === 'set') {
+      if (applyQuickFieldSet(cmd.field, cmd.value)) acted = true;
+    }
+  }
+  const L = effectiveVoiceLang();
+  const summary = r.commands.map((c) =>
+    c.op === 'clear' ? ('已清空' + c.fields.map(fieldLabel).join('、')) : (fieldLabel(c.field) + '已改为 ' + c.value)
+  ).join('；');
+  if (acted) {
+    renderVoicePreview();
+    setVoiceBtnState('done');
+    showToast('✔ ' + summary);
+    speak(L === 'es-MX' ? 'Listo' : L === 'en-US' ? 'Done' : summary);
+    setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
+  }
+  return true; // 命中字段命令即整体消费（即便表单无此字段也不落入备注）
+}
+// 按字段键清空快速记账表单控件；返回是否真的动了
+function clearQuickFieldByKey(field) {
+  const norm = field === 'note' ? 'remark' : field;
+  if (norm === 'category') {
+    const sel = document.getElementById('qCategory');
+    if (sel) { quickCategory = ''; sel.value = ''; }
+    return true;
+  }
+  const idMap = { amount: 'qAmount', date: 'qDate', account: 'qAccount', remark: 'qRemark', merchant: 'qRemark' };
+  const id = idMap[norm];
+  const el = id ? document.getElementById(id) : null;
+  if (!el) return false;
+  const oldValue = el.value;
+  voiceFieldHistory.push({ field: norm, oldValue });
+  if (voiceFieldHistory.length > 10) voiceFieldHistory.shift();
+  el.value = '';
+  voiceFieldConfirmed[norm] = false;
+  return true;
+}
+// 语音"更改/改为 + 字段 + 新值"：金额/日期/账户/分类/备注
+function applyQuickFieldSet(field, value) {
+  const v = String(value || '').trim();
+  const norm = field === 'note' ? 'remark' : field;
+  const L = effectiveVoiceLang();
+  const label = fieldLabel(norm);
+  if (!v) {
+    const askMsg = L === 'es-MX' ? 'Di ' + label : L === 'en-US' ? ('Say the ' + label) : '请说' + label;
+    showToast(askMsg); speak(askMsg);
+    return false;
+  }
+  if (norm === 'amount') {
+    const n = VoiceParser.parseAmount(v);
+    if (n != null && n > 0) { writeVoiceField('amount', n); voiceFieldConfirmed.amount = true; return true; }
+    showToast('金额未识别', 'error'); return false;
+  }
+  if (norm === 'date') {
+    const d = VoiceParser.parseDate(v);
+    if (d) { writeVoiceField('date', d); voiceFieldConfirmed.date = true; return true; }
+    showToast('日期未识别', 'error'); return false;
+  }
+  if (norm === 'account') {
+    const acc = VoiceParser.parseAccount(v, options.accounts);
+    const sel = document.getElementById('qAccount');
+    if (acc && sel && [...sel.options].some((o) => o.value === acc)) { writeVoiceField('account', acc); voiceFieldConfirmed.account = true; return true; }
+    showToast('账户「' + (acc || v) + '」不在列表中', 'error'); return false;
+  }
+  if (norm === 'category') {
+    const cat = VoiceParser.matchCategory(v, quickType);
+    const sel = document.getElementById('qCategory');
+    if (cat && sel && [...sel.options].some((o) => o.value === cat)) { writeVoiceField('category', cat); voiceFieldConfirmed.category = true; return true; }
+    showToast('分类「' + (cat || v) + '」不在列表中', 'error'); return false;
+  }
+  if (norm === 'remark' || norm === 'merchant') {
+    writeVoiceField('remark', v); voiceFieldConfirmed.remark = true; return true;
+  }
+  // content/time/location/method/advance/repeat/link：快速记账表单无此字段 → 不消费
+  return false;
+}
+
 function applyVoiceText(buffer) {
+  // 0.3) 字段操作命令（清空/删除/去掉/更改/改为 + 项目；含"同时"多字段）：命令不落入备注等内容字段
+  if (tryQuickFieldCommands(String(buffer || ''))) { voiceBuffer = ''; return; }
   // 0) 说错改口（V3 Correction Engine）：
   //    "不对是50" / "不是现金是BBVA" / "金额改成80" / "撤销" → 字段覆盖/撤销，不叠加
   if (window.CorrectionEngine) {

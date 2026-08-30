@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=489766c4">
+  <link rel="stylesheet" href="css/style.css?v=fieldcmd-01">
   <!-- PaddleOCR SDK 裸模块 import map（V5 §75：vendor/paddleocr/index.mjs 内的 js-yaml / clipper-lib /
        @techstark/opencv-js / onnxruntime-web 是裸 ESM，需 import map 解析。onnxruntime-web 必须与
        vendor/onnx 同版本(1.24.3)——此前误指 1.19.2 造成 JS glue 与 .wasm 版本错配 → function import requires a callable。 -->
@@ -624,12 +624,16 @@
         </header>
 
         <div class="reminder-toolbar">
-          <button class="btn-primary voice-reminder-btn" onclick="openReminderModal('voice')">🎙️ 添加提醒</button>
           <span class="reminder-stats" id="reminderStats"></span>
         </div>
 
         <div class="reminder-list" id="reminderList">
           <div class="ai-empty">暂无提醒</div>
+        </div>
+
+        <!-- 添加提醒：悬浮于底栏之上（与底栏紧挨） -->
+        <div class="reminder-float-bar">
+          <button class="btn-primary voice-reminder-btn" onclick="openReminderModal('voice')">🎙️ 添加提醒</button>
         </div>
       </section>
 
@@ -683,14 +687,16 @@
               <div class="voice-transcript-title">🎤 语音转文字 <span class="voice-transcript-hint">识别文字实时显示；说「删除/修改/修正/改正/清空」可改错</span></div>
               <div class="voice-transcript" id="voiceTranscript"><span class="voice-transcript-empty">（点击"点击说话"后，识别文字会实时显示在这里）</span></div>
             </div>
-            <div class="quick-page-actions">
-              <button class="btn-secondary btn-lg" onclick="cancelQuick()" title="取消并退出记账">取消</button>
-              <button class="voice-btn quick-voice-btn" id="btnVoice" onclick="toggleVoice()" title="点击开始/结束说话记账">
-                <span class="voice-btn-icon">🎙️</span>
-                <span class="voice-btn-text" id="btnVoiceText">点击说话</span>
-              </button>
-              <button class="btn-primary btn-lg" id="btnSaveQuick">💾 保存</button>
-            </div>
+          </div>
+
+          <!-- 取消 · 点击说话 · 保存：悬浮于底栏之上（与语音提醒页一致） -->
+          <div class="quick-page-actions quick-page-actions-float">
+            <button class="btn-secondary btn-lg" onclick="cancelQuick()" title="取消并退出记账">取消</button>
+            <button class="voice-btn quick-voice-btn" id="btnVoice" onclick="toggleVoice()" title="点击开始/结束说话记账">
+              <span class="voice-btn-icon">🎙️</span>
+              <span class="voice-btn-text" id="btnVoiceText">点击说话</span>
+            </button>
+            <button class="btn-primary btn-lg" id="btnSaveQuick">💾 保存</button>
           </div>
         </div>
       </section>
@@ -1474,7 +1480,7 @@
   <script src="js/asr/webspeech-engine.js?v=0445f7d1"></script>
   <script src="js/asr/model-manager.js?v=bb9f0837"></script>
   <script src="js/asr/asr-manager.js?v=5e31977a"></script>
-  <script src="js/voice/voice-parser.js?v=38b97744"></script>
+  <script src="js/voice/voice-parser.js?v=fieldcmd-01"></script>
   <script src="js/voice/voice-sr.js?v=94acb31e"></script>
   <script src="js/voice/voice-qa.js?v=a791c753"></script>
   <script src="js/ai/engine-manager.js?v=b7c87a85"></script>
@@ -1490,9 +1496,9 @@
        顺序说明：静态脚本先于 boot.js 动态加载的 app.js 执行。
        reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
-  <script src="js/voice/reminders.js?v=6449435f"></script>
+  <script src="js/voice/reminders.js?v=fieldcmd-01"></script>
   <script src="js/voice/correction-engine.js?v=b24cd50f"></script>
-  <script src="js/voice/quick-voice.js?v=b7b17507"></script>
+  <script src="js/voice/quick-voice.js?v=fieldcmd-01"></script>
   <script src="js/ledger-crud.js?v=8568767b"></script>
   <script src="js/ai/ai-workbench.js?v=c1b12506"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->

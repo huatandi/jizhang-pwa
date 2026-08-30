@@ -264,9 +264,17 @@ const ReminderParser = {
       .replace(/(?:at the|at|in the|in)\s+[A-Za-zÁÉÍÓÚÑüÜ0-9&. -]{1,24}/gi, ' ')
       .replace(/(?:lugar|ubicación|ubicacion|en)\s+(?:la|el|una|un)?\s*[A-Za-zÁÉÍÓÚÑüÜ0-9&. ]{1,24}|a\s+(?:la|el|una|un)\s+[A-Za-zÁÉÍÓÚÑüÜ0-9&. ]{1,24}/gi, ' ')
       .replace(/提醒\s*$/i, ' ')
+      // 语音提示词（"添加提醒/新建提醒/设个提醒/记一下"）
+      .replace(/(?:添加提醒|新建提醒|创建一个提醒|设个提醒|设一个提醒|记一下|提醒我|请提醒我)\s*/gi, ' ')
+      // 字段操作命令词：命令是动作不是内容，绝不写入"事项"（含中西英语）
+      .replace(/(?:清空|清除|删掉|删除|删去|去掉|去除|移除|抹掉|擦掉|擦除|清掉|清一下|vaciar|borrar|eliminar|quitar|clear|delete|remove|erase|更改|改为|改成|更改为|变更|设为|设定为|设置为|更新为|换成|调整为|修改为|改到|改至|撤销|重说|重新说|重新来|重来|undo|reset)\s*/gi, ' ')
+      // 字段标签（"事项 更换轮胎"→ 更换轮胎；"日期 明天"的"日期"不进事项）
+      .replace(/^(?:同时\s*)?(?:事项|内容|事情|做什么|日期|时间|提醒时间|地点|位置|备注|附注|提醒方式|方式|提醒节点|提前|提早|重复提醒|重复|关联服务|关联|账户|账号|金额|数额|支出分类|收入分类|分类|类别|商户|商家|content|asunto)\s*[:：]?\s*/i, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (!content && t) content = t; // 解析失败时保留原文
+    // 解析失败时保留原文；但原文若是"命令句"（清空/删除/更改/改为等打头）则视为命令，不写入事项
+    const CMD_LEAD = /^(?:请|帮我|麻烦|你|给我)?\s*(?:同时\s*)?(?:清空|清除|删掉|删除|删去|去掉|去除|移除|抹掉|擦掉|擦除|清掉|更改|改为|改成|更改为|变更|设为|设定为|设置为|更新为|换成|调整为|修改为|撤销|重新说|重说|重新来|重来|重录)/;
+    if (!content && t && !CMD_LEAD.test(t)) content = t;
     return { content, location, datetime, date, time, advance_minutes, method, note, repeat };
   }
 };
@@ -719,7 +727,30 @@ function reminderVoiceHandleResult(r) {
     }, 600);
   }
 }
-// 语音"清空/删除 某字段里面的内容"命令：清空 事项/地点/备注/时间 等字段。
+// 语音字段操作命令（清空/删除/去掉/更改/改为 + 项目；含"同时"多字段）。
+// 命令命中即整体消费，绝不写入"事项"等任何内容字段。
+function tryReminderFieldCommands(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const fc = (window.VoiceKit && window.VoiceKit.parseFieldCommands) || (typeof VoiceParser !== 'undefined' && VoiceParser.parseFieldCommands);
+  if (!fc) return false;
+  const r = fc(t);
+  if (!r || !r.matched) return false;
+  let acted = false;
+  for (const cmd of r.commands) {
+    if (cmd.op === 'clear') {
+      for (const f of cmd.fields) if (clearReminderFieldByKey(f)) acted = true;
+    } else if (cmd.op === 'set') {
+      if (applyReminderFieldSet(cmd.field, cmd.value)) acted = true;
+    }
+  }
+  if (acted) {
+    setReminderVoiceBtnState('done');
+    setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
+  }
+  return true; // 命中字段命令即整体消费（即便提醒表单没有该字段，也不落入内容）
+}
+// 语音"清空/删除 某字段里面的内容"命令（旧引擎兼容）：
 // 例："清空 地点里的内容、文字、数据" → 地点框清空；"清空 事项 框内数据" → 事项框清空。
 // 命中后清空并重置该字段"已确认"标记，随后新语句（"事项 更换轮胎"）可重新填充。
 function tryClearReminderField(text) {
@@ -736,19 +767,104 @@ function tryClearReminderField(text) {
   else if (/(?:提前|提早|advance)/i.test(t)) field = 'advance';
   else if (/(?:内容|文字|数据|信息|东西|值)/i.test(t)) field = 'content';
   if (!field) return false; // 没指明字段 → 不误清
-  const idMap = { content: 'rContent', location: 'rLocation', note: 'rNote', time: 'rAt', advance: 'rAdvance' };
-  const el = document.getElementById(idMap[field]);
+  return clearReminderFieldByKey(field);
+}
+// 按字段键清空提醒表单对应控件；返回是否真的动了
+function clearReminderFieldByKey(field) {
+  const norm = field === 'remark' ? 'note' : field;
+  if (norm === 'method') {
+    // 提醒方式（三开关）：清空 = 恢复默认全开
+    ['rModeSpeak', 'rModeRing', 'rModeVibrate'].forEach((id) => { const el = document.getElementById(id); if (el) el.checked = true; });
+    reminderFieldHistory.push({ field: 'method', oldValue: 'voice' });
+    if (reminderFieldHistory.length > 10) reminderFieldHistory.shift();
+    renderReminderVoicePreview();
+    showToast('已重置提醒方式 🔔');
+    if (window.speak) speak('已重置提醒方式');
+    return true;
+  }
+  const idMap = { content: 'rContent', location: 'rLocation', note: 'rNote', time: 'rAt', date: 'rAt', advance: 'rAdvance', repeat: 'rRepeat', link: 'rLinkType' };
+  const id = idMap[norm];
+  const el = id ? document.getElementById(id) : null;
   if (!el) return false;
-  reminderFieldHistory.push({ field, oldValue: el.value }); // 可撤销
+  const oldValue = el.value;
+  reminderFieldHistory.push({ field: norm, oldValue });
   if (reminderFieldHistory.length > 10) reminderFieldHistory.shift();
-  el.value = '';
-  reminderFieldConfirmed[field] = false; // 重置已确认 → 允许后续新值重新填充
+  if (norm === 'repeat') { el.value = 'none'; if (typeof syncRepeatDayUI === 'function') syncRepeatDayUI(); }
+  else if (norm === 'advance') { el.value = '0'; }
+  else el.value = '';
+  reminderFieldConfirmed[norm === 'time' || norm === 'date' ? 'time' : norm] = false;
   renderReminderVoicePreview();
-  showToast('已清空' + reminderFieldLabel(field) + ' 🧹');
-  if (window.speak) speak('已清空' + reminderFieldLabel(field));
+  showToast('已清空' + reminderFieldLabel(norm) + ' 🧹');
+  if (window.speak) speak('已清空' + reminderFieldLabel(norm));
+  return true;
+}
+// 语音"更改/改为 + 字段 + 新值"：写入对应控件（时间/日期/地点/事项/备注/提前/重复/提醒方式/关联服务）
+function applyReminderFieldSet(field, value) {
+  const v = String(value || '').trim();
+  const norm = field === 'remark' ? 'note' : field;
+  const label = reminderFieldLabel(norm);
+  if (!v) {
+    showToast('请说' + label + '的新内容');
+    if (window.speak) speak('请说' + label);
+    return false;
+  }
+  if (norm === 'content') { writeReminderField('rContent', v); reminderFieldConfirmed.content = true; return true; }
+  if (norm === 'location') { writeReminderField('rLocation', v); reminderFieldConfirmed.location = true; return true; }
+  if (norm === 'note') { writeReminderField('rNote', v); reminderFieldConfirmed.note = true; return true; }
+  if (norm === 'time' || norm === 'date') {
+    const sub = ReminderParser.parse(v);
+    if (sub.datetime) { writeReminderField('rAt', sub.datetime); reminderFieldConfirmed.time = true; return true; }
+    writeReminderField('rAt', v); // normalizeRemindAt 无法解析会置空并提示
+    reminderFieldConfirmed.time = true;
+    return true;
+  }
+  if (norm === 'advance') {
+    const m = ReminderParser.parseAdvance(v);
+    if (m > 0) { writeReminderField('rAdvance', String(m)); reminderFieldConfirmed.advance = true; return true; }
+    showToast('未识别提前时间', 'error');
+    return false;
+  }
+  if (norm === 'repeat') {
+    let val = 'none';
+    if (/(?:每天|每日|天天|daily|todos los días|todos los dias)/i.test(v)) val = 'daily';
+    else if (/(?:每周|每星期|weekly|cada semana)/i.test(v)) val = 'weekly';
+    else if (/(?:每月|每个月|monthly|cada mes)/i.test(v)) val = 'monthly';
+    const rp = document.getElementById('rRepeat');
+    if (rp && [...rp.options].some((o) => o.value === val)) { rp.value = val; if (typeof syncRepeatDayUI === 'function') syncRepeatDayUI(); return true; }
+    return false;
+  }
+  if (norm === 'method') {
+    if (/(?:手动|manual|manually)/i.test(v)) { setRemindModeUI('manual'); return true; }
+    if (/(?:自动|语音|voice|auto)/i.test(v)) { setRemindModeUI('voice'); return true; }
+    return tryRemindModeByVoice(v); // 响铃/震动/语音播报 等
+  }
+  if (norm === 'link') {
+    let val = '';
+    if (/(?:进货|付货款|采购|purchase|compra)/i.test(v)) val = 'purchase';
+    else if (/(?:收入|收货款|income|ingreso)/i.test(v)) val = 'income';
+    else if (/(?:支出|expense|gasto)/i.test(v)) val = 'expense';
+    const sel = document.getElementById('rLinkType');
+    if (sel && [...sel.options].some((o) => o.value === val)) { sel.value = val; return true; }
+    return false;
+  }
+  // amount/category/account/merchant：提醒表单无此字段 → 不消费（内容解析兜底会剥掉命令词）
+  return false;
+}
+// 纯命令句（"清空/删除/去掉"未指明字段）→ 清空整个提醒表单
+function clearAllReminderFieldsByVoice() {
+  ['rContent', 'rAt', 'rLocation', 'rNote'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const adv = document.getElementById('rAdvance'); if (adv) adv.value = '0';
+  const rp = document.getElementById('rRepeat'); if (rp) rp.value = 'none';
+  if (typeof syncRepeatDayUI === 'function') syncRepeatDayUI();
+  const lt = document.getElementById('rLinkType'); if (lt) lt.value = '';
+  ['rModeSpeak', 'rModeRing', 'rModeVibrate'].forEach((id) => { const el = document.getElementById(id); if (el) el.checked = true; });
+  reminderFieldHistory = [];
+  reminderFieldConfirmed = {};
+  renderReminderVoicePreview();
+  showToast('已清空全部 🧹');
+  if (window.speak) speak('已清空，请重新说');
   setReminderVoiceBtnState('done');
   setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
-  return true;
 }
 // 语音选择"提醒方式"(语音播报/响铃/震动)：
 //   "只要震动" → 只开震动、关其他；"关闭语音播报" → 关语音播报；"开启响铃" / "响铃" → 开响铃
@@ -793,6 +909,12 @@ function tryRemindModeByVoice(text) {
 }
 // 应用语音解析结果到提醒表单
 function applyReminderVoiceText(buffer) {
+  // 0.4) 字段操作命令（清空/删除/去掉/更改/改为 + 项目；含"同时"多字段）：
+  //      命令是动作不是内容，命中即整体消费，绝不写入"事项"
+  if (tryReminderFieldCommands(String(buffer || ''))) { reminderVoiceBuffer = ''; return; }
+  // 0.45) 纯命令句（只有"清空/删除/去掉/重新说"等，未指明字段）→ 清空整个表单
+  const bareClear = (window.VoiceKit && window.VoiceKit.isBareClearUtterance) || (typeof VoiceParser !== 'undefined' && VoiceParser.isBareClearUtterance);
+  if (bareClear && bareClear(String(buffer || ''))) { clearAllReminderFieldsByVoice(); reminderVoiceBuffer = ''; return; }
   // 0.5) 语音"清空某字段"命令：最高优先级，命中即清空该字段并重开聆听
   if (tryClearReminderField(String(buffer || ''))) { reminderVoiceBuffer = ''; return; }
   // 0.6) 语音选择"提醒方式"(语音播报/响铃/震动)
@@ -883,7 +1005,7 @@ function applyReminderVoiceText(buffer) {
 // 提醒字段历史（说错改口"撤销"用）
 let reminderFieldHistory = [];
 function reminderFieldLabel(field) {
-  const map = { time: '时间', date: '日期', location: '地点', content: '事项', advance: '提前', note: '备注', repeat: '重复' };
+  const map = { time: '时间', date: '日期', location: '地点', content: '事项', advance: '提前', note: '备注', repeat: '重复', method: '提醒方式', link: '关联服务', amount: '金额', category: '支出分类', account: '账户', merchant: '商户' };
   return map[field] || field;
 }
 // 提醒时间框是 <input type=datetime-local>，只接受 "YYYY-MM-DDTHH:MM"。
