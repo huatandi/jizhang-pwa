@@ -396,6 +396,7 @@ function startVoiceSession() {
   // 先停掉语音提醒会话，避免两个识别器冲突
   if (window.isReminderVoiceActive && window.isReminderVoiceActive()) stopReminderVoice();
   window.__voiceRetryCount = 0;
+  window.__voiceMultiHintShown = false;
   voiceBuffer = '';
   voiceMultiEntries = [];
   voiceDraftSession = window.VoiceDraftSession ? new VoiceDraftSession({ lang: voiceLang }) : null;
@@ -1213,20 +1214,23 @@ function applyVoiceText(buffer) {
   const kind = quickType;
   const multi = VoiceParser.splitEntries(buffer, kind);
 
-  // 0) 多笔模式：一句话含多笔记录 → 显示可编辑清单，用户确认后才入账（PWA 修复：不自动入账）
+  // 0) 多笔模式：一句话含多笔记录 → 显示可编辑清单，用户确认后才入账。保持聆听，
+  //    避免在用户还没说完/没说结束词时过早停止并提示"检查是否正确"。
   if (multi.entries.length >= 2) {
     voiceMultiEntries = multi.entries;
-    if (voiceSessionActive) stopVoiceSession();
     renderVoicePreview();
-    setVoiceBtnState('idle');
+    if (voiceSessionActive) setVoiceBtnState('listening');
     const L = effectiveVoiceLang();
-    const msg = L === 'es-MX'
-      ? `✔ ${multi.entries.length} operaciones. Revisa y confirma`
-      : L === 'en-US'
-        ? `✔ ${multi.entries.length} entries. Review and confirm`
-        : `✔ 已识别 ${multi.entries.length} 笔，请检查后点「保存全部」入账`;
-    showToast(msg);
-    speak(L === 'es-MX' ? 'Revisa y confirma' : L === 'en-US' ? 'Review and confirm' : '请检查后点保存全部');
+    if (!window.__voiceMultiHintShown) {
+      window.__voiceMultiHintShown = true;
+      const msg = L === 'es-MX'
+        ? `✔ ${multi.entries.length} operaciones. Sigue hablando o di «listo»`
+        : L === 'en-US'
+          ? `✔ ${multi.entries.length} entries. Keep talking or say "done"`
+          : `✔ 已识别 ${multi.entries.length} 笔（可说更多，说完说「完成」）`;
+      showToast(msg);
+      speak(L === 'es-MX' ? 'Continúa o di listo' : L === 'en-US' ? 'Keep talking or say done' : '可说更多，说完说完成');
+    }
     return;
   }
   // 多笔不成立时清空清单（回到单笔模式）

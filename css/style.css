@@ -3315,6 +3315,8 @@ select option {
 /* 页面底部留白：内容可滚到悬浮栏上方，不被遮挡 */
 #page-reminder { padding-bottom: 96px; }
 #page-quick .quick-page-body { padding-bottom: 110px; }
+/* 设置页：隐藏"秋色主题"横幅的提示词与懒猫图片（保留右上角主题切换按钮） */
+#themeHero { display: none; }
 
 @media (max-width: 900px) {
   .reminder-float-bar,
@@ -3324,10 +3326,10 @@ select option {
   .reminder-float-bar,
   .quick-page-actions-float {
     left: 0;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 62px); /* 悬浮于底栏正上方 */
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 54px); /* 紧贴底栏上方一点点 */
   }
-  #page-reminder { padding-bottom: 140px; }
-  #page-quick .quick-page-body { padding-bottom: 150px; }
+  #page-reminder { padding-bottom: 132px; }
+  #page-quick .quick-page-body { padding-bottom: 142px; }
 }
 .reminder-list {
   display: flex;

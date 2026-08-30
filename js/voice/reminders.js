@@ -688,15 +688,16 @@ function reminderVoiceHandleResult(r) {
     // V4：mergeTranscript 去重合并（iOS 单次识别每轮重开可能重复返回同一句 final）
     reminderVoiceBuffer = (window.VoiceSR && VoiceSR.mergeTranscript) ? VoiceSR.mergeTranscript(reminderVoiceBuffer, r.final) : (reminderVoiceBuffer + ' ' + r.final).trim();
     applyReminderVoiceText(reminderVoiceBuffer);
-    // 语音命令：检测整个累积 buffer（而非单段 final），宽松模式容忍 ASR 偏差：
-    //   说"保存" → 停止录音后自动保存；说"完毕/结束/完成/好了"等 → 仅终止录音（事情已说完）
-    const buf = reminderVoiceBuffer;
-    const SAVE_RE = /(?:保\s*存|保存|存好|确定|确认|记好|存下|submit|save|guardar|guarda|guárdalo|confirma)/i;
-    // 终结词：表示"说完了"。说完后 ~1s 内若说"保存"→立即保存；否则自动保存（不再要求手动点保存）。
-    const DONE_RE = /(?:完\s*毕|完\s*成|结\s*束|完毕|完成|结束|好了|搞定|可以了|就这样|完事|说完了|关闭|关掉|close|cerrar|listo|finish|done|terminado|terminar)/i;
-    // 用最后一段 final 与累积 buffer 都检测：单字终结词（"好了"/"行"/"关闭"）可能被识别成单独一段
-    const hitSave = SAVE_RE.test(buf) || SAVE_RE.test(r.final);
-    const hitDone = DONE_RE.test(buf) || DONE_RE.test(r.final);
+    // 语音命令：只有"刚刚说完的那一句"是【独立结束词/保存词】才算收尾，防止内容里
+    // 含"完成/好了/结束/保存"等词（或 ASR 截断的片段）时过早结束并提示"检查是否正确"。
+    const stripFillers = (s) => String(s || '').toLowerCase().trim()
+      .replace(/[\s，。！？、；：,.!?;:]+$/g, '')
+      .replace(/^(嗯|啊|哦|呃|的|呢|吧|呀|那个|那啥|uh|um|ummm)+/i, '').trim();
+    const isSaveWord = (s) => /^(保存|存好|确定|确认|记好|存下|submit|save|guardar|guarda|guárdalo|confirma)$/i.test(stripFillers(s));
+    const isEndWord = (s) => /^(完毕|完成|完结|结束|好了|好啦|可以了|就这样|完事|说完了|关闭|关掉|结束录音|close|cerrar|listo|finish|done|terminado|terminar)$/i.test(stripFillers(s));
+    // 仅在【最新一句 final】是独立结束/保存词时收尾；整段 buffer 仅当很短(≤8字)且本身是结束/保存词时兜底
+    const hitSave = isSaveWord(r.final) || (reminderVoiceBuffer.trim().length <= 8 && isSaveWord(reminderVoiceBuffer));
+    const hitDone = isEndWord(r.final) || (reminderVoiceBuffer.trim().length <= 8 && isEndWord(reminderVoiceBuffer));
     if (hitSave) {
       stopReminderVoice();
       if (reminderAutoSaveTimer) { clearTimeout(reminderAutoSaveTimer); reminderAutoSaveTimer = null; }

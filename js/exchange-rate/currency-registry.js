@@ -37,19 +37,9 @@
     return get(code).minorUnit;
   }
 
-  // 常用货币（按本币动态推荐）：本币 + 主要国际货币 + 周边经济区
-  // 不锁死任何地区：全球用户都可用
+  // 常用货币：默认仅 USD + EUR，其余由用户手动添加（对应"常用外汇默认两个，需要时再添加"）
   function favoritesFor(base) {
-    const b = String(base || '').toUpperCase();
-    const majors = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'CAD', 'AUD', 'CHF', 'HKD', 'KRW'];
-    const list = [b];
-    majors.forEach((c) => { if (c !== b && !list.includes(c)) list.push(c); });
-    // 周边补充：若本币在美洲，补美洲货币；若在亚洲，补亚洲货币
-    const americas = ['MXN', 'BRL', 'ARS', 'COP', 'CLP', 'PEN'];
-    const asia = ['SGD', 'THB', 'MYR', 'IDR', 'PHP', 'INR', 'TWD'];
-    const extras = americas.includes(b) ? americas : asia.includes(b) ? asia : [];
-    extras.forEach((c) => { if (c !== b && !list.includes(c)) list.push(c); });
-    return list.slice(0, 8); // 最多 8 个
+    return ['USD', 'EUR'];
   }
 
   // 默认常用货币（无本币偏好时的兜底：国际主流）
