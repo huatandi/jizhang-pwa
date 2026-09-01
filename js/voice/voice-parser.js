@@ -154,8 +154,11 @@
   VK.amountConfidence = function (amount, text) {
     const a = Number(amount);
     if (!(a > 0)) return 0.3;
-    const t = String(text || '').trim();
+    let t = String(text || '').trim();
     if (!t) return 0.8;
+    // 先剥离日期/时间短语与命令词，避免"8月15号"的15、"3点"的3被当成金额候选
+    if (VK.stripDatePhrases) t = VK.stripDatePhrases(t);
+    if (VK.stripFieldCommandWords) t = VK.stripFieldCommandWords(t);
     const re = /[0-9零一二两三四五六七八九十百千万亿]{2,}(?:[点.][0-9]{1,2})?(?:块|元|圆|块钱|比索|pesos|dólares|dolares|usd|万|千|百)?/gi;
     const seen = new Set();
     let mm;
