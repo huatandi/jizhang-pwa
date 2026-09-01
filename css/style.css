@@ -58,6 +58,22 @@
   --login-bg: linear-gradient(160deg, #f7f0e6 0%, #efe2c8 50%, #f3e3cc 100%);
 }
 
+/* ============ 秋色主题 · 高反差文字强化 ============
+   暖米黄底：文字/数字必须与背景强反差，否则看不清。
+   补上 --text-1（多处 use）、把三档文字加深，并把浅色强调字改深。 */
+:root[data-theme="autumn"] {
+  --text-1: #2b1f0f;   /* 主文字更深（暖底高反差） */
+  --text: #33240f;
+  --text-2: #4c371b;
+  --text-3: #6b5230;
+}
+/* 浅色强调字（暗色主题用的亮黄）在暖底上不可读 → 改深暖 */
+:root[data-theme="autumn"] .tag-blue,
+:root[data-theme="autumn"] .scan-type-btn.active,
+:root[data-theme="autumn"] .ai-toggle-btn:hover { color: #8a5a1e; }
+:root[data-theme="autumn"] .tag-gray { color: #55402a; }
+:root[data-theme="autumn"] .vp-miss { color: #b5533a; }
+
 /* ============ 秋色主题 · 表格/搜索/次要文字对比度强化 ============
    暖底偏浅，表头/占位/空状态需比暗色主题更深的文字色、更清晰的悬停高亮。 */
 :root[data-theme="autumn"] th {
