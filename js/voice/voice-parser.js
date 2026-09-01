@@ -149,6 +149,26 @@
     return null;
   };
 
+  // 金额置信度估算（V2 原则：低置信度不直接写库，先询问）
+  // 保守策略：正常"单一金额"高置信；仅当原文存在 ≥2 个不同金额候选（可能把日期/其它数字误当金额）才低置信。
+  VK.amountConfidence = function (amount, text) {
+    const a = Number(amount);
+    if (!(a > 0)) return 0.3;
+    const t = String(text || '').trim();
+    if (!t) return 0.8;
+    const re = /[0-9零一二两三四五六七八九十百千万亿]{2,}(?:[点.][0-9]{1,2})?(?:块|元|圆|块钱|比索|pesos|dólares|dolares|usd|万|千|百)?/gi;
+    const seen = new Set();
+    let mm;
+    while ((mm = re.exec(t))) {
+      const v = VK.parseAmount(mm[0]);
+      if (v && v > 0) seen.add(Math.round(v * 100) / 100);
+    }
+    const n = seen.size;
+    if (n === 0) return 0.55;   // 有金额却找不到可信候选（异常）→ 要求确认
+    if (n === 1) return 0.95;   // 唯一金额 → 高置信
+    return Math.max(0.4, 0.95 - (n - 1) * 0.25); // 多个不同候选 → 拿不准哪个是金额
+  };
+
   /* ================== 日期解析（语音 → ISO YYYY-MM-DD） ================== */
   // 支持：今天 / 明天 / 昨天 / 后天 / 大后天 / 8月15号 / 八月十五 / 下周一 / 本周五 / 12 de agosto
   VK.parseDate = function (text, baseDate) {

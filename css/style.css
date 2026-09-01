@@ -2495,6 +2495,10 @@ select option {
 .vp-chip.vp-rmk { border-color: rgba(148, 163, 184, 0.4); color: #cbd5e1; }
 .vp-miss { flex: 1 1 100%; font-size: 12px; color: #fca5a5; margin-top: 2px; }
 .vp-empty { flex: 1 1 100%; font-size: 12px; color: #94a3b8; text-align: center; padding: 2px 0; }
+/* V2：低置信度金额确认横幅（AI 不直接写库） */
+.vp-amount-confirm { flex: 1 1 100%; font-size: 13px; color: #fbbf24; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4); border-radius: 10px; padding: 8px 10px; margin-top: 4px; }
+.vp-amount-confirm b { color: #f59e0b; }
+.vp-confirm-amt { margin-top: 8px; }
 
 /* 语音多笔识别清单 */
 .vp-multi {

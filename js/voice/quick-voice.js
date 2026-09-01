@@ -211,6 +211,7 @@ let voiceDraftSession = null;
 const voiceDraftSnapshots = new Map(); // segmentId -> 该句应用前的表单快照，用于删除/替换安全回滚
 let voiceRestartTimer = null;
 let voiceMultiEntries = []; // 语音多笔记账识别结果
+let voiceAmountPending = null; // 低置信度金额待用户确认（V2：AI 不直接写库）
 const QUICK_MEM_KEY = 'sm_quick_mem_v1'; // 记忆上次账户/分类
 if (!window.__voiceRetryOnce) window.__voiceRetryOnce = true;
 
@@ -397,6 +398,7 @@ function startVoiceSession() {
   if (window.isReminderVoiceActive && window.isReminderVoiceActive()) stopReminderVoice();
   window.__voiceRetryCount = 0;
   window.__voiceMultiHintShown = false;
+  voiceAmountPending = null;
   voiceBuffer = '';
   voiceMultiEntries = [];
   voiceDraftSession = window.VoiceDraftSession ? new VoiceDraftSession({ lang: voiceLang }) : null;
@@ -967,6 +969,11 @@ function renderVoicePreview() {
   const cat = quickCategory || document.getElementById('qCategory').value || '';
   const account = document.getElementById('qAccount').value || '';
   const remark = document.getElementById('qRemark').value || '';
+  let pendingHtml = '';
+  if (voiceAmountPending != null) {
+    const Lp = effectiveVoiceLang();
+    pendingHtml = `<div class="vp-amount-confirm">⚠️ ${Lp === 'es-MX' ? 'Monto dudoso' : Lp === 'en-US' ? 'Amount unclear' : '金额疑似'}: <b>${Number(voiceAmountPending).toLocaleString()}</b><br><button type="button" class="btn-primary btn-sm vp-confirm-amt" onclick="confirmVoiceAmount()">${Lp === 'es-MX' ? 'Confirmar' : Lp === 'en-US' ? 'Confirm amount' : '✔ 确认金额'}</button></div>`;
+  }
   const chips = [];
   if (date) chips.push(`<span class="vp-chip" data-k="date">📅 ${date}</span>`);
   if (amount) chips.push(`<span class="vp-chip vp-amt" data-k="amount">💰 ${Number(amount).toLocaleString()}</span>`);
@@ -984,7 +991,21 @@ function renderVoicePreview() {
         // PWA 修复：单笔识别完成后提供显式保存按钮（手机端易见）
         : `<div class="vp-miss">${L === 'es-MX' ? '✔ Listo, di "guardar"' : L === 'en-US' ? '✔ Ready, say "save"' : '✔ 已齐，可保存'}</div><div style="margin-top:8px;text-align:center"><button type="button" class="btn-primary btn-sm vp-save-btn" onclick="saveQuick()">💾 ${L === 'es-MX' ? 'Guardar' : L === 'en-US' ? 'Save' : '保存'}</button></div>`)
     : `<div class="vp-empty">${L === 'es-MX' ? '🎙️ Di "gasto/ingreso + monto + categoría", ej: gasto cincuenta almuerzo' : L === 'en-US' ? '🎙️ Say "expense/income + amount + category", e.g. expense fifty lunch' : '🎙️ 说“支出/收入 + 金额 + 分类”，例如：支出 五十 买午饭。分类可直接说名称或“第X项”。也可以一次说多笔：8月15号 超市100，交通50，手机费30，帮我保存'}</div>`;
-  box.innerHTML = html;
+  box.innerHTML = pendingHtml + html;
+}
+
+// 低置信度金额确认（V2 原则：AI 不直接写库，用户确认后才写入）
+function confirmVoiceAmount() {
+  if (voiceAmountPending == null) return null;
+  const v = voiceAmountPending;
+  writeVoiceField('amount', v);
+  voiceFieldConfirmed.amount = true; // 用户明确确认 → 该字段视为已确认，不被后续覆盖
+  voiceAmountPending = null;
+  renderVoicePreview();
+  showToast('✔ 金额已确认：' + v);
+  speak(effectiveVoiceLang() === 'es-MX' ? 'Monto confirmado' : effectiveVoiceLang() === 'en-US' ? 'Amount confirmed' : '金额已确认');
+  setVoiceBtnState('idle');
+  return v;
 }
 
 // 把识别文本自动填入金额 / 日期 / 账户 / 分类 / 备注
@@ -1161,6 +1182,15 @@ function applyQuickFieldSet(field, value) {
 }
 
 function applyVoiceText(buffer) {
+  // V2：若存在待确认金额，用户说"确认/对/是/没错"等短肯定词 → 确认为该金额
+  if (voiceAmountPending != null) {
+    const aff = String(buffer || '').replace(/[，。！!？?、,\s]/g, '').toLowerCase();
+    if (aff.length <= 8 && /^(确认|确认金额|对|对的|正确|没错|就是这样|是|sí|si|yes|ok|confirm|guarda)$/.test(aff)) {
+      confirmVoiceAmount();
+      voiceBuffer = '';
+      return;
+    }
+  }
   // 0.3) 字段操作命令（清空/删除/去掉/更改/改为 + 项目；含"同时"多字段）：命令不落入备注等内容字段
   if (tryQuickFieldCommands(String(buffer || ''))) { voiceBuffer = ''; return; }
   // 0) 说错改口（V3 Correction Engine）：
@@ -1336,8 +1366,24 @@ function applyVoiceText(buffer) {
     return true;
   };
   if (parsed.amount != null && !shouldSkip('amount', parsed.amount)) {
-    writeVoiceField('amount', parsed.amount);
-    filled = true;
+    // V2 原则：低置信度金额不直接写库，先询问确认
+    const VC = (window.VoiceKit && window.VoiceKit.amountConfidence) || (typeof VoiceParser !== 'undefined' && VoiceParser.amountConfidence);
+    const conf = VC ? VC(parsed.amount, buffer) : 0.95;
+    if (conf >= 0.8) {
+      writeVoiceField('amount', parsed.amount);
+      voiceAmountPending = null;
+      filled = true;
+      speak(effectiveVoiceLang() === 'es-MX' ? ('Monto: ' + parsed.amount) : effectiveVoiceLang() === 'en-US' ? ('Amount: ' + parsed.amount) : ('金额 ' + parsed.amount));
+    } else {
+      // 多个候选金额/拿不准 → 挂起，等用户确认，避免错金额入账
+      voiceAmountPending = parsed.amount;
+      renderVoicePreview();
+      showToast('⚠️ 金额疑似 ' + parsed.amount + '（识别到多个金额），请点「确认金额」或说「对/确认」', 'error');
+      speak('金额是 ' + parsed.amount + ' 吗？');
+      setVoiceBtnState('done');
+      setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
+      return;
+    }
   }
   if (parsed.category && !shouldSkip('category', parsed.category)) {
     const sel = document.getElementById('qCategory');
@@ -1635,6 +1681,7 @@ async function saveQuick() {
     toggleIncomeVoice, stopIncomeVoice, incomeVoiceHandleResult, applyIncomeVoiceText,
     getIncomeVoiceActive: () => incomeVoiceActive,
     speak, startAlarm, stopAlarm, scheduleAlarmRetries, getAlarmSettings, previewAlarm, renderVoicePreview, applyVoiceText,
+    confirmVoiceAmount, applyVoiceFieldOverride,
     removeVoiceEntry, saveQuick,
     ALARM_TONES, saveCustomTone, removeCustomTone, loadCustomTone,
   });
