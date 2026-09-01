@@ -1505,19 +1505,26 @@ async function saveQuick() {
   }
   const date = document.getElementById('qDate').value;
   const amount = document.getElementById('qAmount').value;
+  // V2：存在低置信度待确认金额且用户已点"保存" → 视为确认并写入，避免"提示可保存却存不了"
+  if (voiceAmountPending != null && (!amount || Number(amount) <= 0)) {
+    writeVoiceField('amount', voiceAmountPending);
+    voiceFieldConfirmed.amount = true;
+    voiceAmountPending = null;
+  }
+  const amtConfirmed = Number(document.getElementById('qAmount').value);
   // 分类优先取下拉选中，其次语音填充的 qCategory
   const cat = quickCategory || document.getElementById('qCategory').value;
   const account = document.getElementById('qAccount').value;
   const remark = document.getElementById('qRemark').value;
   if (!date) return showToast('请选择日期', 'error');
-  if (!amount || Number(amount) <= 0) return showToast('请输入金额', 'error');
+  if (!amtConfirmed || amtConfirmed <= 0) return showToast('请输入金额', 'error');
   if (!cat) return showToast(quickType === 'expense' ? '请选择支出分类' : '请选择收入分类', 'error');
   // 记忆上次账户/分类
   setQuickMem({ account, category: cat, type: quickType });
   if (quickType === 'expense') {
-    await api('/expense', 'POST', { date, category: cat, amount, account, handler: '', remark });
+    await api('/expense', 'POST', { date, category: cat, amount: amtConfirmed, account, handler: '', remark });
   } else {
-    await api('/income', 'POST', { date, project: cat, pay_method: '', account, amount, handler: '', remark, discount: 0, card_pending_account: '' });
+    await api('/income', 'POST', { date, project: cat, pay_method: '', account, amount: amtConfirmed, handler: '', remark, discount: 0, card_pending_account: '' });
   }
   // PvM 静默学习：语音识别的账户/商户 ≠ 最终保存值 → 用户纠正（"三坦德"→"Santander"）
   try {
