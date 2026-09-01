@@ -879,6 +879,13 @@ function tryRemindModeByVoice(text) {
   const VIBRATE = /(?:震动|振动|vibrar|vibrate|vibra)/i;
   const has = { speak: SPEAK.test(t), ring: RING.test(t), vibrate: VIBRATE.test(t) };
   if (!(has.speak || has.ring || has.vibrate)) return false;
+  // 仅当是"命令式"（只要/关闭/仅/开启/不要/提醒方式…）或几乎只剩模式词时才当作模式命令；
+  // 否则（含较多其它内容，如"明天九点 语音会议"）视为听写，交给内容解析，避免事项内容丢失。
+  const MARK = /(?:只要|仅|只|只开|只留|开启|打开|关闭|关掉|关|不要|不用|无需|去掉|提醒方式|方式|solo|sólo|only|solamente|no\b|off|quitar|desactivar|apagar)/i;
+  let rest = t.replace(SPEAK, '').replace(RING, '').replace(VIBRATE, '').trim();
+  const restCn = rest.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+  const isBare = restCn.length <= 1; // 剩余几乎无内容
+  if (!MARK.test(t) && !isBare) return false; // 有较多内容 → 听写，不当作模式命令
   const OFF = /(?:不要|不用|无需|关掉|关闭|关|去掉|取消|全关|全关掉|no\b|off|quitar|desactivar|apagar)/i;
   const off = OFF.test(t);
   const set = (id, on) => { const el = document.getElementById(id); if (el) el.checked = on; };
