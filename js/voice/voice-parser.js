@@ -550,6 +550,12 @@
     const opts = _getOptions();
     const cats = (kind === 'expense' ? opts.expense_categories : opts.departments) || [];
     const low = String(text || '').toLowerCase();
+    // 0) 显式提到某分类名 / 别名 → 最高优先，避免被规则猜测或"其他"这类泛指兜底覆盖
+    for (const c of cats) {
+      const nm = String(c).trim();
+      if (/^[一二两三四五六七八九十]{1,2}$/.test(nm)) continue; // 序号分类（一/二…）跳过
+      if (low.includes(nm.toLowerCase())) return c;
+    }
     // 第一轮：强关键词（设备/电费/材料/进货/店租等专有名词优先）
     for (const [rule, words] of Object.entries(STRONG_RULES)) {
       const hit = words.some(w => _wordHit(low, w));
