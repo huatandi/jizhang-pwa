@@ -437,6 +437,13 @@
       if (!id && method === 'POST') {
         const d = body || {};
         const currency = String(d.currency || 'MXN').toUpperCase();
+        // 旧库可能缺 created_by 列（多成员归属迁移未跑完）→ 补上，避免"table has no column named created_by"
+        try {
+          const cols = DB.prepare(`PRAGMA table_info(${table})`).all();
+          if (!cols.some(c => c && c.name === 'created_by')) {
+            DB.exec(`ALTER TABLE ${table} ADD COLUMN created_by TEXT DEFAULT ''`);
+          }
+        } catch (e) { /* 列已存在/其它异常：忽略，不阻断保存 */ }
         let r;
         if (table === 'income') {
           const baseAmount = toBaseAmount(d.amount, currency);
