@@ -1521,10 +1521,17 @@ async function saveQuick() {
   if (!cat) return showToast(quickType === 'expense' ? '请选择支出分类' : '请选择收入分类', 'error');
   // 记忆上次账户/分类
   setQuickMem({ account, category: cat, type: quickType });
-  if (quickType === 'expense') {
-    await api('/expense', 'POST', { date, category: cat, amount: amtConfirmed, account, handler: '', remark });
-  } else {
-    await api('/income', 'POST', { date, project: cat, pay_method: '', account, amount: amtConfirmed, handler: '', remark, discount: 0, card_pending_account: '' });
+  // 保存：加 try/catch，避免接口异常变成"点了没反应"的静默失败
+  try {
+    if (quickType === 'expense') {
+      await api('/expense', 'POST', { date, category: cat, amount: amtConfirmed, account, handler: '', remark });
+    } else {
+      await api('/income', 'POST', { date, project: cat, pay_method: '', account, amount: amtConfirmed, handler: '', remark, discount: 0, card_pending_account: '' });
+    }
+  } catch (e) {
+    showToast('保存失败：' + (e && e.message ? e.message : '请重试'), 'error');
+    if (voiceSessionActive) stopVoiceSession();
+    return;
   }
   // PvM 静默学习：语音识别的账户/商户 ≠ 最终保存值 → 用户纠正（"三坦德"→"Santander"）
   try {
