@@ -1342,8 +1342,8 @@ function applyVoiceText(buffer) {
     return;
   }
   if (parsed.cmd === 'income' || parsed.cmd === 'expense') {
-    // 用户已手动锁定类型 → 语音不再自动改，避免"语音一直错 → 手动失效"
-    if (!quickTypeManual && quickType !== parsed.cmd) {
+    // 用户明确说"切换到收入/进入支出"等语音指令 → 始终切换（不再被手动锁定 quickTypeManual 拦住）
+    if (quickType !== parsed.cmd) {
       const seg = document.querySelector(`#page-quick .seg-btn[data-type="${parsed.cmd}"]`);
       if (seg) setQuickType(parsed.cmd, seg);
     }
