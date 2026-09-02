@@ -332,6 +332,23 @@ function handleVoiceDraftFinal(finalText, resultMeta) {
   const draft = ensureVoiceDraftSession();
   if (!draft) return false; // 旧浏览器/加载异常 → 走 V5 旧路径
 
+  // 收入/支出切换指令：纯切换（不进草稿），直接切换并反馈
+  try {
+    const ft = String(finalText || '').trim();
+    const sw = ft.replace(/^(?:请|帮我|麻烦|给我)?\s*(?:切换到|切换|进入|打开|选|要|转)?\s*(到\s*)?/, '').replace(/[。，！!？?、\s]/g, '');
+    const isI = /^(收入|收入页面|收入栏目|收入界面|收钱|入账|income|ingreso|ingresos|earnings|deposit)$/i.test(sw);
+    const isE = /^(支出|支出页面|支出栏目|支出界面|花钱|花销|消费|expense|gasto|gastos|compra|spent)$/i.test(sw);
+    if (isI || isE) {
+      const tgt = isI ? 'income' : 'expense';
+      const seg = document.querySelector(`#page-quick .seg-btn[data-type="${tgt}"]`);
+      if (seg && quickType !== tgt) setQuickType(tgt, seg);
+      renderVoicePreview();
+      const L = effectiveVoiceLang();
+      showToast(L === 'es-MX' ? ('✔ ' + (tgt === 'income' ? 'Ingresos' : 'Gastos')) : /^en/.test(L) ? ('✔ ' + (tgt === 'income' ? 'Income' : 'Expense')) : ('✔ 已切换到' + (tgt === 'income' ? '收入' : '支出')));
+      return true; // 作为切换指令消费，不进草稿
+    }
+  } catch (e) { /* 忽略，走后续 */ }
+
   // 字段级明确改口继续复用成熟 CorrectionEngine；它是操作，不应污染内容草稿。
   try {
     const c = window.CorrectionEngine && CorrectionEngine.parse(finalText);
