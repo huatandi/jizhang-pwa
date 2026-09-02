@@ -656,17 +656,12 @@ async function renderAccountMetaList() {
   for (const m of (Array.isArray(accountMetaCache) ? accountMetaCache : [])) metaBy[m.account] = m;
   const accs = options.accounts || [];
   if (!accs.length) { list.innerHTML = '<div class="recur-hint">暂无账户，请在下方添加（支持自定义各国银行名）。</div>'; return; }
-  // 账户编号映射（V5 §5）：用户手动指定编号（如 1=BBVA），语音说"账户2"即可对应
-  const numMap = (options && options.account_numbers) || {};
   list.innerHTML = accs.map(a => {
     const m = metaBy[a] || { initial_balance: 0, acc_type: 'asset' };
-    // 找该账户的编号（反查）
-    const num = Object.keys(numMap).find(k => numMap[k] === a) || '';
     return `
     <div class="rate-item">
       <span class="rate-cur">${escapeHtml(a)}</span>
       <span class="account-meta-controls">
-        <input type="number" class="account-num-input" data-acc-num="${escapeHtml(a)}" value="${escapeHtml(String(num))}" min="1" max="99" placeholder="编号" title="语音编号（如 2 → 说'账户2'选择此账户）">
         <select class="currency-select" data-acc="${escapeHtml(a)}" data-k="type" title="账户类型">
           <option value="asset" ${m.acc_type === 'asset' ? 'selected' : ''}>资产</option>
           <option value="liability" ${m.acc_type === 'liability' ? 'selected' : ''}>负债</option>
@@ -717,42 +712,32 @@ async function removeAccountItem(v) {
   showToast('已删除账户「' + v + '」');
 }
 
-// 保存单个账户的期初余额与类型 + 语音编号（V5 §5）
+// 保存单个账户的期初余额与类型（编号已去除）
 async function saveAccountMeta(nameEncoded) {
   const name = deJs(nameEncoded);
   // 按 data-acc 属性精确查找（遍历而非 querySelector，兼容含 [ ] " 等特殊字符的账户名）
-  let typeSel = null, initInp = null, numInp = null;
+  let typeSel = null, initInp = null;
   for (const row of document.querySelectorAll('#accountMetaList .rate-item')) {
     const sel = row.querySelector('select[data-acc]');
-    if (sel && sel.getAttribute('data-acc') === name) { typeSel = sel; initInp = row.querySelector('input[data-acc]'); numInp = row.querySelector('input[data-acc-num]'); break; }
+    if (sel && sel.getAttribute('data-acc') === name) { typeSel = sel; initInp = row.querySelector('input[data-acc]'); break; }
   }
   const initial = Number(initInp ? initInp.value : 0);
   const accType = typeSel ? typeSel.value : 'asset';
-  // 语音编号：写 options.account_numbers（如 { "2": "BANORTE" }）
-  const numRaw = numInp ? String(numInp.value).trim() : '';
   try {
-    const num = /^\d{1,2}$/.test(numRaw) ? Number(numRaw) : null;
-    const curMap = (options && options.account_numbers) ? Object.assign({}, options.account_numbers) : {};
-    // 移除旧编号（其他账户占用同一编号时清除）
-    for (const k of Object.keys(curMap)) if (curMap[k] === name) delete curMap[k];
-    if (num) curMap[String(num)] = name;
-    await api('/options/account_numbers', 'PUT', { value: curMap });
-    options = await api('/options');
     await api('/account-meta/' + encodeURIComponent(name), 'PUT', { initial_balance: Number.isFinite(initial) ? initial : 0, acc_type: accType });
-    // 同步语音引擎（账户编号立即生效）
+    // 同步语音引擎
     if (window.VoiceEngine && typeof window.VoiceEngine.setOptions === 'function') {
       window.VoiceEngine.setOptions({ expense_categories: typeof expenseCatOptions === 'function' ? expenseCatOptions() : options.expense_categories, departments: options.departments, accounts: options.accounts, account_numbers: options.account_numbers });
     }
-    showToast('✅ 账户「' + name + '」已保存' + (num ? '（语音编号 ' + num + '）' : ''));
+    showToast('✅ 账户「' + name + '」已保存');
     refreshDashboards();
   } catch (e) { showToast('保存失败: ' + e.message, 'error'); }
 }
 
-// 批量保存所有账户的 编号/期初余额/类型（原每账户 💾 已并入右下角"保存全部设置"）
+// 批量保存所有账户的 期初余额/类型（编号已去除）
 async function saveAllAccountMeta() {
   const rows = document.querySelectorAll('#accountMetaList .rate-item');
   if (!rows.length) return;
-  const numMap = Object.assign({}, (options && options.account_numbers) || {});
   const metaP = [];
   rows.forEach(row => {
     const sel = row.querySelector('select[data-acc]');
@@ -761,15 +746,8 @@ async function saveAllAccountMeta() {
     const accType = sel.value;
     const initEl = row.querySelector('input[data-acc]');
     const init = Number(initEl ? initEl.value : 0) || 0;
-    const numEl = row.querySelector('input[data-acc-num]');
-    const numRaw = numEl ? String(numEl.value).trim() : '';
-    const num = /^\d{1,2}$/.test(numRaw) ? Number(numRaw) : null;
-    // 清除该账户占用的旧编号，避免冲突
-    for (const k of Object.keys(numMap)) if (numMap[k] === name) delete numMap[k];
-    if (num) numMap[String(num)] = name;
     metaP.push(api('/account-meta/' + encodeURIComponent(name), 'PUT', { initial_balance: Number.isFinite(init) ? init : 0, acc_type: accType }));
   });
-  await api('/options/account_numbers', 'PUT', { value: numMap });
   await Promise.all(metaP);
   options = await api('/options');
   if (window.VoiceEngine && typeof window.VoiceEngine.setOptions === 'function') {
