@@ -113,7 +113,7 @@ function setQuickType(t, btn, manual) {
   quickType = t;
   quickCategory = '';
   document.querySelectorAll('#page-quick .seg-btn').forEach(b => b.classList.toggle('active', b === btn));
-  document.getElementById('qCatLabel').textContent = t === 'expense' ? '支出分类' : '收入分类';
+  document.getElementById('qCatLabel').textContent = t === 'expense' ? '费用分类' : '收入分类';
   renderQuickCatSelect();
   closeQuickAddCat();
   renderVoicePreview();
@@ -212,6 +212,7 @@ const voiceDraftSnapshots = new Map(); // segmentId -> 该句应用前的表单�
 let voiceRestartTimer = null;
 let voiceMultiEntries = []; // 语音多笔记账识别结果
 let voiceAmountPending = null; // 低置信度金额待用户确认（V2：AI 不直接写库）
+let voiceFieldFailCount = {};  // 字段连续识别失败计数（V2：两次失败→清空该项，等第三次精准识别）
 const QUICK_MEM_KEY = 'sm_quick_mem_v1'; // 记忆上次账户/分类
 if (!window.__voiceRetryOnce) window.__voiceRetryOnce = true;
 
@@ -399,6 +400,7 @@ function startVoiceSession() {
   window.__voiceRetryCount = 0;
   window.__voiceMultiHintShown = false;
   voiceAmountPending = null;
+  voiceFieldFailCount = {};
   voiceBuffer = '';
   voiceMultiEntries = [];
   voiceDraftSession = window.VoiceDraftSession ? new VoiceDraftSession({ lang: voiceLang }) : null;
@@ -1015,6 +1017,27 @@ function fieldLabel(field) {
   const map = { amount: '金额', account: '账户', category: '分类', date: '日期', remark: '备注', merchant: '商户', location: '地点', time: '时间', content: '事项', note: '备注', advance: '提前' };
   return map[field] || field;
 }
+// V2：字段连续识别失败计数 → 两次失败自动清空该项，等第三次精准识别；数字类(金额)无法识别即清空、留空继续听
+function voiceFieldOk(field) { if (voiceFieldFailCount) voiceFieldFailCount[field] = 0; }
+function voiceFieldFail(field, opts) {
+  const c = (voiceFieldFailCount[field] || 0) + 1;
+  voiceFieldFailCount[field] = c;
+  const forceClear = opts && opts.forceClear; // 数字类：无法精准识别即清空，不做二选一
+  if (forceClear || c >= 2) {
+    if (field === 'amount') document.getElementById('qAmount').value = '';
+    else if (field === 'category') { quickCategory = ''; const s = document.getElementById('qCategory'); if (s) s.value = ''; }
+    else if (field === 'account') document.getElementById('qAccount').value = '';
+    else if (field === 'remark') document.getElementById('qRemark').value = '';
+    voiceFieldFailCount[field] = 0; // 清空后重置，等第三次精准识别
+    const L = effectiveVoiceLang();
+    const lab = fieldLabel(field);
+    showToast(/^es/.test(L) ? ('No se pudo reconocer ' + lab + ', di de nuevo') : /^en/.test(L) ? ('Could not recognize ' + lab + ', say again') : (lab + '两次未能识别，已清空，请重新说'), 'error');
+    renderVoicePreview();
+  } else {
+    renderVoicePreview(); // 第一次失败：不填、不猜
+  }
+  return c;
+}
 function readVoiceField(field) {
   if (field === 'amount') return document.getElementById('qAmount').value;
   if (field === 'account') return document.getElementById('qAccount').value;
@@ -1366,33 +1389,31 @@ function applyVoiceText(buffer) {
     return true;
   };
   if (parsed.amount != null && !shouldSkip('amount', parsed.amount)) {
-    // V2 原则：低置信度金额不直接写库，先询问确认
+    // V2 原则：金额做"精准识别门"——高置信才填；低置信(多候选/拿不准)不做二选一，清空金额继续听
     const VC = (window.VoiceKit && window.VoiceKit.amountConfidence) || (typeof VoiceParser !== 'undefined' && VoiceParser.amountConfidence);
     const conf = VC ? VC(parsed.amount, buffer) : 0.95;
     if (conf >= 0.8) {
       writeVoiceField('amount', parsed.amount);
       voiceAmountPending = null;
+      voiceFieldOk('amount');
       filled = true;
       speak(effectiveVoiceLang() === 'es-MX' ? ('Monto: ' + parsed.amount) : effectiveVoiceLang() === 'en-US' ? ('Amount: ' + parsed.amount) : ('金额 ' + parsed.amount));
     } else {
-      // 多个候选金额/拿不准 → 挂起，等用户确认，避免错金额入账
-      voiceAmountPending = parsed.amount;
-      renderVoicePreview();
-      showToast('⚠️ 金额疑似 ' + parsed.amount + '（识别到多个金额），请点「确认金额」或说「对/确认」', 'error');
-      speak('金额是 ' + parsed.amount + ' 吗？');
-      setVoiceBtnState('done');
-      setTimeout(() => { if (voiceSessionActive) setVoiceBtnState('listening'); }, 1100);
-      return;
+      // 无法精准识别 → 清空、不猜测、继续录音识别（数字不做二选一）
+      voiceAmountPending = null;
+      voiceFieldFail('amount', { forceClear: true });
+      if (filled) return; // 若此句还填了别的，交给后续；否则不返回，让后续字段继续
     }
   }
   if (parsed.category && !shouldSkip('category', parsed.category)) {
     const sel = document.getElementById('qCategory');
     if (sel && [...sel.options].some(o => o.value === parsed.category)) {
       writeVoiceField('category', parsed.category);
+      voiceFieldOk('category');
       filled = true;
       speak(effectiveVoiceLang() === 'es-MX' ? ('Categoría: ' + parsed.category) : effectiveVoiceLang() === 'en-US' ? ('Category: ' + parsed.category) : '分类 ' + parsed.category);
     } else {
-      showToast('⚠️ 分类「' + parsed.category + '」不在列表中', 'error');
+      voiceFieldFail('category'); // 分类不在列表 → 计入失败，两次后清空
     }
   }
   if (parsed.date && !shouldSkip('date', parsed.date)) {
@@ -1409,11 +1430,11 @@ function applyVoiceText(buffer) {
         if (!isStd) window.__voiceLastAccountWord = accWords;
       }
       writeVoiceField('account', parsed.account);
+      voiceFieldOk('account');
       filled = true;
       speak(effectiveVoiceLang() === 'es-MX' ? ('Cuenta: ' + parsed.account) : effectiveVoiceLang() === 'en-US' ? ('Account: ' + parsed.account) : '账户 ' + parsed.account);
     } else {
-      // 下拉中无此账户 → 提示，避免"识别成功却未选中"的困惑
-      showToast('⚠️ 账户「' + parsed.account + '」不在列表中，请到设置添加', 'error');
+      voiceFieldFail('account'); // 账户不在列表 → 计入失败，两次后清空
     }
   }
   if (parsed.remark && !shouldSkip('remark', parsed.remark)) writeVoiceField('remark', parsed.remark);

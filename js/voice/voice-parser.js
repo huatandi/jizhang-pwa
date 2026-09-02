@@ -297,11 +297,11 @@
       return { cmd: 'save', text: text2 };
     }
     if (/^(清空|清除|删除|删掉|移除|去除|擦掉|擦除|清空一下|全部清空|清空全部|重新来|重新|重来|撤销|取消|清理|borrar|limpiar|borra|undo|clear|reset|start over)/.test(low)) return { cmd: 'clear', text: t.replace(/^(清空|清除|删除|删掉|移除|去除|擦掉|擦除|清空一下|全部清空|清空全部|重新来|重新|重来|撤销|取消|清理|borrar|limpiar|borra|undo|clear|reset|start over)\s*/, '') };
-    if (/^(收入|收钱|记收入|入账|income|ingreso|ingresos|earnings|deposit)/.test(low)) {
-      return { cmd: 'income', text: t.replace(/^(收入|收钱|记收入|入账|income|ingreso|ingresos|earnings|deposit)\s*/, '') };
+    if (/^(选择收入|选收入|要收入|转收入|收入记账|记收入|收入|收钱|入账|income|ingreso|ingresos|earnings|deposit)/.test(low)) {
+      return { cmd: 'income', text: t.replace(/^(选择收入|选收入|要收入|转收入|收入记账|记收入|收入|收钱|入账|income|ingreso|ingresos|earnings|deposit)\s*/, '') };
     }
-    if (/^(支出|花钱|花销|消费|记支出|花了|买了|expense|gasto|gastos|compra|paid|bought|spent)/.test(low)) {
-      return { cmd: 'expense', text: t.replace(/^(支出|花钱|花销|消费|记支出|花了|买了|expense|gasto|gastos|compra|paid|bought|spent)\s*/, '') };
+    if (/^(选择支出|选支出|要支出|转支出|支出记账|记支出|支出|花钱|花销|消费|花了|买了|expense|gasto|gastos|compra|paid|bought|spent)/.test(low)) {
+      return { cmd: 'expense', text: t.replace(/^(选择支出|选支出|要支出|转支出|支出记账|记支出|支出|花钱|花销|消费|花了|买了|expense|gasto|gastos|compra|paid|bought|spent)\s*/, '') };
     }
     if (/^(日期|改日期|date|set date)/i.test(t)) {
       return { cmd: 'date', text: t.replace(/^(日期|改日期|date|set date)\s*/i, '') };
@@ -327,7 +327,7 @@
   ];
   const FIELD_LABEL_ENTRIES = [
     { field: 'amount', re: /(?:金额|数额|多少钱|amount|monto|importe)/ig },
-    { field: 'category', re: /(?:支出分类|收入分类|分类|类别|类目|category|categoría|categoria|tipo)/ig },
+    { field: 'category', re: /(?:费用分类|支出分类|收入分类|分类|类别|类目|category|categoría|categoria|tipo)/ig },
     { field: 'account', re: /(?:账户|账号|银行|卡号|account|cuenta)/ig },
     { field: 'remark', re: /(?:备注|附注|说明|remark|note|nota)/ig },
     { field: 'merchant', re: /(?:商户|商家|merchant|comercio)/ig },
