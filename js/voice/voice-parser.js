@@ -297,11 +297,11 @@
       return { cmd: 'save', text: text2 };
     }
     if (/^(清空|清除|删除|删掉|移除|去除|擦掉|擦除|清空一下|全部清空|清空全部|重新来|重新|重来|撤销|取消|清理|borrar|limpiar|borra|undo|clear|reset|start over)/.test(low)) return { cmd: 'clear', text: t.replace(/^(清空|清除|删除|删掉|移除|去除|擦掉|擦除|清空一下|全部清空|清空全部|重新来|重新|重来|撤销|取消|清理|borrar|limpiar|borra|undo|clear|reset|start over)\s*/, '') };
-    if (/^(选择收入|选收入|要收入|转收入|收入记账|记收入|收入|收钱|入账|income|ingreso|ingresos|earnings|deposit)/.test(low)) {
-      return { cmd: 'income', text: t.replace(/^(选择收入|选收入|要收入|转收入|收入记账|记收入|收入|收钱|入账|income|ingreso|ingresos|earnings|deposit)\s*/, '') };
+    if (/^(切换到收入|切换收入|进入收入|打开收入|转收入|收入页面|收入栏目|收入界面|选收入|要收入|收入记账|记收入|收入|收钱|入账|income|ingreso|ingresos|earnings|deposit)/.test(low)) {
+      return { cmd: 'income', text: t.replace(/^(切换到收入|切换收入|进入收入|打开收入|转收入|收入页面|收入栏目|收入界面|选收入|要收入|收入记账|记收入|收入|收钱|入账|income|ingreso|ingresos|earnings|deposit)\s*/, '') };
     }
-    if (/^(选择支出|选支出|要支出|转支出|支出记账|记支出|支出|花钱|花销|消费|花了|买了|expense|gasto|gastos|compra|paid|bought|spent)/.test(low)) {
-      return { cmd: 'expense', text: t.replace(/^(选择支出|选支出|要支出|转支出|支出记账|记支出|支出|花钱|花销|消费|花了|买了|expense|gasto|gastos|compra|paid|bought|spent)\s*/, '') };
+    if (/^(切换到支出|切换支出|进入支出|打开支出|转支出|支出页面|支出栏目|支出界面|选支出|要支出|支出记账|记支出|支出|花钱|花销|消费|花了|买了|expense|gasto|gastos|compra|paid|bought|spent)/.test(low)) {
+      return { cmd: 'expense', text: t.replace(/^(切换到支出|切换支出|进入支出|打开支出|转支出|支出页面|支出栏目|支出界面|选支出|要支出|支出记账|记支出|支出|花钱|花销|消费|花了|买了|expense|gasto|gastos|compra|paid|bought|spent)\s*/, '') };
     }
     if (/^(日期|改日期|date|set date)/i.test(t)) {
       return { cmd: 'date', text: t.replace(/^(日期|改日期|date|set date)\s*/i, '') };
