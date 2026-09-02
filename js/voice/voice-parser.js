@@ -121,14 +121,19 @@
       if (splitMode === 'point') {
         fracVal = parseFloat('0.' + fracStr); if (isNaN(fracVal)) fracVal = 0;
       } else {
-        const fm = fracStr.match(/^([0-9零一二两三四五六七八九]{1,2})?\s*(?:毛|角)?\s*([0-9一二两三四五六七八九])?\s*(?:分|厘)?$/);
-        if (fm) {
-          const jiao = fm[1] ? (CN_D[fm[1]] != null ? CN_D[fm[1]] : parseInt(fm[1], 10)) : 0;
-          const fen = fm[2] ? (CN_D[fm[2]] != null ? CN_D[fm[2]] : parseInt(fm[2], 10)) : 0;
-          fracVal = jiao / 10 + fen / 100;
-        } else {
-          fracVal = parseFloat('0.' + fracStr); if (isNaN(fracVal)) fracVal = 0;
+        const dv = (x) => (CN_D[x] != null ? CN_D[x] : (/^\d$/.test(x) ? Number(x) : 0));
+        let jiao = 0, fen = 0, handled = false;
+        const mj = fracStr.match(/^([0-9零一二两三四五六七八九]+)\s*(?:毛|角)\s*([0-9零一二两三四五六七八九])?\s*(?:分|厘)?/);
+        const mf = fracStr.match(/^([0-9零一二两三四五六七八九]+)\s*(?:分|厘)/);
+        if (mj) { jiao = dv(mj[1]); handled = true; if (mj[2]) fen = dv(mj[2]); }
+        else if (mf) { fen = dv(mf[1]); handled = true; }               // "三分"=0.03（无毛时的分）
+        else if (/^[0-9零一二两三四五六七八九]{1,2}$/.test(fracStr)) {
+          if (/^\d{2}$/.test(fracStr)) { fracVal = Number('0.' + fracStr); handled = true; } // "98"=0.98
+          else if (fracStr.length === 1) { jiao = dv(fracStr); handled = true; }            // "三"=3毛
+          else { jiao = dv(fracStr[0]); fen = dv(fracStr[1]); handled = true; }             // "三八"=3毛8分
         }
+        if (handled) { if (!fracVal) fracVal = jiao / 10 + fen / 100; }
+        else { fracVal = parseFloat('0.' + fracStr); if (isNaN(fracVal)) fracVal = 0; }
       }
     }
     let total = (intVal + fracVal) * scale;
