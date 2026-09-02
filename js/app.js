@@ -656,11 +656,11 @@ async function renderAccountMetaList() {
   for (const m of (Array.isArray(accountMetaCache) ? accountMetaCache : [])) metaBy[m.account] = m;
   const accs = options.accounts || [];
   if (!accs.length) { list.innerHTML = '<div class="recur-hint">暂无账户，请在下方添加（支持自定义各国银行名）。</div>'; return; }
-  list.innerHTML = accs.map(a => {
+  list.innerHTML = accs.map((a, idx) => {
     const m = metaBy[a] || { initial_balance: 0, acc_type: 'asset' };
     return `
     <div class="rate-item">
-      <span class="rate-cur">${escapeHtml(a)}</span>
+      <span class="rate-cur">${idx + 1}. ${escapeHtml(a)}</span>
       <span class="account-meta-controls">
         <select class="currency-select" data-acc="${escapeHtml(a)}" data-k="type" title="账户类型">
           <option value="asset" ${m.acc_type === 'asset' ? 'selected' : ''}>资产</option>

@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
 
   // 默认选项（与 server/db.js 一致）
   const DEFAULT_OPTIONS = {
-    accounts: ['现金', 'BANORTE', 'BBVA', 'BANREJIO', 'SANTANDE', '支票', '欠款', '微信', '支付宝', '其他'],
+    accounts: ['现金', '支票', '欠款', '微信', '支付宝', '其他'],
     departments: ['一', '二', '三', '四', '五', '其他'],
     pay_methods: ['现金', '刷卡', '支票', '欠款'],
     expense_categories: ['已付货款', '杂费', '交通', '伙食', '工资', '房租', '店租', '网费', '水费', '电费', '气费', '通讯', '财会', '律师', '装修', '材料', '商厦管理费', '设备', '装饰', '桌椅', '其他'],
