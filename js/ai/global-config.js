@@ -87,9 +87,10 @@
   const LANG_TO_PADDLE = {
     'zh-cn': 'ch', 'zh': 'ch',
     'zh-tw': 'chinese_cht', 'zh-hk': 'chinese_cht',
-    en: 'en', es: 'en', fr: 'en', de: 'en', it: 'en', pt: 'en',
+    en: 'en', es: 'es', fr: 'fr', de: 'de', it: 'it', pt: 'pt',
     ja: 'japan', ko: 'korean',
-    ru: 'en', ar: 'en', th: 'en', vi: 'en', id: 'en',
+    ru: 'ru', th: 'th', vi: 'vi', id: 'id', nl: 'nl', pl: 'pl', tr: 'tr',
+    sv: 'sv', no: 'no', da: 'da', ms: 'ms',
   };
 
   // 语言 → Whisper 语言 hint（ISO 639-1）
@@ -244,11 +245,12 @@
     const o = opts || {};
     if (o.paddleLang) return String(o.paddleLang);
     const region = detectRegion(o);
-    // 墨西哥/西语区用 'ch'（官方 SDK 的 latin 兼容项，官方文档推荐）
+    // PP-OCRv5 已原生支持 es/fr/de/it/pt 等语言代码，西语应传 'es' 以选择 Latin 识别模型
     if (region && REGION_PROFILE[region]) {
       const r = REGION_PROFILE[region];
-      if (r.lang.startsWith('es')) return 'ch';
-      return LANG_TO_PADDLE[r.lang] || 'en';
+      const rl = String(r.lang || '').toLowerCase();
+      if (rl.startsWith('es')) return 'es';
+      return LANG_TO_PADDLE[rl] || LANG_TO_PADDLE[rl.split('-')[0]] || 'en';
     }
     const lang = (o.lang || browserLang(o)).toLowerCase();
     return LANG_TO_PADDLE[lang] || LANG_TO_PADDLE[lang.split('-')[0]] || 'en';

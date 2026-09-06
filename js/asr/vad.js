@@ -27,6 +27,9 @@
     maxStopThreshold: 0.03,
     preRollMs: 320,
     postRollMs: 160,
+    neuralStartProbability: 0.50,
+    neuralStopProbability: 0.35,
+    neuralRmsSafetyMultiplier: 1.35,
   };
 
   class VadEngine {
@@ -45,6 +48,13 @@
       this.onSilence = null;
       this.onSpeechStart = null;
       this.onMetrics = null;
+      this.neuralProbabilityFn = null;
+      this.neuralStatus = 'ADAPTIVE_ONLY';
+    }
+
+    setNeuralProbabilityFn(fn) {
+      this.neuralProbabilityFn = typeof fn === 'function' ? fn : null;
+      this.neuralStatus = this.neuralProbabilityFn ? 'NEURAL_ACTIVE' : 'ADAPTIVE_ONLY';
     }
 
     reset() {
@@ -112,16 +122,33 @@
     }
 
     push(chunk) {
-      const rms = this._rms(chunk), zcr = this._zcr(chunk), frameMs = this.s.frameMs;
+      const rms = this._rms(chunk), zcr = this._zcr(chunk);
+      // AudioCapture is 16 kHz; derive timing from actual chunk size instead of assuming a fixed frame length.
+      const frameMs = chunk && chunk.length ? (chunk.length / 16) : this.s.frameMs;
       this.nowMs += frameMs;
       if (this.state === 'silence') this._updateNoiseFloor(rms);
       const th = this._adaptiveThresholds();
-      this.lastMetrics = { rms, zcr, noiseFloor: this.noiseFloor, startThreshold: th.start, stopThreshold: th.stop, state: this.state, atMs: this.nowMs };
+      let neuralProbability = null;
+      if (this.neuralProbabilityFn) {
+        try {
+          const v=this.neuralProbabilityFn(chunk);
+          if(v!=null && !(v&&typeof v.then==='function')) {
+            const n=Number(v); if(Number.isFinite(n)) neuralProbability=Math.max(0,Math.min(1,n));
+          }
+        } catch (e) {
+          this.neuralStatus='ERROR_FALLBACK';
+          this.neuralProbabilityFn=null;
+        }
+      }
+      this.lastMetrics = { rms, zcr, neuralProbability, neuralStatus:this.neuralStatus, noiseFloor: this.noiseFloor, startThreshold: th.start, stopThreshold: th.stop, state: this.state, atMs: this.nowMs };
       if (this.onMetrics) { try { this.onMetrics(this.lastMetrics); } catch (e) {} }
 
       if (this.state === 'silence') {
         this._pushPreRoll(chunk);
-        const voiced = rms >= th.start || (zcr > 0.15 && rms > th.start * 0.62);
+        // Neural VAD is primary when available, but a strong adaptive signal remains a safety path.
+        const voiced = neuralProbability != null
+          ? (neuralProbability >= this.s.neuralStartProbability || rms >= th.start * this.s.neuralRmsSafetyMultiplier)
+          : (rms >= th.start || (zcr > 0.15 && rms > th.start * 0.62));
         if (voiced) {
           this.state = 'speech';
           this.speechStartMs = Math.max(0, this.nowMs - frameMs - (this.s.preRollMs || 0));
@@ -137,7 +164,10 @@
       if (this.nowMs - this.speechStartMs >= this.s.maxUtteranceMs) {
         this._emit(); this.state = 'silence'; this.silenceRunMs = 0; return 'utterance';
       }
-      if (rms < th.stop) {
+      const neuralSpeech = neuralProbability != null && neuralProbability >= this.s.neuralStopProbability;
+      const adaptiveSpeech = rms >= th.stop;
+      // End speech only when both the neural path (if present) and adaptive path consider it quiet.
+      if (!neuralSpeech && !adaptiveSpeech) {
         this.silenceRunMs += frameMs;
         if (this.silenceRunMs >= this.s.silenceDurationMs + this.s.postRollMs) {
           const durMs = this.nowMs - this.speechStartMs;

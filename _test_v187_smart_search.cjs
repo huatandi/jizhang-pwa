@@ -1,0 +1,13 @@
+'use strict';
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const src=fs.readFileSync('js/app.js','utf8');
+const a=src.indexOf('function parseSmartLedgerQuery');
+const b=src.indexOf('// 功能补充 P5 + V187',a);
+assert(a>0&&b>a,'parser not found');
+const ctx={};vm.createContext(ctx);vm.runInContext(src.slice(a,b),ctx);
+let r=ctx.parseSmartLedgerQuery('上个月 BBVA 5000以上支出');
+assert.equal(r.kind,'expense');assert.equal(r.amountMin,'5000');assert.equal(r.keyword,'BBVA');assert(/^\d{4}-\d{2}-01$/.test(r.start));
+r=ctx.parseSmartLedgerQuery('最近7天 1000到3000 进货 Costco');
+assert.equal(r.kind,'purchase');assert.equal(r.amountMin,'1000');assert.equal(r.amountMax,'3000');assert.equal(r.keyword,'Costco');
+r=ctx.parseSmartLedgerQuery('今年 收入 工资');assert.equal(r.kind,'income');assert.equal(r.keyword,'工资');
+console.log('V187 smart search parser: PASS');

@@ -27,11 +27,11 @@ async function main() {
   // 1. Feature Flags(保险8)
   console.log('\n[1] Feature Flags + Kill Switch');
   assert('默认 whisperV2Pipeline=true', RT.getFlags().whisperV2Pipeline === true);
-  assert('默认 adaptiveVadEnabled=false', RT.isEnabled('adaptiveVadEnabled') === false);
+  assert('默认 adaptiveVadEnabled=true', RT.isEnabled('adaptiveVadEnabled') === true);
   RT.setFlag('adaptiveVadEnabled', true);
   assert('setFlag 生效(本地覆盖)', RT.isEnabled('adaptiveVadEnabled') === true);
   RT.resetFlags();
-  assert('resetFlags 恢复默认', RT.isEnabled('adaptiveVadEnabled') === false);
+  assert('resetFlags 恢复默认', RT.isEnabled('adaptiveVadEnabled') === true);
 
   // 2. 能力探测(保险1)
   console.log('\n[2] VoiceRuntimeProfile 能力探测');

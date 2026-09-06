@@ -208,6 +208,16 @@ function gotoPage(page) {
   updatePageModeBadge();
 }
 // 直接跳转设置页（不依赖 nav-item click）
+
+function openIntelligenceCenter() {
+  openModal('intelligenceCenterModal');
+  try {
+    if (window.IntelligenceCenter && window.IntelligenceCenter.render) {
+      window.IntelligenceCenter.render();
+    }
+  } catch (e) { console.warn('[IntelligenceCenter]', e); }
+}
+
 function openSettingsPage() {
   refreshSettingUI();
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -392,6 +402,7 @@ async function renderDashboard() {
     if (kpiAssets) kpiAssets.textContent = '¥' + fmtMoney(s.totalAssets || 0);
     if (kpiLiab) kpiLiab.textContent = '¥' + fmtMoney(s.totalLiabilities || 0);
     if (kpiNet) { kpiNet.textContent = '¥' + fmtMoney(s.netWorth || 0); kpiNet.className = 'kpi-value ' + ((s.netWorth || 0) >= 0 ? 'positive' : 'negative'); }
+    renderActionCenter();
 
     const rangeTxt = (currentRange.start || '全部') + ' ~ ' + (currentRange.end || '全部');
     document.getElementById('dashRangeText').textContent = '数据范围: ' + rangeTxt;
@@ -999,10 +1010,11 @@ async function runQuery() {
   const isRemark = queryType === 'remark';
   const v = isRemark ? document.getElementById('queryItemText').value.trim() : document.getElementById('queryItem').value;
   if (v) qs.set('value', v);
-  const s = document.getElementById('queryStart').value || currentRange.start;
-  const e = document.getElementById('queryEnd').value || currentRange.end;
+  const s = smart.start || document.getElementById('queryStart').value || currentRange.start;
+  const e = smart.end || document.getElementById('queryEnd').value || currentRange.end;
   if (s) qs.set('start', s);
   if (e) qs.set('end', e);
+  if (smart.kind) qs.set('kind', smart.kind);
   try {
     const r = await api('/query?' + qs.toString());
     queryResult = r;
@@ -1012,11 +1024,44 @@ async function runQuery() {
   }
 }
 
-// 功能补充 P5：全局搜索（跨收入/支出/进货 + 金额区间 + 时间段）
+// V187：自然语言全局搜索（本地规则解析，不依赖云 AI）
+function parseSmartLedgerQuery(raw) {
+  let text=String(raw||'').trim();
+  const out={ keyword:text, start:'', end:'', amountMin:'', amountMax:'', kind:'' };
+  const pad=n=>String(n).padStart(2,'0'), fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const now=new Date(), y=now.getFullYear(), m=now.getMonth();
+  const setMonth=(yy,mm)=>{ out.start=fmt(new Date(yy,mm,1)); out.end=fmt(new Date(yy,mm+1,0)); };
+  if(/上个月|上月/.test(text)){ const d=new Date(y,m-1,1); setMonth(d.getFullYear(),d.getMonth()); text=text.replace(/上个月|上月/g,' '); }
+  else if(/本月|这个月|当月/.test(text)){ setMonth(y,m); text=text.replace(/本月|这个月|当月/g,' '); }
+  else if(/去年/.test(text)){ out.start=`${y-1}-01-01`;out.end=`${y-1}-12-31`;text=text.replace(/去年/g,' '); }
+  else if(/今年/.test(text)){ out.start=`${y}-01-01`;out.end=fmt(now);text=text.replace(/今年/g,' '); }
+  else if(/昨天/.test(text)){ const d=new Date(y,m,now.getDate()-1);out.start=out.end=fmt(d);text=text.replace(/昨天/g,' '); }
+  else if(/今天|今日/.test(text)){ out.start=out.end=fmt(now);text=text.replace(/今天|今日/g,' '); }
+  let md=text.match(/(?:最近|近)\s*(\d{1,3})\s*天/); if(md){const n=Math.max(1,Math.min(365,Number(md[1])));const d=new Date(y,m,now.getDate()-n+1);out.start=fmt(d);out.end=fmt(now);text=text.replace(md[0],' ');}
+  let rg=text.match(/(\d+(?:\.\d+)?)\s*(?:到|至|~|～|-)\s*(\d+(?:\.\d+)?)/);
+  if(rg){out.amountMin=rg[1];out.amountMax=rg[2];text=text.replace(rg[0],' ');}
+  else {
+    let hi=text.match(/(?:超过|大于|高于|不少于|至少|>=?|以上)\s*\$?\s*(\d+(?:\.\d+)?)/);
+    let lo=text.match(/(?:低于|小于|不超过|至多|<=?|以下)\s*\$?\s*(\d+(?:\.\d+)?)/);
+    // 兼容“5000以上 / 1000以下”
+    if(!hi)hi=text.match(/\$?\s*(\d+(?:\.\d+)?)\s*(?:以上|起)/);
+    if(!lo)lo=text.match(/\$?\s*(\d+(?:\.\d+)?)\s*(?:以下)/);
+    if(hi){out.amountMin=hi[1];text=text.replace(hi[0],' ');} if(lo){out.amountMax=lo[1];text=text.replace(lo[0],' ');}
+  }
+  if(/进货|采购|供应商/.test(text)){out.kind='purchase';text=text.replace(/进货|采购/g,' ');}
+  else if(/支出|花费|付款|费用/.test(text)){out.kind='expense';text=text.replace(/支出|花费|付款|费用/g,' ');}
+  else if(/收入|收款|入账/.test(text)){out.kind='income';text=text.replace(/收入|收款|入账/g,' ');}
+  out.keyword=text.replace(/\s+/g,' ').trim();
+  return out;
+}
+
+// 功能补充 P5 + V187：全局搜索（支持“上个月 BBVA 5000以上支出”等自然语言）
 async function runGlobalSearch() {
-  const kw = document.getElementById('queryKeyword').value.trim();
-  const amtMin = document.getElementById('queryAmtMin').value;
-  const amtMax = document.getElementById('queryAmtMax').value;
+  const rawKw = document.getElementById('queryKeyword').value.trim();
+  const smart = parseSmartLedgerQuery(rawKw);
+  const kw = smart.keyword;
+  const amtMin = document.getElementById('queryAmtMin').value || smart.amountMin;
+  const amtMax = document.getElementById('queryAmtMax').value || smart.amountMax;
   if (!kw && !amtMin && !amtMax && !document.getElementById('queryStart').value && !document.getElementById('queryEnd').value) {
     return showToast('请输入搜索关键词或金额范围', 'error');
   }
@@ -1025,13 +1070,18 @@ async function runGlobalSearch() {
   if (kw) qs.set('keyword', kw);
   if (amtMin) qs.set('amount_min', amtMin);
   if (amtMax) qs.set('amount_max', amtMax);
-  const s = document.getElementById('queryStart').value || currentRange.start;
-  const e = document.getElementById('queryEnd').value || currentRange.end;
+  const s = smart.start || document.getElementById('queryStart').value || currentRange.start;
+  const e = smart.end || document.getElementById('queryEnd').value || currentRange.end;
   if (s) qs.set('start', s);
   if (e) qs.set('end', e);
+  if (smart.kind) qs.set('kind', smart.kind);
   try {
     const r = await api('/query?' + qs.toString());
     queryResult = r;
+    if (rawKw && (smart.start || smart.amountMin || smart.amountMax || smart.kind)) {
+      const bits=[]; if(smart.kind)bits.push({income:'收入',expense:'支出',purchase:'进货'}[smart.kind]); if(smart.start)bits.push(`${s}~${e}`); if(amtMin||amtMax)bits.push(`金额 ${amtMin||'不限'}~${amtMax||'不限'}`);
+      showToast('已理解：'+bits.join(' · '));
+    }
     // 激活「事项备注」tab 高亮
     document.querySelectorAll('.query-seg .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.type === 'remark'));
     queryType = 'remark';
@@ -1331,7 +1381,7 @@ async function downloadBackup() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     const hint = document.getElementById('backupHint');
-    if (hint) hint.textContent = '✅ 备份已生成并下载：' + filename + '（已自动保留最近 10 份）';
+    if (hint) hint.textContent = '✅ 备份已生成并下载：' + filename + '（请妥善保存该备份文件）';
     showToast('✅ 备份已下载');
   } catch (e) {
     showToast(e.message, 'error');
@@ -1553,6 +1603,7 @@ function refreshSettingUI() {
   document.getElementById('setBudget').value = (settings.budget && settings.budget.monthly) || 0;
   renderCatBudgetList();
   renderRecurList();
+  renderInternalTransfers();
   fillRecurCatSelect();
   document.querySelectorAll('.preset-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.scene === settings.scene);
@@ -1919,6 +1970,18 @@ function syncModeSwitch() {
   }
 }
 
+/* ================== 内部转账（V185） ================== */
+async function renderInternalTransfers() {
+  const box=document.getElementById('transferList'); if(!box) return;
+  const accounts=(options && options.accounts)||[];
+  for(const id of ['trFrom','trTo']) { const el=document.getElementById(id); if(el){ const old=el.value; el.innerHTML='<option value="">-- 选择账户 --</option>'+accounts.map(a=>`<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join(''); if(accounts.includes(old)) el.value=old; } }
+  const d=document.getElementById('trDate'); if(d && !d.value) d.value=todayLocal();
+  try { const rows=await api('/transfers'); box.innerHTML=rows.length?rows.slice(0,30).map(r=>`<div class="recur-item"><span>🔁 ${fmtDate(r.date)} · ${escapeHtml(r.from_account)} → ${escapeHtml(r.to_account)} · <b>¥${fmtMoney(r.amount)}</b>${r.remark?' · '+escapeHtml(r.remark):''}</span><button class="opt-del" onclick="deleteInternalTransfer(${r.id})">×</button></div>`).join(''):'<div class="opt-empty">暂无内部转账记录</div>'; } catch(e){ box.innerHTML='<div class="opt-empty">转账记录读取失败</div>'; }
+}
+async function addInternalTransfer(){ const d={date:document.getElementById('trDate').value,from_account:document.getElementById('trFrom').value,to_account:document.getElementById('trTo').value,amount:document.getElementById('trAmount').value,remark:document.getElementById('trRemark').value,currency:BASE_CURRENCY()}; if(!d.date||!d.from_account||!d.to_account||d.from_account===d.to_account||!(Number(d.amount)>0)) return showToast('请选择不同的转出/转入账户并填写金额','error'); try{await api('/transfers','POST',d); document.getElementById('trAmount').value='';document.getElementById('trRemark').value='';showToast('内部转账已记录，不计收入/支出');await renderInternalTransfers();refreshDashboards();}catch(e){showToast(e.message||'转账失败','error')}}
+async function deleteInternalTransfer(id){ if(!confirm('删除这条内部转账记录？\n删除后会进入回收站，可以恢复。'))return; const r=await api('/transfers/'+id,'DELETE'); if(r&&r.trashId&&typeof showLedgerUndo==='function') showLedgerUndo(r.trashId,'内部转账'); renderInternalTransfers(); refreshDashboards(); }
+window.renderInternalTransfers=renderInternalTransfers; window.addInternalTransfer=addInternalTransfer; window.deleteInternalTransfer=deleteInternalTransfer;
+
 /* ================== 周期记账 ================== */
 let recEditingId = null;
 
@@ -1927,17 +1990,21 @@ function renderRecurList() {
   if (!list) return;
   const recs = (settings.recurring && settings.recurring.rules) || [];
   if (!recs.length) { list.innerHTML = '<div class="opt-empty">暂无周期记账规则</div>'; return; }
+  let idsChanged=false;
+  recs.forEach((r,i)=>{ if(r && !r.id){ r.id='rr-'+Date.now().toString(36)+'-'+i+'-'+Math.random().toString(36).slice(2,7); idsChanged=true; } if(r && r.enabled==null){r.enabled=true;idsChanged=true;} });
+  if(idsChanged){ try{ api('/settings','POST',settings).then(x=>{if(x)settings=x;}).catch(()=>{}); }catch(e){} }
   list.innerHTML = recs.map((r, i) => {
     const m = catIcon(r.category || '', r.type === 'expense' ? 'expense' : 'income');
-    const cycleTxt = r.cycle === 'monthly' ? `每月${r.day || 1}日` : r.cycle === 'weekly' ? '每周' : '每天';
+    const cycleTxt = r.cycle === 'monthly' ? `每月${r.day || 1}日` : r.cycle === 'weekly' ? `每周${['日','一','二','三','四','五','六'][Number(r.day)||0]}` : '每天';
     const typeTxt = r.type === 'expense' ? '支出' : '收入';
     return `
     <div class="recur-item">
       <span class="cat-icon" style="background:${m.color}22;color:${m.color}">${m.icon}</span>
-      <span class="recur-name"><b>${escapeHtml(r.category || '未填')}</b> <span class="recur-type ${r.type}">${typeTxt}</span></span>
+      <span class="recur-name"><b>${escapeHtml(r.category || '未填')}</b> <span class="recur-type ${r.type}">${typeTxt}</span>${r.enabled===false?' <span class="tag">⏸ 已暂停</span>':''}</span>
       <span class="recur-amount">¥${fmtMoney(r.amount)}</span>
-      <span class="recur-meta">${escapeHtml(r.account || '')} · ${cycleTxt}${r.remark ? ' · ' + escapeHtml(r.remark) : ''}</span>
+      <span class="recur-meta">${escapeHtml(r.account || '')} · ${cycleTxt} · 提前${Number(r.lead_days)||0}天提醒${r.remark ? ' · ' + escapeHtml(r.remark) : ''}</span>
       <span class="recur-actions">
+        <button class="action-btn" onclick="toggleRecurring(${i})" title="${r.enabled===false?'启用':'暂停'}">${r.enabled===false?'▶️':'⏸️'}</button>
         <button class="action-btn" onclick="deleteRecurring(${i})" title="删除">🗑️</button>
       </span>
     </div>`;
@@ -1957,18 +2024,28 @@ function addRecurring() {
   const amount = Number(document.getElementById('recAmount').value);
   const account = document.getElementById('recAccount').value;
   const cycle = document.getElementById('recCycle').value;
-  const day = Number(document.getElementById('recDay').value) || 1;
+  const rawDay = document.getElementById('recDay').value;
+  const day = cycle === 'weekly' ? (rawDay === '' ? new Date().getDay() : Number(rawDay)) : (Number(rawDay) || 1);
+  const leadDays=Math.max(0,Math.min(30,Number((document.getElementById('recLeadDays')||{}).value)||0));
   const remark = document.getElementById('recRemark').value.trim();
   if (!category) return showToast('请选择分类', 'error');
   if (!amount || amount <= 0) return showToast('请输入金额', 'error');
   if (cycle === 'monthly' && (!day || day < 1 || day > 31)) return showToast('每月规则请输入有效日期(1-31)', 'error');
   if (!settings.recurring) settings.recurring = { rules: [] };
-  settings.recurring.rules.push({ type, category, amount, account, cycle, day, remark, lastRun: null });
+  settings.recurring.rules.push({ id:'rr-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8), enabled:true, type, category, amount, account, cycle, day, lead_days: leadDays, remark, lastRun: null });
   renderRecurList();
   document.getElementById('recAmount').value = '';
   document.getElementById('recRemark').value = '';
   showToast('周期记账规则已添加，保存设置后生效');
 }
+
+function toggleRecurring(i){
+  if(!settings.recurring||!settings.recurring.rules||!settings.recurring.rules[i])return;
+  const r=settings.recurring.rules[i]; r.enabled = r.enabled===false ? true : false;
+  renderRecurList();
+  api('/settings','POST',settings).then(x=>{if(x)settings=x;showToast(r.enabled?'周期规则已启用':'周期规则已暂停');renderActionCenter();}).catch(e=>showToast('保存失败: '+e.message,'error'));
+}
+window.toggleRecurring=toggleRecurring;
 
 function deleteRecurring(i) {
   if (!settings.recurring || !settings.recurring.rules) return;
@@ -1989,6 +2066,40 @@ async function runRecurringCheck() {
     }
   } catch (e) { /* 静默失败，不影响主流程 */ }
 }
+
+/* ================== V186 今日待处理 / 异常雷达 ================== */
+async function renderActionCenter(){
+  const todayBox=document.getElementById('todayActionList'), radar=document.getElementById('anomalyRadarList');
+  const esc=(v)=>escapeHtml(String(v||''));
+  const btn=(label,js)=>`<button class="btn-small" onclick="${js}">${label}</button>`;
+  try{
+    const items=await api('/insights/today');
+    if(todayBox) todayBox.innerHTML=items.length?items.slice(0,8).map(x=>{
+      let action='';
+      if(x.kind==='unpaid'&&x.record_id)action=btn('处理','editPurchase('+Number(x.record_id)+')');
+      else if(x.kind==='recurring')action=btn('管理','openRecurringSettings('+Number(x.rule_index)+')');
+      return `<div class="recur-item" style="align-items:flex-start"><span>${x.severity==='high'?'🔴':x.severity==='medium'?'🟠':'🔵'} <b>${esc(x.title)}</b><br><span class="settings-sub">${esc(x.detail)}</span></span><span class="recur-actions">${action}</span></div>`;
+    }).join(''):'<div class="opt-empty">✅ 今天没有需要特别处理的账务</div>';
+  }catch(e){if(todayBox)todayBox.innerHTML='<div class="opt-empty">待处理检查失败</div>';}
+  try{
+    const items=await api('/insights/anomalies');
+    if(radar) radar.innerHTML=items.length?items.slice(0,8).map(x=>{
+      let action='';
+      if(x.kind==='aged_unpaid'&&x.record_id)action=btn('查看','editPurchase('+Number(x.record_id)+')');
+      else if(x.kind==='duplicate')action=btn('核对',`openAnomalyDuplicate('${escJs(x.date||'')}',${Number(x.amount)||0})`);
+      else if(x.kind==='spike'&&x.category)action=btn('明细',`openQuery('expense_category','${escJs(x.category)}')`);
+      return `<div class="recur-item" style="align-items:flex-start"><span>${x.severity==='high'?'🔴':'🟠'} <b>${esc(x.title)}</b><br><span class="settings-sub">${esc(x.detail)}</span></span><span class="recur-actions">${action}</span></div>`;
+    }).join(''):'<div class="opt-empty">✅ 暂未发现明显异常</div>';
+  }catch(e){if(radar)radar.innerHTML='<div class="opt-empty">异常检查失败</div>';}
+}
+function openRecurringSettings(){
+  openSettingsPage(); setTimeout(()=>{const el=document.getElementById('recurList');if(el&&el.closest('.settings-section'))el.closest('.settings-section').scrollIntoView({behavior:'smooth',block:'start'});},60);
+}
+function openAnomalyDuplicate(date,amount){
+  gotoPage('query'); const kw=document.getElementById('queryKeyword'),a=document.getElementById('queryAmtMin'),b=document.getElementById('queryAmtMax'),s=document.getElementById('queryStart'),e=document.getElementById('queryEnd');
+  if(kw)kw.value='支出'; if(a)a.value=amount||''; if(b)b.value=amount||''; if(s)s.value=date||''; if(e)e.value=date||''; runGlobalSearch();
+}
+window.renderActionCenter=renderActionCenter; window.openRecurringSettings=openRecurringSettings; window.openAnomalyDuplicate=openAnomalyDuplicate;
 
 /* ================== 选项管理 ================== */
 let optCurrentKey = 'expense_categories';
@@ -3107,57 +3218,93 @@ const BackupV2 = {
   async restore(input) {
     const file = input && input.files && input.files[0];
     if (!file) return;
-    if (!confirm('恢复备份将覆盖当前数据。\n恢复前会先校验文件，并临时保存当前数据（校验失败不会覆盖）。\n确定继续？')) { input.value = ''; return; }
+    if (!confirm('恢复备份将覆盖当前数据。\n系统会先校验备份，并在内存保存当前数据库快照；任何一步失败都会自动回滚。\n确定继续？')) { input.value = ''; return; }
+    const DB = window.OfflineDB;
+    let currentSnapshot = null;
+    let imported = false;
+    const prevMigrationFailure = (() => { try { return localStorage.getItem('db_migration_failure'); } catch (e) { return null; } })();
+    const prevSafeMode = (() => { try { return localStorage.getItem('db_safe_mode'); } catch (e) { return null; } })();
     try {
+      if (!DB || !DB.exportDB || !DB.importDB) throw new Error('离线数据库模块不可用');
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
-      // 1) 校验：前 32 字节可能是 JSON 元数据头（V2 备份）或裸 sqlite 库（V1）
-      let meta = null;
-      let payload = bytes;
-      try {
-        const head = new TextDecoder().decode(bytes.slice(0, 2000));
-        if (head.trim().startsWith('{')) {
-          // V2 JSON 信封：{ metadata, data(base64), checksum }
-          const env = JSON.parse(head.split('\n')[0]); // 仅解析首行（data 可能很大）
-          const full = JSON.parse(new TextDecoder().decode(bytes));
-          if (full && full.metadata && full.data) {
-            // checksum 校验（SHA-256 canonical）
-            const cryptoObj = window.crypto;
-            const canonical = JSON.stringify(full.data);
-            const digest = await cryptoObj.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
-            const hex = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
-            if (full.checksum && hex !== full.checksum) throw new Error('备份文件校验和不匹配（可能损坏）');
-            meta = full.metadata;
-            // data 为 base64 的 sqlite 导出
-            const bin = atob(full.data);
-            payload = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) payload[i] = bin.charCodeAt(i);
-          }
-        }
-      } catch (e) { /* 非 V2 信封 → 按 V1 原始库处理 */ }
-      // 2) 临时快照当前库（导入失败可回滚）
-      const DB = window.OfflineDB;
-      const currentSnapshot = DB && DB.exportDB ? DB.exportDB() : null;
-      // 3) 导入
-      if (DB && DB.importDB) {
-        DB.importDB(payload);
-        // 迁移框架校验（新库 schema 可能旧 → 补迁移）
-        try {
-          const DM = window.AppCore && window.AppCore.DBMigration;
-          const raw = DB.prepare ? DB : { exec: () => {} };
-          if (DM && DM.migrate && raw.exec) { const r = DM.migrate(raw); if (!r.ok) throw new Error('恢复后迁移失败: ' + r.error); }
-        } catch (me) { /* 迁移失败不阻断，提示 */ }
-        showToast('✅ 备份已恢复' + (meta ? '（' + (meta.app || '') + ' · ' + (meta.version || '') + '）' : ''));
-        setTimeout(() => location.reload(), 1200);
-      } else {
-        throw new Error('离线数据库模块不可用');
+      let meta = null, payload = bytes;
+      // V2 JSON 信封；JSON 解析错误若文件看起来就是 JSON，则必须报错，不能误当 SQLite。
+      const head = new TextDecoder().decode(bytes.slice(0, Math.min(bytes.length, 2000))).trim();
+      if (head.startsWith('{')) {
+        const full = JSON.parse(new TextDecoder().decode(bytes));
+        if (!full || !full.metadata || !full.data) throw new Error('备份 JSON 结构无效');
+        const canonical = JSON.stringify(full.data);
+        const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+        const hex = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+        if (full.checksum && hex !== full.checksum) throw new Error('备份文件校验和不匹配（可能损坏）');
+        meta = full.metadata;
+        const bin = atob(full.data); payload = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) payload[i] = bin.charCodeAt(i);
       }
+      const validation = DB.validateDB ? DB.validateDB(payload) : { ok: true };
+      if (!validation.ok) throw new Error(validation.error || '备份数据库完整性检查失败');
+      currentSnapshot = DB.exportDB();
+      if (DB.saveRecoverySnapshot) await DB.saveRecoverySnapshot(currentSnapshot);
+      DB.importDB(payload); imported = true;
+      const DM = window.AppCore && window.AppCore.DBMigration;
+      if (DM && DM.migrate) { const r = DM.migrate(DB); if (!r.ok) throw new Error('恢复后数据库迁移失败: ' + r.error); }
+      const DH = window.AppCore && window.AppCore.DbHealth;
+      if (DH) { const ic = DH.integrityCheck(DB), hc = DH.check(DB); if (!ic.ok || hc.status === 'error') throw new Error('恢复后数据库健康检查失败'); }
+      if (DB.flush) DB.flush();
+      if (DB.clearRecoverySnapshot) await DB.clearRecoverySnapshot();
+      showToast('✅ 备份已安全恢复' + (meta ? '（' + (meta.version || meta.app || '') + '）' : ''));
+      setTimeout(() => location.reload(), 1200);
     } catch (e) {
-      showToast('恢复失败（未覆盖当前数据）: ' + (e && e.message || e), 'error');
-    } finally {
-      input.value = '';
-    }
+      if (imported && currentSnapshot && DB && DB.importDB) {
+        try {
+          DB.importDB(currentSnapshot); if (DB.flush) DB.flush();
+          try {
+            if (prevMigrationFailure == null) localStorage.removeItem('db_migration_failure'); else localStorage.setItem('db_migration_failure', prevMigrationFailure);
+            if (prevSafeMode == null) localStorage.removeItem('db_safe_mode'); else localStorage.setItem('db_safe_mode', prevSafeMode);
+          } catch (se) {}
+          if (DB.clearRecoverySnapshot) await DB.clearRecoverySnapshot();
+          showToast('恢复失败，已自动回滚到恢复前数据', 'error');
+        } catch (rollbackError) {
+          let recovered = false;
+          try {
+            const diskSnapshot = DB.loadRecoverySnapshot ? await DB.loadRecoverySnapshot() : null;
+            if (diskSnapshot && diskSnapshot.length) { DB.importDB(diskSnapshot); if (DB.flush) DB.flush(); recovered = true; }
+          } catch (diskErr) { console.error('[backup disk recovery]', diskErr); }
+          showToast(recovered ? '恢复失败，已从安全快照恢复原数据' : '⚠️ 恢复失败且自动回滚失败，请停止记账并使用最近下载备份', 'error');
+          console.error('[backup rollback]', rollbackError);
+        }
+      } else showToast('恢复失败（当前数据未改变）: ' + (e && e.message || e), 'error');
+      console.error('[backup restore]', e);
+    } finally { input.value = ''; }
   },
+};
+
+const LedgerTrash = {
+  async open() { openModal('trashModal'); await this.refresh(); },
+  async refresh() {
+    const body = document.getElementById('trashTableBody'); const empty = document.getElementById('trashEmpty');
+    if (!body) return;
+    try {
+      const rows = await api('/trash');
+      if (empty) empty.style.display = rows.length ? 'none' : 'block';
+      body.innerHTML = rows.map(r => {
+        const x = r.record || {}; const type = r.original_table === 'income' ? '收入' : r.original_table === 'expense' ? '支出' : '进货';
+        const date = x.date || x.doc_date || ''; const party = x.project || x.category || x.supplier || x.payee || '';
+        const amount = x.amount != null ? x.amount : x.total_amount;
+        return `<tr><td>${escapeHtml(type)}</td><td>${escapeHtml(date)}</td><td>${escapeHtml(party)}</td><td class="amount">¥${fmtMoney(amount || 0)}</td><td>${escapeHtml(r.deleted_by || '本机')}</td><td>${escapeHtml(r.deleted_at || '')}</td><td><button class="btn-small" onclick="LedgerTrash.restore(${r.id})">↩️ 恢复</button> <button class="btn-small" onclick="LedgerTrash.purge(${r.id})">永久删除</button></td></tr>`;
+      }).join('');
+    } catch (e) { showToast('回收站加载失败: ' + (e.message || e), 'error'); }
+  },
+  async restore(id) {
+    try { await api('/trash/' + id + '/restore', 'POST', {}); showToast('✅ 记录已恢复'); await this.refresh(); refreshDashboards(); }
+    catch (e) { showToast(e.message || '恢复失败', 'error'); }
+  },
+  async purge(id) {
+    if (!confirm('永久删除后无法恢复。\n确定永久删除这条回收站记录？')) return;
+    try { await api('/trash/' + id, 'DELETE'); showToast('已永久删除'); await this.refresh(); }
+    catch (e) { showToast(e.message || '永久删除失败', 'error'); }
+  }
 };
 
 const DbSettings = {
@@ -3178,6 +3325,14 @@ const DbSettings = {
       for (const [t, cols] of Object.entries(r.missingColumns)) detail.push('缺列(' + t + '): ' + cols.join(','));
       detail.push('schema v' + r.userVersion);
       detail.push('完整性: ' + (ic.ok ? '正常' : '异常'));
+      if (DH.ledgerDiagnostics) {
+        const dg = DH.ledgerDiagnostics(DB);
+        detail.push('回收站: ' + dg.trashCount + ' 条');
+        if (dg.staleTrashCount) detail.push('超过90天: ' + dg.staleTrashCount);
+        if (dg.invalidTrashCount) detail.push('⚠ 回收站异常: ' + dg.invalidTrashCount);
+        if (dg.nonPositiveAmounts) detail.push('⚠ 金额异常: ' + dg.nonPositiveAmounts);
+        if (dg.duplicateCandidates) detail.push('疑似重复组: ' + dg.duplicateCandidates);
+      }
       if (detailEl) detailEl.textContent = detail.join(' · ');
       if (r.status === 'ok' && ic.ok) show('✅ 正常', 'recur-hint');
       else if (r.status === 'migration') show('⚠️ 需要迁移', 'recur-hint');

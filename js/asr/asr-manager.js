@@ -42,10 +42,19 @@
       this.audioQueue = [];
       this._speaking = false;   // 是否正在推理（防并发）
       this._hasPendingUtterance = false;
+      this._shadowWhisper = null;
+      this._shadowInitPromise = null;
+      this.neuralVad = null;
+      this.contextMode = this.opts.contextMode || 'ledger';
+      this.extraHotwords = Array.isArray(this.opts.extraHotwords) ? this.opts.extraHotwords.slice() : [];
     }
 
     setCallback(cb) { this.cb = cb || {}; }
     setLang(lang) { this.lang = lang || defaultAsrBcp47(); }
+    setContext(mode, extraHotwords) {
+      this.contextMode = mode || 'ledger';
+      this.extraHotwords = Array.isArray(extraHotwords) ? extraHotwords.filter(Boolean).slice(0, 80) : [];
+    }
 
     /** 隐私门：拦截「AI 数据外发」（OCR/文本 AI 分析），不拦截系统语音识别。
      *  WebSpeech（webkitSpeechRecognition）是浏览器系统能力（Apple/Google 语音转文字），
@@ -61,9 +70,31 @@
       }
     }
 
+    _normalizeFinal(text) {
+      try {
+        const cb = global.AsrKit && global.AsrKit.contextBias;
+        if (cb && cb.normalizeTranscript) return cb.normalizeTranscript(text, { lang:this.lang, mode:this.contextMode, extraHotwords:this.extraHotwords });
+      } catch (e) {}
+      return { text:String(text || '').trim(), changed:false, reasons:[] };
+    }
+
+    _emitFinal(text) {
+      const n = this._normalizeFinal(text);
+      if (n.text) this._emit('onFinal', n.text);
+      return n;
+    }
+
+    _hotwords() {
+      try {
+        const cb = global.AsrKit && global.AsrKit.contextBias;
+        return cb && cb.hotwords ? cb.hotwords(this.lang, this.extraHotwords, this.contextMode) : [];
+      } catch (e) { return []; }
+    }
+
     /** 后端能力检测（不触发初始化） */
     static capability() {
       return {
+        sherpaPossible: !!global.AsrKit.SherpaEngine,
         whisperPossible: true, // 是否能跑，取决于 wasm/webgpu 与内存
         webspeech: global.AsrKit.webspeechSupported,
         webgpu: !!(global.navigator && global.navigator.gpu),
@@ -85,6 +116,22 @@
         throw err;
       }
       if (this.mode === 'local') return this.engine;
+
+      // 中文短句优先尝试本地 sherpa Provider（仅当 Provider+模型已真实安装）。
+      // 未安装/初始化失败时静默回 Whisper，不制造假降级。
+      try {
+        const rt = global.AsrKit && global.AsrKit.runtime;
+        const enabled = !rt || !rt.isEnabled || rt.isEnabled('sherpaLocalEnabled');
+        const baseLang = String(this.lang || '').toLowerCase().split('-')[0];
+        const SE = global.AsrKit && global.AsrKit.SherpaEngine;
+        if (enabled && baseLang === 'zh' && SE && await SE.isReady()) {
+          const se = new SE({ language:'zh', hotwords:this._hotwords() });
+          await se.initialize();
+          this.engine = se; this.mode = 'local'; this.localEngineKind = 'sherpa';
+          this._emit('onState', 'initializing');
+          return this.engine;
+        }
+      } catch (e) { console.warn('[asr] Sherpa 不可用，继续 Whisper:', e && e.message || e); }
 
       // 本地 Whisper
       // V5 Phase1 保险7：设备级熔断——连续多次初始化失败 → 暂不健康,直接走允许的 fallback
@@ -121,6 +168,7 @@
           onProgress: (p, l) => this._emit('onModelProgress', { progress: p, label: l }),
         });
         this.mode = 'local';
+        this.localEngineKind = 'whisper';
         return this.engine;
       } catch (e) {
         console.warn('[asr] Whisper 初始化失败:', e);
@@ -168,7 +216,7 @@
         if (this.mode === 'online') {
           this.engine.setCallback((ev) => {
             if (ev.interim) this._emit('onInterim', ev.interim);
-            if (ev.final) this._emit('onFinal', ev.final);
+            if (ev.final) this._emitFinal(ev.final);
             if (ev.error) this._emit('onError', ev.error);
             if (ev.end && !ev.auto) this._emit('onEnd');
           });
@@ -184,11 +232,11 @@
         try {
           await this.engine.initialize();
           const cb2 = global.AsrKit.circuitBreaker;
-          if (cb2) cb2.markSuccess('whisper'); // 成功 → 复位熔断计数
+          if (cb2 && this.localEngineKind === 'whisper') cb2.markSuccess('whisper'); // 成功 → 复位熔断计数
         } catch (e) {
           console.warn('[asr] Whisper 模型预热失败，回退在线或报错:', e);
           const cb2 = global.AsrKit.circuitBreaker;
-          if (cb2) cb2.markFailure('whisper', e && e.message); // 失败 → 累计,到阈值即熔断
+          if (cb2 && this.localEngineKind === 'whisper') cb2.markFailure('whisper', e && e.message); // 失败 → 累计,到阈值即熔断
           // 预热失败：若有在线授权则降级，否则上抛规范错误码（防止原始 Error 泄漏给 UI）
           // 隐私门：LOCAL_ONLY 下即使 allowOnline=true 也绝不启用 WebSpeech
           if (this.allowOnline && this._privacyAllowsOnline() && global.AsrKit.webspeechSupported) {
@@ -196,7 +244,7 @@
             this.mode = 'online';
             this.engine.setCallback((ev) => {
               if (ev.interim) this._emit('onInterim', ev.interim);
-              if (ev.final) this._emit('onFinal', ev.final);
+              if (ev.final) this._emitFinal(ev.final);
               if (ev.error) this._emit('onError', ev.error);
               if (ev.end && !ev.auto) this._emit('onEnd');
             });
@@ -214,6 +262,26 @@
         // AudioCapture + VAD
         this.capture = new global.AsrKit.audio.AudioCapture();
         this.vad = new global.AsrKit.vad.VadEngine();
+
+        // Optional TEN-VAD neural path. Any probe/init/runtime failure leaves Adaptive VAD fully operational.
+        try {
+          const rt=global.AsrKit&&global.AsrKit.runtime;
+          const neuralEnabled=!rt||!rt.isEnabled||rt.isEnabled('neuralVadEnabled');
+          if(neuralEnabled && global.AsrKit && global.AsrKit.NeuralVadBridge){
+            this.neuralVad=new global.AsrKit.NeuralVadBridge({sampleRate:16000,hopSize:256,threshold:0.5});
+            if(await this.neuralVad.init()){
+              this.vad.setNeuralProbabilityFn((chunk)=>this.neuralVad.probability(chunk));
+              this._emit('onStateDetail',{component:'vad',mode:'ten-vad',status:'READY'});
+            } else {
+              this.neuralVad=null;
+              this._emit('onStateDetail',{component:'vad',mode:'adaptive',status:'FALLBACK'});
+            }
+          }
+        } catch (e) {
+          this.neuralVad=null;
+          this._emit('onStateDetail',{component:'vad',mode:'adaptive',status:'FALLBACK',reason:String(e&&e.message||e)});
+        }
+
         this.vad.onSpeechStart = () => this._emit('onState', 'speaking');
         this.vad.onSilence = () => this._emit('onState', 'listening');
         this.vad.onUtterance = (audio, startMs, endMs) => this._enqueue(audio, startMs, endMs);
@@ -231,6 +299,77 @@
       }
     }
 
+    _dualArbitrationEnabled(audio) {
+      try {
+        if (this.localEngineKind !== 'sherpa') return false;
+        const baseLang = String(this.lang || '').toLowerCase().split('-')[0];
+        if (baseLang !== 'zh') return false;
+        const rt = global.AsrKit && global.AsrKit.runtime;
+        if (rt && rt.isEnabled && !rt.isEnabled('dualAsrArbitration')) return false;
+        const dur = audio && audio.length ? audio.length / 16000 : 0;
+        if (!dur || dur > 15) return false; // 长音频不双跑，控制发热/耗电
+        const cap = rt && rt.getProfileSync ? rt.getProfileSync() : null;
+        if (cap && cap.memoryGb != null && cap.memoryGb < 4) return false;
+        if (cap && cap.cores != null && cap.cores < 4) return false;
+        return !!(global.AsrKit && global.AsrKit.WhisperEngine && global.AsrKit.resultArbitrator);
+      } catch (e) { return false; }
+    }
+
+    async _getShadowWhisper() {
+      if (this._shadowWhisper) return this._shadowWhisper;
+      if (this._shadowInitPromise) return this._shadowInitPromise;
+      this._shadowInitPromise = (async () => {
+        const plan = global.AsrKit.modelManager.resolvePlan('low'); // shadow 固定 tiny，控制资源
+        const w = new global.AsrKit.WhisperEngine({
+          device: this.opts.device || 'auto', dtype: plan.dtype, modelRepo: plan.baseRepo,
+          language: this.lang.split('-')[0], wasmPaths: this.opts.wasmPaths,
+        });
+        await w.initialize();
+        this._shadowWhisper = w;
+        return w;
+      })().catch((e) => { this._shadowInitPromise = null; throw e; });
+      return this._shadowInitPromise;
+    }
+
+    async _transcribeWithArbitration(audio) {
+      const t0 = Date.now();
+      const primary = await this.engine.transcribe(audio, { language: this.lang.split('-')[0], hotwords:this._hotwords() });
+      if (!this._dualArbitrationEnabled(audio)) {
+        try {
+          if (global.IntelligenceCenter && global.IntelligenceCenter.record) global.IntelligenceCenter.record({
+            kind:'asr', ok:!!(primary && primary.text), ms:Date.now()-t0,
+            engine:this.localEngineKind||this.mode||'unknown', context:this.contextMode||'ledger',
+            confidence:primary && primary.confidence != null ? primary.confidence : null
+          });
+        } catch(e){}
+        return { result: primary, arbitration:null };
+      }
+      try {
+        const shadowEngine = await this._getShadowWhisper();
+        const shadow = await shadowEngine.transcribe(audio, { language:this.lang.split('-')[0], hotwords:this._hotwords() });
+        const arb = global.AsrKit.resultArbitrator.adjudicate([primary, shadow], { lang:this.lang });
+        try {
+          if (global.IntelligenceCenter && global.IntelligenceCenter.record) global.IntelligenceCenter.record({
+            kind:'asr', ok:arb.decision==='ACCEPT', ms:Date.now()-t0, engine:'sherpa+whisper',
+            context:this.contextMode||'ledger', decision:arb.decision, reason:arb.reason||null
+          });
+        } catch(e){}
+        this._emit('onState', 'adjudicating');
+        if (arb.decision === 'ACCEPT' && arb.best) return { result:Object.assign({}, arb.best.raw, { text:arb.best.text }), arbitration:arb };
+        if (arb.decision === 'CONFIRM') {
+          // 上层旧 UI 尚无专用多候选协议：传出结构化事件；同时不自动写入任何候选。
+          this._emit('onAmbiguity', { type:'asr', decision:'CONFIRM', candidates:arb.alternatives.map(x=>({text:x.text,engine:x.engine,confidence:x.confidence})), reason:arb.reason });
+          return { result:null, arbitration:arb };
+        }
+        // RETRY：尤其“万/亿数量级冲突”时，宁可让用户只重说金额，不自动选择错误候选。
+        this._emit('onAmbiguity', { type:'asr', decision:'RETRY', candidates:[], reason:arb.reason });
+        return { result:null, arbitration:arb };
+      } catch (e) {
+        console.warn('[asr] shadow Whisper 裁决不可用，保留 Sherpa 主结果:', e && e.message || e);
+        return { result:primary, arbitration:{decision:'ACCEPT',reason:'SHADOW_UNAVAILABLE'} };
+      }
+    }
+
     async _enqueue(audio, startMs, endMs) {
       this.audioQueue.push({ audio, startMs, endMs });
       this._hasPendingUtterance = true;
@@ -240,9 +379,12 @@
       while (this.audioQueue.length && this.active) {
         const item = this.audioQueue.shift();
         try {
-          const r = await this.engine.transcribe(item.audio, { language: this.lang.split('-')[0] });
+          const pack = await this._transcribeWithArbitration(item.audio);
+          const r = pack && pack.result;
           if (!this.active) return;
-          if (r && r.text) this._emit('onFinal', r.text);
+          if (r && r.text) this._emitFinal(r.text);
+          else if (pack && pack.arbitration && pack.arbitration.decision === 'RETRY') this._emit('onError', '请只重说金额，关键数量级没有听清');
+          else if (pack && pack.arbitration && pack.arbitration.decision === 'CONFIRM') this._emit('onError', '识别结果存在真实歧义，请确认或重说');
           else this._emit('onError', ERR.NO_SPEECH);
         } catch (e) {
           console.error('[asr] transcribe error:', e);
@@ -265,7 +407,7 @@
     // 推理失败 → 降级到 whisper-tiny 重试一次；成功返回 true
     async _tryDowngrade(audio) {
       try {
-        if (this.mode !== 'local' || !this.engine) return false;
+        if (this.mode !== 'local' || !this.engine || this.localEngineKind !== 'whisper') return false;
         const cur = this.engine.modelName || '';
         if (String(cur).includes('whisper-tiny')) return false; // 已是最小模型
         console.warn('[asr] 推理失败，降级 whisper-tiny 重试');
@@ -284,7 +426,7 @@
           try { await this.engine.dispose(); } catch (e) {}
           this.engine = tinyEngine;
           this._emit('onError', ERR.OUT_OF_MEMORY); // 提示已降级（UI 显示"已切换到兼容模式"）
-          this._emit('onFinal', r.text);
+          this._emitFinal(r.text);
           return true;
         }
         return false;
@@ -313,12 +455,13 @@
         const leftover = this.vad.flush();
         if (leftover) {
           try {
-            const r = await this.engine.transcribe(leftover, { language: this.lang.split('-')[0] });
-            if (r && r.text) this._emit('onFinal', r.text);
+            const r = await this.engine.transcribe(leftover, { language: this.lang.split('-')[0], hotwords:this._hotwords() });
+            if (r && r.text) this._emitFinal(r.text);
           } catch (e) { console.error('[asr] flush transcribe error:', e); }
         }
       }
       if (this.capture) { await this.capture.stop(); this.capture = null; }
+      if (this.neuralVad) { try { await this.neuralVad.dispose(); } catch (e) {} this.neuralVad = null; }
       if (this.mode === 'online' && this.engine) { await this.engine.stop(); }
       this.vad = null;
       this._speaking = false;
@@ -330,6 +473,8 @@
     async dispose() {
       await this.stop();
       if (this.engine && this.mode === 'local') { try { await this.engine.dispose(); } catch (e) {} }
+      if (this._shadowWhisper) { try { await this._shadowWhisper.dispose(); } catch (e) {} }
+      this._shadowWhisper = null; this._shadowInitPromise = null;
       this.engine = null;
     }
   }

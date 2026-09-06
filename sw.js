@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-v178-sw2';
+const CACHE_NAME = 'jizhang-pwa-v207-ten-vad-runtime';
 const APP_SHELL = [
   './',
   './index.html',
@@ -17,6 +17,7 @@ const APP_SHELL = [
   './js/core/diagnostics.js',
   './js/core/runtime-asset-manager.js',
   './js/core/model-source-router.js',
+  './js/config/recognition-models.js',
   './js/core/app-services.js',
   './js/db/migrations.js',
   './js/db/health-check.js',
@@ -47,6 +48,8 @@ const APP_SHELL = [
   './js/ocr/preprocess.js',
   './js/ocr/tesseract-engine.js',
   './js/ocr/paddle-engine.js',
+  './js/ocr/model-benchmark-store.js',
+  './js/ocr/region-rescue-planner.js',
   './js/ocr/ocr-manager.js',
   './js/ocr/ocr-job-manager.js',
   './js/ocr/execution-planner.js',
@@ -80,6 +83,18 @@ const APP_SHELL = [
   './js/asr/audio-processor.js',
   './js/asr/audio-capture.js',
   './js/asr/vad.js',
+  './js/asr/ten-vad-runtime-installer.js',
+  './js/asr/ten-vad-wasm-provider.js',
+  './js/asr/neural-vad-provider-loader.js',
+  './js/asr/neural-vad-bridge.js',
+  './js/asr/context-bias.js',
+  './js/asr/result-arbitrator.js',
+  './js/intelligence/recognition-benchmark-lab.js',
+  './js/intelligence/recognition-finalizer.js',
+  './js/intelligence/recognition-model-manager.js',
+  './js/intelligence/intelligence-center.js',
+  './js/asr/sherpa-model-store.js',
+  './js/asr/sherpa-engine.js',
   './js/asr/whisper-engine.js',
   './js/asr/webspeech-engine.js',
   './js/asr/model-manager.js',
@@ -106,6 +121,7 @@ const APP_SHELL = [
   './js/ai/global-config.js',
   './js/ai/ai-workbench.js',
   './js/ai/engine-manager.js',
+  './js/intelligence/recognition-fusion-gate.js',
   './js/ai/multimodal.js',
   './js/ai/ai-provider.js',
   './js/ai/ai-privacy.js',
@@ -169,7 +185,7 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))).then(() => self.clients.claim())
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== 'jizhang-sherpa-models-v1' && !k.startsWith('jizhang-sherpa-models-v2') && k !== 'jizhang-ten-vad-v1').map((k) => caches.delete(k)))).then(() => self.clients.claim())
   );
 });
 
@@ -184,6 +200,23 @@ self.addEventListener('fetch', (e) => {
   // 版本更新靠 CACHE_NAME 换代（install 预缓存新资源 + activate 清旧缓存），query 仅作在线强刷信号。
   const cacheKey = url.origin + url.pathname;
   const cacheRequest = new Request(cacheKey, { method: 'GET', mode: e.request.mode });
+  // TEN‑VAD official WebAssembly installed by the user under same-origin virtual URLs.
+  if (url.pathname.includes('/runtime-models/ten-vad/')) {
+    e.respondWith(
+      caches.open('jizhang-ten-vad-v1').then((cache) => cache.match(url.origin + url.pathname))
+        .then((c) => c || new Response('TEN-VAD runtime not installed', { status: 404 }))
+    );
+    return;
+  }
+
+  // 已安装的本地识别模型：跨 CacheStorage 查找，命中即直接使用。
+  // 这避免数百 MB 的模型在每次打开时重新走网络。
+  if (url.pathname.includes('/vendor/sherpa/') || url.pathname.includes('/vendor/models/')) {
+    e.respondWith(
+      caches.match(cacheRequest).then((c) => c || caches.match(e.request).then((c2) => c2 || fetch(e.request)))
+    );
+    return;
+  }
   // 语言包（大文件）缓存优先
   if (url.pathname.includes('traineddata') || url.pathname.includes('wasm')) {
     e.respondWith(

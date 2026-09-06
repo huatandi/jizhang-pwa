@@ -405,54 +405,61 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
   min-height: 96px;
 }
 .kpi-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow-lg); }
-/* 渐变背景大卡（收入暖色 / 支出红色 / 结余天蓝 / 未付橙棕） */
+/* KPI 彩色容器：使用明亮柔和底色，彻底取消近黑/黑色背景 */
 .income-card {
-  background: linear-gradient(135deg, #0f1b2d 0%, #1a2c44 60%, #2d3a55 100%);
-  border-color: rgba(251, 191, 36, 0.35);
+  background: linear-gradient(135deg, #fff8dc 0%, #ffefb0 58%, #ffe28a 100%);
+  border-color: rgba(217, 151, 0, 0.30);
 }
-.income-card::before {
+.income-card::before,
+.expense-card::before,
+.balance-card::before,
+.paid-card::before,
+.unpaid-card::before {
   content: ''; position: absolute; right: -30px; top: -40px;
   width: 120px; height: 120px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(251, 191, 36, 0.28), transparent 70%);
+  background: rgba(255,255,255,.28);
 }
-.income-card .kpi-label { color: rgba(251, 191, 36, 0.95); }
-.income-card .kpi-value { color: var(--accent-text); }
+.income-card .kpi-label { color: #8a5a00; }
+.income-card .kpi-value { color: #6f4800; }
 
 .expense-card {
-  background: linear-gradient(135deg, #241018 0%, #3a1520 60%, #52202e 100%);
-  border-color: rgba(239, 68, 68, 0.35);
+  background: linear-gradient(135deg, #fff0f1 0%, #ffd9dc 58%, #ffc4ca 100%);
+  border-color: rgba(220, 38, 38, 0.24);
 }
-.expense-card::before {
-  content: ''; position: absolute; right: -30px; top: -40px;
-  width: 120px; height: 120px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(239, 68, 68, 0.28), transparent 70%);
-}
-.expense-card .kpi-label { color: rgba(248, 113, 113, 0.95); }
-.expense-card .kpi-value { color: #f87171; }
+.expense-card .kpi-label { color: #a91d2d; }
+.expense-card .kpi-value { color: #8f1725; }
 
 .balance-card {
-  background: linear-gradient(135deg, #0d1f2e 0%, #12344a 60%, #14445f 100%);
-  border-color: rgba(255, 176, 32, 0.35);
+  background: linear-gradient(135deg, #eefaff 0%, #d5f1ff 58%, #bce8fb 100%);
+  border-color: rgba(2, 132, 199, 0.24);
 }
-.balance-card::before {
-  content: ''; position: absolute; right: -30px; top: -40px;
-  width: 120px; height: 120px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 176, 32, 0.25), transparent 70%);
-}
-.balance-card .kpi-label { color: rgba(125, 211, 252, 0.95); }
-.balance-card .kpi-value { color: var(--accent-text); }
+.balance-card .kpi-label { color: #03658f; }
+.balance-card .kpi-value { color: #075985; }
 
-.purchase-card {
-  background: linear-gradient(135deg, #241a0f 0%, #3a2c15 60%, #523d1d 100%);
-  border-color: rgba(245, 158, 11, 0.35);
+.paid-card {
+  background: linear-gradient(135deg, #effcf4 0%, #d6f5e2 58%, #bceccb 100%);
+  border-color: rgba(22, 163, 74, 0.24);
 }
-.purchase-card::before {
-  content: ''; position: absolute; right: -30px; top: -40px;
-  width: 120px; height: 120px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(245, 158, 11, 0.25), transparent 70%);
+.paid-card .kpi-label { color: #16713a; }
+.paid-card .kpi-value { color: #145c32; }
+
+.unpaid-card {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffe5c2 58%, #ffd39a 100%);
+  border-color: rgba(234, 88, 12, 0.25);
 }
-.purchase-card .kpi-label { color: rgba(251, 191, 36, 0.95); }
-.purchase-card .kpi-value { color: var(--accent-text); }
+.unpaid-card .kpi-label { color: #a8430a; }
+.unpaid-card .kpi-value { color: #8a3608; }
+
+/* 彩色卡片内图标也保持浅色，不再出现黑色块 */
+.income-card .kpi-icon,
+.expense-card .kpi-icon,
+.balance-card .kpi-icon,
+.paid-card .kpi-icon,
+.unpaid-card .kpi-icon {
+  background: rgba(255,255,255,.55);
+  border-color: rgba(255,255,255,.72);
+  backdrop-filter: blur(4px);
+}
 
 .kpi-icon {
   width: 52px; height: 52px; border-radius: 14px;
@@ -3901,6 +3908,13 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .weather-day-detail { display: none; margin-top: 6px; text-align: left; }
 .weather-day-ev { font-size: 11px; color: var(--text-2); padding: 2px 0; border-top: 1px dashed var(--border); }
 
+/* 天气预报视图切换：默认逐个小时，可切换本星期 */
+.weather-forecast-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; margin: 4px 0 8px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); }
+.weather-forecast-tab { appearance: none; border: 0; border-radius: 9px; padding: 8px 10px; background: transparent; color: var(--text-2); font-size: 13px; font-weight: 700; cursor: pointer; transition: var(--transition); }
+.weather-forecast-tab:hover { color: var(--text-1); }
+.weather-forecast-tab.active { background: var(--primary); color: #fff; }
+.weather-forecast-panel { min-width: 0; }
+
 /* 逐小时 */
 .weather-hour-toggle { font-size: 13px; color: var(--primary); cursor: pointer; text-align: center; padding: 6px; }
 .weather-hourly { max-height: 260px; overflow-y: auto; margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; }
@@ -3929,3 +3943,10 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   white-space: pre-wrap; word-break: break-word;
 }
 .voice-transcript-empty { color: var(--text-3); font-size: 13px; }
+
+
+/* V184 账务安全删除：8 秒撤销条 */
+.ledger-undo-bar { position:fixed; left:50%; bottom:28px; transform:translate(-50%,90px); z-index:2600; display:flex; align-items:center; gap:14px; padding:10px 14px; border-radius:14px; background:var(--surface,#fff); color:var(--text,#111827); border:1px solid var(--border,#dbe2ea); box-shadow:var(--shadow-lg,0 10px 30px rgba(0,0,0,.18)); opacity:0; pointer-events:none; transition:.22s ease; }
+.ledger-undo-bar.show { transform:translate(-50%,0); opacity:1; pointer-events:auto; }
+.ledger-undo-bar button { border:0; border-radius:9px; padding:7px 11px; cursor:pointer; font-weight:700; background:var(--primary,#ffb020); color:#111827; }
+@media (max-width:640px){ .ledger-undo-bar{ width:calc(100% - 28px); justify-content:space-between; bottom:18px; } }

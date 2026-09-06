@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS income (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT NOT NULL, project TEXT DEFAULT '', pay_method TEXT DEFAULT '', account TEXT DEFAULT '',
   amount REAL DEFAULT 0, handler TEXT DEFAULT '', remark TEXT DEFAULT '', discount REAL DEFAULT 0,
-  card_pending_account TEXT DEFAULT '', voucher TEXT DEFAULT '', mode TEXT DEFAULT 'business', currency TEXT DEFAULT 'MXN'
+  card_pending_account TEXT DEFAULT '', voucher TEXT DEFAULT '', mode TEXT DEFAULT 'business', currency TEXT DEFAULT 'MXN',
+  semantic_type TEXT DEFAULT 'income', linked_record_id INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS purchase (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,8 +82,25 @@ CREATE TABLE IF NOT EXISTS expense (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT NOT NULL, category TEXT DEFAULT '', amount REAL DEFAULT 0, account TEXT DEFAULT '',
   handler TEXT DEFAULT '', remark TEXT DEFAULT '', voucher TEXT DEFAULT '', mode TEXT DEFAULT 'business', currency TEXT DEFAULT 'MXN',
-  payee TEXT DEFAULT ''
+  payee TEXT DEFAULT '', semantic_type TEXT DEFAULT 'expense', linked_record_id INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS internal_transfers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, from_account TEXT NOT NULL, to_account TEXT NOT NULL, amount REAL NOT NULL,
+  currency TEXT DEFAULT 'MXN', reference TEXT DEFAULT '', remark TEXT DEFAULT '', mode TEXT DEFAULT 'business', created_by TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_internal_transfers_mode_date ON internal_transfers(mode,date);
+CREATE TABLE IF NOT EXISTS purchase_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_id INTEGER NOT NULL, pay_date TEXT NOT NULL, amount REAL NOT NULL, account TEXT DEFAULT '',
+  reference TEXT DEFAULT '', remark TEXT DEFAULT '', mode TEXT DEFAULT 'business', created_by TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_purchase_payments_purchase ON purchase_payments(purchase_id,mode,pay_date);
+CREATE TABLE IF NOT EXISTS recurring_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, rule_key TEXT NOT NULL, due_date TEXT NOT NULL, record_type TEXT NOT NULL, record_id INTEGER DEFAULT 0,
+  mode TEXT DEFAULT 'business', created_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(rule_key,due_date,mode)
+);
+
 CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL);
 CREATE TABLE IF NOT EXISTS ledger_members (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -143,6 +161,12 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
   chosen_value TEXT DEFAULT '', chosen_from TEXT DEFAULT '', rejected_from TEXT DEFAULT '',
   sample_count INTEGER DEFAULT 0, last_seen_at TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime'))
 );
+CREATE TABLE IF NOT EXISTS ledger_trash (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, original_table TEXT NOT NULL, original_id INTEGER NOT NULL,
+  record_json TEXT NOT NULL, mode TEXT DEFAULT 'business', deleted_by TEXT DEFAULT '', delete_reason TEXT DEFAULT '',
+  deleted_at TEXT DEFAULT (datetime('now','localtime')), restored_at TEXT DEFAULT '', restored_by TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_trash_mode_deleted ON ledger_trash(mode, deleted_at);
 `;
 
   // 默认选项（与 server/db.js 一致）
@@ -288,17 +312,57 @@ CREATE TABLE IF NOT EXISTS field_resolution_rules (
     return db ? db.export() : null;
   }
 
+  function validateDB(data) {
+    if (!SQL) throw new Error('sql.js 未初始化');
+    let tmp = null;
+    try {
+      tmp = new SQL.Database(new Uint8Array(data));
+      const ic = tmp.exec('PRAGMA integrity_check');
+      const rows = (ic && ic[0] && ic[0].values) ? ic[0].values.map(v => String(v[0])) : [];
+      if (!rows.length || !rows.every(v => v === 'ok')) return { ok: false, error: 'SQLite 完整性检查失败: ' + (rows.join('; ') || '无结果') };
+      const tr = tmp.exec("SELECT name FROM sqlite_master WHERE type='table'");
+      const names = new Set((tr && tr[0] && tr[0].values ? tr[0].values : []).map(v => String(v[0])));
+      const required = ['income','expense','purchase','options'];
+      const missing = required.filter(x => !names.has(x));
+      if (missing.length) return { ok: false, error: '备份缺少必要数据表: ' + missing.join(', ') };
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || String(e) };
+    } finally { try { if (tmp) tmp.close(); } catch (e) {} }
+  }
+
   function importDB(data) {
     if (!SQL) throw new Error('sql.js 未初始化');
-    try { db.close(); } catch (e) { /* ignore */ }
-    db = new SQL.Database(new Uint8Array(data));
+    const v = validateDB(data);
+    if (!v.ok) throw new Error(v.error || '数据库文件校验失败');
+    const next = new SQL.Database(new Uint8Array(data));
+    const prev = db;
+    db = next;
+    try { if (prev) prev.close(); } catch (e) { /* ignore */ }
     save();
+  }
+
+  async function saveRecoverySnapshot(data) {
+    if (!data) return false;
+    await idbSave('pre_restore_recovery', new Uint8Array(data));
+    return true;
+  }
+  async function loadRecoverySnapshot() { return await idbLoad('pre_restore_recovery'); }
+  async function clearRecoverySnapshot() {
+    try {
+      const idb = await idbOpen();
+      return await new Promise((resolve, reject) => {
+        const tx = idb.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete('pre_restore_recovery');
+        tx.oncomplete = () => resolve(true); tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) { return false; }
   }
 
   function info() {
     return { engine: 'sql.js (WASM)', persistent: 'IndexedDB' };
   }
 
-  global.OfflineDB = { openDB, prepare, exec, mode, exportDB, importDB, save, info };
+  global.OfflineDB = { openDB, prepare, exec, mode, exportDB, importDB, validateDB, saveRecoverySnapshot, loadRecoverySnapshot, clearRecoverySnapshot, save, flush, info };
 
 })(typeof window !== 'undefined' ? window : globalThis);

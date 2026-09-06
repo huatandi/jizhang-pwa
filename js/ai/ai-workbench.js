@@ -1683,6 +1683,7 @@ async function wbLocalOcrV2(img) {
         merchantId: (templateMatchV7 && templateMatchV7.template && templateMatchV7.template.merchantId) || null,
         merchantName: (templateMatchV7 && templateMatchV7.template && templateMatchV7.template.merchantName) || null,
         region: regionCode || null, docType: docType || null, engine: result.engine || null, preprocessProfile: result.profile || null,
+        model: result._benchmark && result._benchmark.model || null, lang: (result._benchmark && result._benchmark.lang) || null, totalMs: result._benchmark && result._benchmark.totalMs || 0,
       };
     } catch (e) { console.warn('[ocr-v7] 预模板匹配跳过:', e); }
   }
@@ -1836,7 +1837,7 @@ async function wbLocalOcrV2(img) {
         rr = await window.OcrKit.regionRetry.retryTemplateRegion(result, result._canvas, mgr, 'amount', anchor);
       }
       if (!rr && result.lines && result.lines.length) {
-        rr = await window.OcrKit.regionRetry.retry(result, result._canvas, mgr, 'amount');
+        rr = await window.OcrKit.regionRetry.retry(result, result._canvas, mgr, 'amount', { currentConfidence: fields.amountConfidence || 0 });
       }
       if (rr && rr.value != null && rr.value !== '') {
         const num = Number(String(rr.value).replace(/[^\d.-]/g, ''));
@@ -1858,14 +1859,22 @@ async function wbLocalOcrV2(img) {
   if (window.OcrKit && window.OcrKit.regionRetry && result._canvas && result.lines && result.lines.length) {
     try {
       const mgr2 = await getOcrManager();
-      for (const field of ['date', 'merchant']) {
-        if (fields[field] != null && fields[field] !== '') continue;
+      const rescueMap = [
+        ['date','date'], ['merchant','merchant'], ['tax','tax_id'],
+        ['reference','reference'], ['folio','folio'], ['account_last4','account_last4']
+      ];
+      for (const [targetField, retryField] of rescueMap) {
+        if (fields[targetField] != null && fields[targetField] !== '') continue;
         try {
-          const rr = await window.OcrKit.regionRetry.retry(result, result._canvas, mgr2, field);
-          if (rr && rr.value != null && rr.value !== '') {
-            fields[field] = String(rr.value);
+          const confKey = targetField + 'Confidence';
+          const rr = await window.OcrKit.regionRetry.retry(result, result._canvas, mgr2, retryField, { currentConfidence: fields[confKey] || 0 });
+          // 冲突结果绝不自动写字段。
+          if (rr && !rr.conflict && rr.value != null && rr.value !== '') {
+            fields[targetField] = String(rr.value);
+            if (rr.confidence != null) fields[confKey] = Math.max(fields[confKey] || 0, Math.min(0.92, rr.confidence));
+            fields[targetField + 'Source'] = 'region-retry';
           }
-        } catch (e) { console.warn('[ocr] 区域重试失败（不影响主结果）:', e); }
+        } catch (e) { console.warn('[ocr] 区域重试失败（不影响主结果）:', retryField, e); }
       }
     } catch (e) { /* ignore */ }
   }
@@ -1883,6 +1892,7 @@ async function wbLocalOcrV2(img) {
         docType: docType || null,
         engine: result.engine || null,
         preprocessProfile: result.profile || null,
+        model: result._benchmark && result._benchmark.model || null, lang: (result._benchmark && result._benchmark.lang) || null, totalMs: result._benchmark && result._benchmark.totalMs || 0,
       };
       if (fields.amount != null && window.OcrKit.correctionLearner) {
         const ctx = wbOcrMeta.templateId || wbOcrMeta.merchantId || wbOcrMeta.docType || 'global';
@@ -2365,10 +2375,30 @@ function wbLearnCorrections(fields) {
 }
 
 // 「保存」：对号入座 —— 把工作台识别字段填入记账表单(支出/收入弹窗)，用户核对后点弹窗保存入账
+function prepareWorkbenchTransaction(type, body, confidenceValue) {
+  const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+  if (!core || typeof core.prepare !== 'function') return { ok: true, legacy: body, decision: 'CONFIRM', errors: [] };
+  return core.prepare(type, Object.assign({}, body, {
+    confidence: confidenceValue == null ? 0.86 : confidenceValue
+  }), 'ocr');
+}
+
 async function wbSave() {
   const fields = wbCollectFields();
   await wbEnsureTemplateForLearning(fields); // V7：第一次纠错也先建立 candidate template
   wbLearnCorrections(fields); // 纠错学习：值变化 + 错误归因 + 模板锚点/ROI
+  // V189：把用户最终确认值作为真实 benchmark ground truth。只记录，不自动切主模型。
+  try {
+    const BM = window.OcrKit && window.OcrKit.modelBenchmark;
+    const meta = wbOcrMeta || {};
+    if (BM && meta.engine) {
+      BM.record({
+        engine: meta.engine, model: meta.model || 'default', lang: meta.lang || (window.options && window.options.language) || 'auto', totalMs: meta.totalMs || 0,
+        expected: { amount: fields.amount || null, date: fields.date || null, merchant: fields.merchant || fields.company || null, taxId: fields.tax || null, reference: fields.reference || null },
+        actual: { amount: wbAiValues.wbAmount || null, date: wbAiValues.wbDate || null, merchant: wbAiValues.wbMerchant || wbAiValues.wbCompany || null, taxId: wbAiValues.wbTax || null, reference: wbAiValues.wbReference || null }
+      });
+    }
+  } catch (e) { /* benchmark 失败不影响保存 */ }
   // V5 §52/§63/§65-66：模板画像记录 + 候选模板创建（记忆层；失败不影响保存）
   try {
     const TE = window.OcrKit && window.OcrKit.templateEngine;
@@ -2480,7 +2510,12 @@ async function wbSave() {
         remark: fields.remark || fields.merchant || '',
         currency: BASE_CURRENCY(),
       };
-      await api(isIncome ? '/income' : '/expense', 'POST', body);
+      const prepared = prepareWorkbenchTransaction(isIncome ? 'income' : 'expense', body, fields.amountConfidence);
+      if (!prepared.ok || prepared.decision === 'RETRY') {
+        const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+        return showToast(core && core.userMessage ? core.userMessage(prepared.errors) : 'OCR 结果不可靠，请核对后再保存', 'error');
+      }
+      await api(isIncome ? '/income' : '/expense', 'POST', prepared.legacy);
       showToast(isIncome ? '✅ 收入已入账' : '✅ 支出已入账');
       refreshDashboards();
       renderIncome && renderIncome();
@@ -2538,7 +2573,12 @@ async function wbSaveTemplate() {
         remark: fields.remark || fields.merchant || '',
         currency: BASE_CURRENCY(),
       };
-      await api(isIncome ? '/income' : '/expense', 'POST', body);
+      const prepared = prepareWorkbenchTransaction(isIncome ? 'income' : 'expense', body, fields.amountConfidence);
+      if (!prepared.ok || prepared.decision === 'RETRY') {
+        const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+        return showToast(core && core.userMessage ? core.userMessage(prepared.errors) : 'OCR 结果不可靠，请核对后再保存', 'error');
+      }
+      await api(isIncome ? '/income' : '/expense', 'POST', prepared.legacy);
       // 本地模板记忆（无服务器时）：按"商户/银行/尾号"记住常用字段，下次识别自动补位
       try {
         const key = isIncome ? 'sm_wb_tpl_income' : 'sm_wb_tpl_expense';

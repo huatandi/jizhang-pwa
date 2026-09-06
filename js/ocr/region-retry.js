@@ -101,6 +101,53 @@
     return out;
   }
 
+
+  function normalizeNumeric(raw) {
+    let s=String(raw||'').trim().replace(/[^\d,.\-]/g,'');
+    if(!s) return null;
+    // 1,234.56 / 1 234.56 / 1234,56
+    if(/^-?\d+,\d{2}$/.test(s) && !s.includes('.')) s=s.replace(',','.');
+    else s=s.replace(/,/g,'');
+    const n=Number(s);
+    return Number.isFinite(n) ? String(Math.round(n*100)/100) : null;
+  }
+
+  function extractValue(field, rawText) {
+    const raw=String(rawText||'').replace(/\s+/g,' ').trim();
+    if(!raw) return null;
+    if(field==='amount' || field==='tax'){
+      const vals=[]; const re=/(?:[$¥€£￥₩]\s*)?(-?\d{1,3}(?:[ ,]\d{3})+(?:[.,]\d{2})|-?\d+[.,]\d{2}|-?\d+)/g; let m;
+      while((m=re.exec(raw))){const v=normalizeNumeric(m[1]); if(v!=null) vals.push(v);}
+      return vals.length ? vals[vals.length-1] : null; // 标签同行通常最后一个金额是值
+    }
+    if(field==='merchant'){
+      // 标签式商户名优先；若无标签，保留最长的非金额文本作为候选，但不自动高置信采用。
+      const re=VALUE_RES.merchant, m=raw.match(re); if(m&&m[1]) return m[1].trim();
+      const parts=raw.split(/[|;:：]/).map(x=>x.trim()).filter(x=>/[A-Za-zÁÉÍÓÚÑÜ\u3400-\u9fff]/.test(x) && !/^\d/.test(x));
+      if(parts.length) return parts.sort((a,b)=>b.length-a.length)[0].slice(0,60);
+      return null;
+    }
+    const vre=VALUE_RES[field]; const m=vre&&raw.match(vre);
+    return m && m[1] ? String(m[1]).trim() : null;
+  }
+
+  function candidateScore(field, value, conf, rawText, passIndex) {
+    let s=Math.max(0,Math.min(1,Number(conf)||0));
+    if(value==null||value==='') return 0;
+    if(field==='amount'){
+      const n=Number(value); if(!Number.isFinite(n)||n<=0) return 0;
+      if(/\b(total|importe|monto)\b/i.test(rawText||'')) s+=0.06;
+    } else if(field==='date'){
+      if(/\d{4}|\d{1,2}[\/\-.]/.test(value)) s+=0.04;
+    } else if(field==='rfc'||field==='tax_id'){
+      if(/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/i.test(value)) s+=0.10;
+    } else if(field==='reference'||field==='folio'){
+      if(String(value).length>=6) s+=0.03;
+    }
+    s-=Math.max(0,passIndex||0)*0.01; // 首个清晰解优先，避免过度增强制造伪字符
+    return Math.max(0,Math.min(1,s));
+  }
+
   /**
    * 区域重试：定位低置信字段区域 → 裁剪放大增强 → 重识别 → 提取值
    * @param {Object} result  OcrResult（含 lines/words/width/height）
@@ -114,77 +161,86 @@
     const lines = result.lines || [];
     const words = result.words || [];
     const W = result.width, H = result.height;
-    if (!W || !H) return null;
+    if (!W || !H || !o.sourceCanvas) return null;
 
-    // 1) 定位：优先词级（精确），否则行级
     let anchor = null;
-    let line = null;
     const lw = findLabelWord(words, field);
-    if (lw && lw.box) {
-      anchor = lw;
-      line = { box: lw.box };
-    } else {
-      line = findLabelLine(lines, field);
-      if (!line || !line.box) return null;
-      anchor = { box: line.box };
+    if (lw && lw.box) anchor = lw;
+    else {
+      const line = findLabelLine(lines, field);
+      if (line && line.box) anchor = { box: line.box };
     }
-    const box = anchor.box;
-    if (!box || box.length < 4) return null;
+    if (!anchor || !anchor.box || anchor.box.length < 4) return null;
 
-    // 2) 区域扩展（右扩更大容纳"标签+值"同行）
+    const box = anchor.box;
     const region = [
-      Math.max(0, box[0][0] - W * 0.02),
-      Math.max(0, box[0][1] - H * 0.03),
-      Math.min(W, box[2][0] + W * 0.45),
-      Math.min(H, box[2][1] + H * 0.06),
+      Math.max(0, box[0][0] - W * 0.025),
+      Math.max(0, box[0][1] - H * 0.035),
+      Math.min(W, box[2][0] + W * (field === 'merchant' ? 0.58 : 0.48)),
+      Math.min(H, box[2][1] + H * 0.07),
     ];
     if (region[2] - region[0] < 10 || region[3] - region[1] < 6) return null;
 
-    // 3) 从原图裁剪（manager 提供原图？——由调用方传入 sourceCanvas）
-    if (!o.sourceCanvas) return null;
-    const cropped = cropCanvas(o.sourceCanvas, region);
-
-    // 4) 放大 + 增强
-    let reg = upscale(cropped, o.scale || 2.5);
-    try {
-      if (global.OcrKit && global.OcrKit.preprocess) {
-        reg = global.OcrKit.preprocess.enhance(global.OcrKit.preprocess.toGrayscale(reg), 'high_contrast');
-      }
-    } catch (e) { /* 增强失败用原区域 */ }
-
-    // 5) 区域重识别（指定引擎；失败换另一引擎）
-    let regResult = null;
-    const engineName = o.engine || null;
-    if (manager && typeof manager.recognize === 'function') {
+    const baseCrop = cropCanvas(o.sourceCanvas, region);
+    // V194+: 真正 ROI 多策略救援。只对小区域跑，最多 3 pass，避免整图 multipass 发热。
+    let passes = [
+      { scale:o.scale || 2.2, enhance:'normal' },
+      { scale:2.8, enhance:'high_contrast' },
+    ];
+    if (field === 'amount' || field === 'tax' || field === 'rfc' || field === 'reference' || field === 'folio') {
+      passes.push({ scale:3.2, enhance:field === 'amount' ? 'thermal' : 'high_contrast' });
+    }
+    const planner = global.OcrKit && global.OcrKit.RegionRescuePlanner;
+    if (planner && planner.plan) {
       try {
-        regResult = await manager.recognize(reg, { engine: engineName, profile: 'high', enhanceMode: 'none' });
-      } catch (e) { /* 单引擎失败 */ }
-      if ((!regResult || !regResult.text) && engineName) {
-        // 换引擎重试
-        const alt = engineName === global.OcrKit.ENGINES.PADDLE ? global.OcrKit.ENGINES.TESSERACT : global.OcrKit.ENGINES.PADDLE;
-        try { regResult = await manager.recognize(reg, { engine: alt, profile: 'high', enhanceMode: 'none' }); } catch (e2) { /* ignore */ }
-      }
+        const pp = planner.plan({ field, confidence:o.currentConfidence == null ? 0 : o.currentConfidence });
+        if (pp && pp.retry && Array.isArray(pp.passes) && pp.passes.length) {
+          passes = pp.passes.slice(0,3).map(x=>({scale:x.scale||2.5,enhance:x.enhance||'high_contrast'}));
+        }
+      } catch(e){}
     }
-    const rawText = (regResult && (regResult.text || regResult.fullText) || '').replace(/\s+/g, ' ').trim();
 
-    // 6) 字段专用正则提取
-    const vre = VALUE_RES[field];
-    let value = null, conf = 0;
-    if (rawText && vre) {
-      const m = rawText.match(vre);
-      if (m) value = m[1];
-      // 置信：区域识别词平均置信（若有）
-      if (regResult && regResult.words && regResult.words.length) {
-        conf = regResult.words.reduce((s, w) => s + (Number(w.confidence) || 0), 0) / regResult.words.length;
-      }
-      // 金额归一化：去千分位逗号（1,250 → 1250），保留小数
-      if (field === 'amount' && value) {
-        const num = Number(String(value).replace(/[^\d.-]/g, ''));
-        if (Number.isFinite(num)) value = String(num);
-      }
+    const candidates=[];
+    for (let i=0;i<passes.length;i++) {
+      const pass=passes[i];
+      let reg=upscale(baseCrop, pass.scale || 2.5);
+      try {
+        if (global.OcrKit && global.OcrKit.preprocess) {
+          const gray=global.OcrKit.preprocess.toGrayscale(reg);
+          reg=global.OcrKit.preprocess.enhance(gray, pass.enhance || 'high_contrast');
+        }
+      } catch(e){}
+
+      let rr=null;
+      try {
+        rr=await manager.recognize(reg,{
+          engine:o.engine||'auto', profile:'balanced',
+          maxEdge:Math.max(700,Math.min(1300,reg.width)),
+          enhanceMode:'none', deskew:false, glowReduce:false, autoRotate:false,
+          longReceipt:false, dynamicMaxEdge:false, qrFirst:false
+        });
+      } catch(e) { continue; }
+
+      const rawText=String(rr && (rr.text||rr.fullText)||'').replace(/\s+/g,' ').trim();
+      const value=extractValue(field,rawText);
+      if(value==null) continue;
+      let conf=0.72;
+      if(rr.words&&rr.words.length) conf=rr.words.reduce((s,w)=>s+(Number(w.confidence)||0),0)/rr.words.length;
+      const score=candidateScore(field,value,conf,rawText,i);
+      candidates.push({value:String(value),confidence:conf,score,region,rawText,engine:rr.engine,pass:i+1,enhance:pass.enhance,scale:pass.scale});
+      // 高质量且字段格式强，提前停止，减少耗电。
+      if(score>=0.92) break;
     }
-    if (value == null) return null;
-    return { value: String(value), confidence: conf || 0.8, region, rawText, engine: regResult && regResult.engine };
+
+    if(!candidates.length) return null;
+    candidates.sort((a,b)=>b.score-a.score);
+    const best=candidates[0], second=candidates[1];
+    // 两个高分候选明显冲突时不强行选，交给上层 RETRY/约束。
+    if(second && best.value!==second.value && best.score<0.88 && Math.abs(best.score-second.score)<0.06) {
+      return { conflict:true, candidates:candidates.slice(0,3), region, reason:'ROI_REAL_AMBIGUITY' };
+    }
+    best.candidates=candidates.slice(0,3);
+    return best;
   }
 
   /**
@@ -244,6 +300,6 @@
 
   global.OcrKit = global.OcrKit || {};
   Object.assign(global.OcrKit, {
-    regionRetry: { retryField, retry, retryTemplateRegion, findLabelLine, findLabelWord, cropCanvas, upscale, FIELD_LABELS, VALUE_RES },
+    regionRetry: { retryField, retry, retryTemplateRegion, findLabelLine, findLabelWord, cropCanvas, upscale, extractValue, normalizeNumeric, candidateScore, FIELD_LABELS, VALUE_RES },
   });
 })(typeof window !== 'undefined' ? window : globalThis);

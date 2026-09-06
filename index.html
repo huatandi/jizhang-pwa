@@ -20,7 +20,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="飞常明细">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="css/style.css?v=fieldcmd-05">
+  <link rel="stylesheet" href="css/style.css?v=weather-tabs-01">
   <!-- PaddleOCR SDK 裸模块 import map（V5 §75：vendor/paddleocr/index.mjs 内的 js-yaml / clipper-lib /
        @techstark/opencv-js / onnxruntime-web 是裸 ESM，需 import map 解析。onnxruntime-web 必须与
        vendor/onnx 同版本(1.24.3)——此前误指 1.19.2 造成 JS glue 与 .wasm 版本错配 → function import requires a callable。 -->
@@ -45,10 +45,11 @@
   <script src="js/core/diagnostics.js?v=cfa84bc1"></script>
   <script src="js/core/runtime-asset-manager.js?v=c5a7794d"></script>
   <script src="js/core/model-source-router.js?v=478632cc"></script>
+  <script src="js/config/recognition-models.js?v=v206"></script>
   <script src="js/core/app-services.js?v=ef71b3a5"></script>
   <!-- DB 基础设施（V3.0 Phase0D）：迁移框架 + 健康检查（先于 offline-db 加载） -->
-  <script src="js/db/migrations.js?v=81149420"></script>
-  <script src="js/db/health-check.js?v=f3ea0214"></script>
+  <script src="js/db/migrations.js?v=v187"></script>
+  <script src="js/db/health-check.js?v=v187"></script>
   <!-- 主题切换（秋色「试穿」）：head 尽早加载，读 localStorage 设 data-theme，避免主题闪烁。
        data-theme 与 <meta name="theme-color"> 联动由 theme.js 的 apply() 统一处理。 -->
   <script src="js/theme.js?v=15357496"></script>
@@ -229,7 +230,7 @@
             </div>
             <div class="kpi-badge" id="kpiBalanceBadge">平衡</div>
           </div>
-          <div class="kpi-card purchase-card">
+          <div class="kpi-card paid-card">
             <div class="kpi-icon">💵</div>
             <div class="kpi-info">
               <span class="kpi-label">已付款</span>
@@ -237,7 +238,7 @@
             </div>
             <div class="kpi-trend" id="kpiPaidTrend"></div>
           </div>
-          <div class="kpi-card purchase-card">
+          <div class="kpi-card unpaid-card">
             <div class="kpi-icon">📦</div>
             <div class="kpi-info">
               <span class="kpi-label">未付款</span>
@@ -265,6 +266,18 @@
               <span class="kpi-label">净资产</span>
               <span class="kpi-value" id="kpiNetWorth">0</span>
             </div>
+          </div>
+        </div>
+
+        <!-- V186 今日待处理 / 异常雷达 -->
+        <div class="insight-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:12px 0 16px">
+          <div class="health-card" style="min-height:120px">
+            <div class="health-head"><span class="health-title">📌 今日待处理</span><button class="btn-small" onclick="renderActionCenter()">刷新</button></div>
+            <div id="todayActionList" style="display:grid;gap:7px;padding:4px 0"><span class="settings-sub">正在检查…</span></div>
+          </div>
+          <div class="health-card" style="min-height:120px">
+            <div class="health-head"><span class="health-title">🛰️ 异常财务雷达</span><button class="btn-small" onclick="renderActionCenter()">刷新</button></div>
+            <div id="anomalyRadarList" style="display:grid;gap:7px;padding:4px 0"><span class="settings-sub">正在检查…</span></div>
           </div>
         </div>
 
@@ -513,7 +526,7 @@
           </div>
           <!-- 全局搜索（功能补充 P5）：跨收入/支出/进货 + 金额区间 -->
           <div class="query-row global-search-row">
-            <input type="text" id="queryKeyword" class="query-select" placeholder="🔍 全局搜索：备注/分类/账户/项目/供应商…">
+            <input type="text" id="queryKeyword" class="query-select" placeholder="🔍 智能搜索：如 上个月 BBVA 5000以上支出">
             <input type="number" id="queryAmtMin" class="query-date" placeholder="金额≥" min="0" step="0.01">
             <span class="query-to">至</span>
             <input type="number" id="queryAmtMax" class="query-date" placeholder="金额≤" min="0" step="0.01">
@@ -881,6 +894,29 @@
             <div class="cat-budget-list" id="catBudgetList"></div>
           </div>
 
+          <!-- V190-V193 智能识别中心 -->
+          <div class="settings-section">
+            <div class="settings-title">🧠 智能识别中心 <span class="settings-sub">设备能力 · 模型健康 · 准确率 · 学习规则</span></div>
+            <div class="recur-hint">本地自检，不上传账目或识别内容。用于判断模型是否真正可用，而不是只看“已安装”。</div>
+            <button class="btn-secondary" onclick="openIntelligenceCenter()">打开识别诊断中心</button>
+          </div>
+
+          <!-- 内部转账 -->
+          <div class="settings-section">
+            <div class="settings-title">🔁 内部转账 <span class="settings-sub">自己的账户之间转钱，不计入收入/支出</span></div>
+            <div class="recur-add-row">
+              <input type="date" id="trDate">
+              <select id="trFrom"></select>
+              <span style="align-self:center">→</span>
+              <select id="trTo"></select>
+              <input type="number" id="trAmount" placeholder="金额" min="0" step="0.01">
+              <input type="text" id="trRemark" placeholder="备注/参考号">
+              <button class="btn-primary" onclick="addInternalTransfer()">＋ 转账</button>
+            </div>
+            <div class="recur-list" id="transferList"></div>
+            <div class="recur-hint">💡 转账只改变两个账户余额，不进入总收入、总支出和利润统计。</div>
+          </div>
+
           <!-- 周期记账 -->
           <div class="settings-section">
             <div class="settings-title">🔄 周期记账 <span class="settings-sub">固定收支（工资/房贷/水电）自动按周期入账</span></div>
@@ -896,10 +932,11 @@
                 <option value="daily">每天</option>
               </select>
               <input type="number" id="recDay" placeholder="日" min="1" max="31" title="每月几号">
+              <input type="number" id="recLeadDays" placeholder="提前提醒(天)" min="0" max="30" value="1" title="提前多少天出现在今日待处理">
               <input type="text" id="recRemark" placeholder="备注">
               <button class="btn-primary" onclick="addRecurring()">＋ 添加</button>
             </div>
-            <div class="recur-hint">💡 每周/每天规则：月份日留空。打开应用时自动检查是否已入账，不会重复记录。</div>
+            <div class="recur-hint">💡 支持暂停/启用。每周/每天规则：月份日留空。可设置提前 0–30 天提醒；打开应用时自动补记到期账单，不会重复记录。</div>
           </div>
 
           <!-- 选项管理 -->
@@ -1002,6 +1039,7 @@
               <button class="btn-small" onclick="BackupV2.exportCsv('purchase')">📦 进货 CSV</button>
               <button class="btn-small" onclick="BackupV2.exportCsv('all')">📋 全部 CSV</button>
               <button class="btn-small" onclick="document.getElementById('restoreBackupFile').click()">📥 恢复备份</button>
+              <button class="btn-small" onclick="LedgerTrash.open()">🗑️ 回收站</button>
               <input type="file" id="restoreBackupFile" accept=".json,.db,application/json,application/octet-stream" style="display:none" onchange="BackupV2.restore(this)">
             </div>
             <div class="recur-hint" id="backupHint">建议定期备份。恢复前会先校验文件完整性并临时保存当前数据，校验失败不会覆盖。</div>
@@ -1043,6 +1081,8 @@
             <button class="btn-small" onclick="saveQuickTemplate('income')" title="把当前填写的收入保存为模板">💾 存为模板</button>
           </label>
           <label>日期 <input type="date" id="iDate" required></label>
+          <label>交易性质 <select id="iSemanticType" onchange="syncIncomeSemanticLink()"><option value="income">💰 普通收入</option><option value="refund">↩️ 退款返还（冲减支出）</option><option value="reimbursement">📋 报销返还（冲减支出）</option></select></label>
+          <label id="iLinkedExpenseWrap" hidden>关联原支出 <select id="iLinkedExpense"><option value="">-- 选择原支出 --</option></select></label>
           <label>收入分类 <select id="iProject"></select></label>
           <label>收款方式 <select id="iPayMethod"></select></label>
           <label>账户 <select id="iAccount"></select></label>
@@ -1414,8 +1454,8 @@
   <script src="js/recognition/qr-engine.js?v=950436c2"></script>
   <script src="js/recognition/index.js?v=0cfd4637"></script>
 
-  <script src="js/offline-db.js?v=7c5c72cc"></script>
-  <script src="js/offline-backend.js?v=colfix"></script>
+  <script src="js/offline-db.js?v=v187"></script>
+  <script src="js/offline-backend.js?v=v187"></script>
   <script src="js/voice/personal-voice-memory.js?v=80723396"></script>
   <!-- Intelligence Layer：Field Evidence / Conflict Resolver（V4 Phase 1） -->
   <script src="js/intelligence/evidence-engine.js?v=96d63660"></script>
@@ -1434,26 +1474,29 @@
   <script src="js/intelligence/document-intelligence-v7.js?v=0ab01d5c"></script>
   <script src="js/voice-engine.js?v=9cc4fddb"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
-  <script src="js/ai/global-config.js?v=b3ecc67e"></script>
-  <script src="js/offline-ocr.js?v=e4e1479d"></script>
+  <script src="js/ai/global-config.js?v=v188"></script>
+  <script src="js/offline-ocr.js?v=v187"></script>
   <!-- AI 引擎层（OcrKit / MexicoParser / ValidateKit / AsrKit / VoiceKit） -->
   <script src="js/validation/validators.js?v=8094156f"></script>
   <script src="js/validation/confidence.js?v=627a878c"></script>
   <script src="js/validation/transaction.js?v=c929b2c4"></script>
+  <script src="js/intelligence/transaction-core.js?v=v187"></script>
   <script src="js/ocr/ocr-types.js?v=fd0c8097"></script>
   <!-- V5 P3：图像质量分析（preprocess 的 auto 增强依赖，必须先加载） -->
   <script src="js/ocr/image-quality.js?v=4bfcaa7f"></script>
   <script src="js/ocr/preprocess.js?v=2ce07548"></script>
   <script src="js/ocr/tesseract-engine.js?v=da583653"></script>
-  <script src="js/ocr/paddle-engine.js?v=b278d95d"></script>
-  <script src="js/ocr/ocr-manager.js?v=f013218e"></script>
+  <script src="js/ocr/paddle-engine.js?v=v189"></script>
+  <script src="js/ocr/model-benchmark-store.js?v=v189"></script>
+  <script src="js/ocr/region-rescue-planner.js?v=v197"></script>
+  <script src="js/ocr/ocr-manager.js?v=v197"></script>
   <!-- V5 P3：可中止 OCR 任务管理 -->
   <script src="js/ocr/ocr-job-manager.js?v=d4c33729"></script>
   <!-- V5 P6：执行计划（FAST/SMART/RESCUE） -->
   <script src="js/ocr/execution-planner.js?v=851a34ef"></script>
   <!-- V5 P4：服务器 OCR 引擎（可选注册，默认不启用） -->
   <script src="js/ocr/server-engine.js?v=27ed738f"></script>
-  <script src="js/ocr/region-retry.js?v=b53b8931"></script>
+  <script src="js/ocr/region-retry.js?v=v197"></script>
   <!-- V5 P2：OCR 候选池（多引擎/混淆变体/数学证据裁决） -->
   <script src="js/ocr/ocr-candidate-pool.js?v=e5c98050"></script>
   <script src="js/mexico/money.js?v=97d11262"></script>
@@ -1470,21 +1513,26 @@
   <script src="js/regions/cn.js?v=294039d1"></script>
   <script src="js/asr/asr-types.js?v=5a62ee66"></script>
   <!-- V5 Phase1 Runtime Foundation: 能力门控/设备熔断/音频焦点 -->
-  <script src="js/asr/voice-runtime-profile.js?v=069428e2"></script>
+  <script src="js/asr/voice-runtime-profile.js?v=v207"></script>
   <script src="js/asr/circuit-breaker.js?v=b4554e60"></script>
   <script src="js/asr/audio-focus.js?v=baad55b4"></script>
   <!-- audio-processor.js 由 audioWorklet.addModule('js/asr/audio-processor.js') 动态加载，不在主线程执行 -->
   <script src="js/asr/audio-capture.js?v=725447e4"></script>
-  <script src="js/asr/vad.js?v=bb957d74"></script>
+  <script src="js/asr/vad.js?v=v207"></script>
+  <script src="js/asr/context-bias.js?v=v197"></script>
+  <script src="js/asr/result-arbitrator.js?v=v197"></script>
+  <script src="js/asr/sherpa-model-store.js?v=v206"></script>
+  <script src="js/asr/sherpa-engine.js?v=v189"></script>
   <script src="js/asr/whisper-engine.js?v=d01ed010"></script>
   <script src="js/asr/webspeech-engine.js?v=0445f7d1"></script>
   <script src="js/asr/model-manager.js?v=bb9f0837"></script>
-  <script src="js/asr/asr-manager.js?v=5e31977a"></script>
-  <script src="js/voice/voice-parser.js?v=fieldcmd-08"></script>
-  <script src="js/voice/voice-sr.js?v=94acb31e"></script>
+  <script src="js/asr/asr-manager.js?v=v207"></script>
+  <script src="js/voice/voice-parser.js?v=v187"></script>
+  <script src="js/voice/voice-sr.js?v=v197"></script>
   <script src="js/voice/voice-qa.js?v=a791c753"></script>
   <script src="js/ai/engine-manager.js?v=b7c87a85"></script>
-  <script src="js/ai/multimodal.js?v=9736bfda"></script>
+  <script src="js/intelligence/recognition-fusion-gate.js?v=v206"></script>
+  <script src="js/ai/multimodal.js?v=v206"></script>
   <!-- AI Provider 接口预留（V4.5 P2：纯接口骨架，不接真实 API，Local-First） -->
   <script src="js/ai/ai-provider.js?v=a4ceba66"></script>
   <script src="js/ai/ai-privacy.js?v=4ea3ef99"></script>
@@ -1498,9 +1546,9 @@
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
   <script src="js/voice/reminders.js?v=fieldcmd-01"></script>
   <script src="js/voice/correction-engine.js?v=b24cd50f"></script>
-  <script src="js/voice/quick-voice.js?v=fieldcmd-07"></script>
-  <script src="js/ledger-crud.js?v=8568767b"></script>
-  <script src="js/ai/ai-workbench.js?v=c1b12506"></script>
+  <script src="js/voice/quick-voice.js?v=v187"></script>
+  <script src="js/ledger-crud.js?v=v187"></script>
+  <script src="js/ai/ai-workbench.js?v=v187"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=fd0e553a"></script>
   <!-- ===== Weather Intelligence：天气预报（Open-Meteo Provider，可独立降级） ===== -->
@@ -1517,7 +1565,7 @@
   <script src="js/weather/weather-reminder-engine.js?v=63b96619"></script>
   <script src="js/weather/weather-voice-intent.js?v=a639db5b"></script>
   <script src="js/weather/weather-service.js?v=5ec266df"></script>
-  <script src="js/weather/weather-card.js?v=e0062992"></script>
+  <script src="js/weather/weather-card.js?v=weather-tabs-01"></script>
 
   <!-- ===== 参考汇率工具（Exchange Rate Engine V1.0）=====
        分层：UI(fx-tool) → Engine → Provider(Frankfurter) → API
@@ -1532,7 +1580,35 @@
   <script src="js/exchange-rate/fx-tool.js?v=80870848"></script>
   <!-- 导出（V3.0 §八 CSV V2） -->
   <script src="js/export/export-csv.js?v=70dfa464"></script>
-  <script src="js/boot.js?v=143a19ce"></script>
+  <script src="js/asr/ten-vad-runtime-installer.js?v=v207"></script>
+  <script src="js/asr/ten-vad-wasm-provider.js?v=v207"></script>
+  <script src="js/asr/neural-vad-provider-loader.js?v=v207"></script>
+  <script src="js/asr/neural-vad-bridge.js?v=v207"></script>
+  <script src="js/intelligence/recognition-benchmark-lab.js?v=v206"></script>
+  <script src="js/intelligence/recognition-finalizer.js?v=v207"></script>
+  <script src="js/intelligence/recognition-model-manager.js?v=v207"></script>
+  <script src="js/intelligence/intelligence-center.js?v=v207"></script>
+  <script src="js/boot.js?v=v207"></script>
+
+  <!-- V190-V193 智能识别中心 -->
+  <div class="modal-overlay" id="intelligenceCenterModal">
+    <div class="modal" style="max-width:980px">
+      <div class="modal-header"><h3>🧠 智能识别中心</h3><button class="modal-close" onclick="closeModal('intelligenceCenterModal')">×</button></div>
+      <div class="modal-body" id="intelligenceCenterBody"><div class="empty">正在本机自检…</div></div>
+    </div>
+  </div>
+
+  <!-- 账务回收站 V185 -->
+  <div class="modal-overlay" id="trashModal">
+    <div class="modal" style="max-width:980px">
+      <div class="modal-header"><h3>🗑️ 账务回收站</h3><button class="modal-close" onclick="closeModal('trashModal')">×</button></div>
+      <div class="modal-body">
+        <div class="recur-hint" style="margin-bottom:10px">收入、支出、进货删除后先进入这里。恢复会写回原账表；“永久删除”不可撤销。</div>
+        <div id="trashEmpty" class="recur-hint" style="display:none;padding:24px;text-align:center">回收站为空</div>
+        <div style="overflow:auto"><table class="data-table"><thead><tr><th>类型</th><th>原日期</th><th>项目/对象</th><th>金额</th><th>删除人</th><th>删除时间</th><th>操作</th></tr></thead><tbody id="trashTableBody"></tbody></table></div>
+      </div>
+    </div>
+  </div>
 
   <!-- 当前记账人切换弹窗（多成员共享） -->
   <div class="modal-overlay" id="memberSwitcherModal">

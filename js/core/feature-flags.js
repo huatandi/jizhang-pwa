@@ -21,6 +21,8 @@
     adaptiveVad: false,               // 自适应 VAD（实验）
     whisperLocal: true,               // 本地 Whisper
     webspeechFallback: true,          // WebSpeech 回退
+    dualAsrArbitration: true,         // Sherpa+Whisper 中文短句双引擎裁决（设备允许时）
+    sherpaModelHealthCheck: true,     // Sherpa 模型完整性/健康检查
     // ---- AI ----
     glmOcrRescue: false,              // GLM OCR 救援（实验，需网络）
     aiCloudAssist: false,             // 云端 AI 辅助（默认关，隐私）

@@ -432,7 +432,7 @@ function startVoiceSession() {
   announceStart();
   // 60 秒无有效识别 → 自动停止（避免"说错后卡死一直聆听"）
   resetVoiceIdleTimer();
-  VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true }, voiceHandleResult);
+  VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true, mode: 'ledger' }, voiceHandleResult);
 }
 
 // 60 秒无有效语音 → 自动停止会话（用户要求：1 分钟内无法完成就主动取消/结束）
@@ -515,7 +515,7 @@ function voiceHandleResult(r) {
       // 停顿/超时类错误：自动重启继续聆听
       voiceRestartTimer = setTimeout(() => {
         if (voiceSessionActive && !VoiceSR.isListening()) {
-          VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true }, voiceHandleResult);
+          VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true, mode: 'ledger' }, voiceHandleResult);
         }
       }, 400);
     } else if (fatal) {
@@ -539,7 +539,7 @@ function voiceHandleResult(r) {
           if (!voiceSessionActive) {
             voiceSessionActive = true;
             setVoiceBtnState('listening');
-            VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true, forceOnline: useOnline }, voiceHandleResult);
+            VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true, mode: 'ledger', forceOnline: useOnline }, voiceHandleResult);
           }
         }, 1500);
       }
@@ -563,7 +563,7 @@ function voiceHandleResult(r) {
         if (VoiceSR.isListening()) return; // 仍在听则不再重启
         voiceSessionActive = true;
         setVoiceBtnState('listening');
-        VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true }, voiceHandleResult);
+        VoiceSR.listen({ lang: effectiveVoiceLang(), continuous: true, mode: 'ledger' }, voiceHandleResult);
         resetVoiceIdleTimer();
       }, 600);
     } else {
@@ -1505,6 +1505,13 @@ function removeVoiceEntry(idx) {
   showToast('已删除该笔');
 }
 
+function prepareQuickTransaction(type, body, confidenceValue) {
+  const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+  if (!core || typeof core.prepare !== 'function') return { ok: true, legacy: body, decision: 'ACCEPT', errors: [] };
+  const enriched = Object.assign({}, body, { confidence: confidenceValue == null ? 0.9 : confidenceValue });
+  return core.prepare(type, enriched, 'voice');
+}
+
 async function saveQuick() {
   // 多笔模式：批量入账全部识别条目
   if (voiceMultiEntries && voiceMultiEntries.length >= 2) {
@@ -1520,11 +1527,15 @@ async function saveQuick() {
       const d = e.date || document.getElementById('qDate').value || todayLocal();
       const rem = e.remark || '';
       try {
-        if (k === 'expense') {
-          await api('/expense', 'POST', { date: d, category: cat, amount: e.amount, account: acc, handler: '', remark: rem });
-        } else {
-          await api('/income', 'POST', { date: d, project: cat, pay_method: '', account: acc, amount: e.amount, handler: '', remark: rem, discount: 0, card_pending_account: '' });
+        const rawBody = k === 'expense'
+          ? { date: d, category: cat, amount: e.amount, account: acc, handler: '', remark: rem }
+          : { date: d, project: cat, pay_method: '', account: acc, amount: e.amount, handler: '', remark: rem, discount: 0, card_pending_account: '' };
+        const prepared = prepareQuickTransaction(k, rawBody, e.confidence);
+        if (!prepared.ok || prepared.decision === 'RETRY') {
+          errors++;
+          continue;
         }
+        await api(k === 'expense' ? '/expense' : '/income', 'POST', prepared.legacy);
         saved++;
       } catch (err) { errors++; }
     }
@@ -1561,11 +1572,17 @@ async function saveQuick() {
   setQuickMem({ account, category: cat, type: quickType });
   // 保存：加 try/catch，避免接口异常变成"点了没反应"的静默失败
   try {
-    if (quickType === 'expense') {
-      await api('/expense', 'POST', { date, category: cat, amount: amtConfirmed, account, handler: '', remark });
-    } else {
-      await api('/income', 'POST', { date, project: cat, pay_method: '', account, amount: amtConfirmed, handler: '', remark, discount: 0, card_pending_account: '' });
+    const rawBody = quickType === 'expense'
+      ? { date, category: cat, amount: amtConfirmed, account, handler: '', remark }
+      : { date, project: cat, pay_method: '', account, amount: amtConfirmed, handler: '', remark, discount: 0, card_pending_account: '' };
+    // 用户在快速记账表单点击“保存”即代表对当前草稿进行了人工确认；
+    // 仍由 TransactionCore 做结构/金额/日期校验，但不再把低 ASR 置信度当成自动保存许可。
+    const prepared = prepareQuickTransaction(quickType, rawBody, 1);
+    if (!prepared.ok) {
+      const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+      return showToast(core && core.userMessage ? core.userMessage(prepared.errors) : '交易数据校验失败', 'error');
     }
+    await api(quickType === 'expense' ? '/expense' : '/income', 'POST', prepared.legacy);
   } catch (e) {
     showToast('保存失败：' + (e && e.message ? e.message : '请重试'), 'error');
     if (voiceSessionActive) stopVoiceSession();
@@ -1624,7 +1641,7 @@ async function saveQuick() {
     incomeVoiceActive = true;
     setIncomeVoiceBtnState('listening');
     const lang = typeof effectiveVoiceLang === 'function' ? effectiveVoiceLang() : 'zh-CN';
-    VoiceSR.listen({ lang, continuous: true }, incomeVoiceHandleResult);
+    VoiceSR.listen({ lang, continuous: true, mode: 'ledger' }, incomeVoiceHandleResult);
   }
 
   function stopIncomeVoice() {
@@ -1663,7 +1680,7 @@ async function saveQuick() {
         incomeVoiceRestartTimer = setTimeout(() => {
           if (incomeVoiceActive && !VoiceSR.isListening()) {
             const lang = typeof effectiveVoiceLang === 'function' ? effectiveVoiceLang() : 'zh-CN';
-            VoiceSR.listen({ lang, continuous: true }, incomeVoiceHandleResult);
+            VoiceSR.listen({ lang, continuous: true, mode: 'ledger' }, incomeVoiceHandleResult);
           }
         }, 400);
       } else if (fatal) {

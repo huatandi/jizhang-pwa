@@ -192,12 +192,17 @@
       mgr.setCallback({
         onInterim: (t) => { if (o.onInterim) o.onInterim(t); },
         onFinal: (t) => finish({ ok: true, text: t }),
+        onAmbiguity: (a) => {
+          if (a && a.decision === 'RETRY') finish({ ok:false, error:a.reason || 'ASR_RETRY', text:'', ambiguity:a });
+          else if (a && a.decision === 'CONFIRM') finish({ ok:false, error:'ASR_CONFIRM', text:'', ambiguity:a });
+        },
         onError: (code) => finish({ ok: false, error: code, text: '' }),
         onState: (s) => { if (o.onState) o.onState(s); },
         onLevel: (rms) => { if (o.onLevel) o.onLevel(rms); },
       });
 
       mgr.setLang(o.lang || defaultLang());
+      if (mgr.setContext) mgr.setContext(o.mode || 'ledger', Array.isArray(o.extraHotwords) ? o.extraHotwords : []);
       mgr.start().catch((e) => finish({ ok: false, error: (e && e.message) || 'ASR_FAILED', text: '' }));
     });
   }
@@ -215,6 +220,8 @@
     const rec = await listenOnce({
       lang: o.lang || defaultLang(),
       maxMs: o.maxMs || 20000,
+      mode: o.mode || 'ledger',
+      extraHotwords: o.extraHotwords || [],
       onState: o.onState,
       onInterim: o.onInterim,
     });
@@ -225,8 +232,26 @@
     const changes = [];
     const out = Object.assign({}, src);
 
-    // 语音值只补充"缺失"字段（OCR 已有的不覆盖，除非语音明确指定）
-    if (parsed.amount != null && out.amount == null) { out.amount = parsed.amount; changes.push('amount'); }
+    // 金额属于财务关键字段：OCR 与语音同时存在时必须交叉裁决，而不是“先到先得”。
+    if (parsed.amount != null) {
+      if (out.amount == null) {
+        out.amount = parsed.amount; changes.push('amount');
+      } else if (global.RecognitionFusionGate) {
+        const fused = global.RecognitionFusionGate.adjudicateAmount(
+          { value:out.amount, confidence:Number(o.ocrAmountConfidence)||0.85 },
+          { value:parsed.amount, confidence:Number(o.voiceAmountConfidence)||0.93 }
+        );
+        if (fused.decision === 'ACCEPT') {
+          if (Number(out.amount) !== Number(fused.value)) changes.push('amount');
+          out.amount = fused.value;
+          out.__amountFusion = fused;
+        } else {
+          // REVIEW/RETRY never silently overwrites a financial amount.
+          out.__amountFusion = fused;
+          return { ok:false, error:fused.reason, decision:fused.decision, coreFields:out, spoken, changes, parsed, fusion:fused };
+        }
+      }
+    }
     if (parsed.date && !out.date) { out.date = parsed.date; changes.push('date'); }
     if (parsed.category && !out.category) { out.category = parsed.category; changes.push('category'); }
     if (parsed.account && !out.account) { out.account = parsed.account; changes.push('account'); }
@@ -315,6 +340,8 @@
       report.coreFields = v.coreFields || report.coreFields;
       report.spoken = v.spoken || '';
       report.changes = v.changes || [];
+      if (v.fusion) report.fusion = v.fusion;
+      if (v.decision) report.decision = v.decision;
       if (!v.ok && !report.error) report.error = v.error;
     }
 
@@ -322,7 +349,8 @@
     if (global.ValidateKit && global.ValidateKit.transaction && global.ValidateKit.transaction.normalizeCore) {
       report.coreFields = global.ValidateKit.transaction.normalizeCore(report.coreFields);
     }
-    report.ok = !!(report.coreFields && (report.coreFields.amount != null || report.coreFields.merchant || report.coreFields.date));
+    const hasCore = !!(report.coreFields && (report.coreFields.amount != null || report.coreFields.merchant || report.coreFields.date));
+    report.ok = hasCore && report.decision !== 'RETRY' && report.decision !== 'REVIEW';
     return report;
   }
 

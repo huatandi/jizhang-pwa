@@ -20,6 +20,19 @@ let expensePageRows = null;
 let purchasePageRows = null;
 let incomePageLen = 0, expensePageLen = 0, purchasePageLen = 0;
 
+function prepareTransaction(type, body, source) {
+  const core = global.JizhangIntelligence && global.JizhangIntelligence.TransactionCore;
+  if (!core || typeof core.prepare !== 'function') return { ok: true, legacy: body, transaction: null, errors: [], warnings: [] };
+  return core.prepare(type, body, source || 'manual');
+}
+function rejectPrepared(prepared) {
+  if (prepared && prepared.ok) return false;
+  const core = global.JizhangIntelligence && global.JizhangIntelligence.TransactionCore;
+  const msg = core && core.userMessage ? core.userMessage(prepared && prepared.errors) : '交易数据校验失败';
+  showToast(msg, 'error');
+  return true;
+}
+
 /** 生成"加载更多"行（若还有未渲染数据） */
 function moreRow(tbodyId, len, total, kind) {
   const moreBtn = `<tr class="pager-more-row"><td colspan="8" style="text-align:center;padding:10px">
@@ -67,11 +80,13 @@ async function renderIncome() {
       <span class="income-pair">
         ${catIconHtml(r.project || '', 'income')}
         <span class="tag tag-blue"><a class="query-link" onclick="openQuery('income_category','${escJs(r.project || '')}')">${escapeHtml(r.project || '未填')}</a></span>
+        ${r.semantic_type === 'refund' ? '<span class="tag tag-blue">↩️ 退款冲减</span>' : r.semantic_type === 'reimbursement' ? '<span class="tag tag-blue">📋 报销冲减</span>' : ''}
         <span class="tag tag-green"><a class="query-link" onclick="openQuery('account','${escJs(r.account || '')}')">${escapeHtml(r.account || '未填')}</a></span>
         <b class="amount positive">¥${fmtMoney(r.amount)}</b>
         ${r.created_by ? `<span class="pair-created-by" title="记账人">👤${escapeHtml(r.created_by)}</span>` : ''}
         <span class="pair-actions">
           ${r.voucher ? `<button class="action-btn" onclick="showVoucher('${escJs(r.voucher)}')" title="查看凭证">🖼️</button>` : ''}
+          ${r.linked_record_id ? `<button class="action-btn" onclick="editExpense(${Number(r.linked_record_id)})" title="查看关联原支出">🔗</button>` : ''}
           <button class="action-btn" onclick="editIncome(${r.id})" title="编辑">✏️</button>
           <button class="action-btn delete" onclick="deleteIncome(${r.id})" title="删除">🗑️</button>
         </span>
@@ -121,6 +136,8 @@ function openIncomeModal(prefillDate) {
   document.getElementById('iDiscount').value = '';
   document.getElementById('iHandler').value = '';
   document.getElementById('iRemark').value = '';
+  const sem = document.getElementById('iSemanticType'); if (sem) sem.value = 'income';
+  const link=document.getElementById('iLinkedExpense'); if(link) link.value=''; syncIncomeSemanticLink();
   fillSelect('iProject', options.departments, true);
   fillAccountSelect ? fillAccountSelect('iAccount', true) : fillSelect('iAccount', options.accounts, true);
   fillSelect('iCardPending', options.discount_accounts, true);
@@ -139,6 +156,8 @@ function editIncome(id) {
     document.getElementById('iDiscount').value = r.discount || '';
     document.getElementById('iHandler').value = r.handler || '';
     document.getElementById('iRemark').value = r.remark || '';
+    const sem = document.getElementById('iSemanticType'); if (sem) sem.value = r.semantic_type || 'income';
+    syncIncomeSemanticLink(r.linked_record_id || 0);
     fillSelect('iProject', options.departments, true);
     fillAccountSelect ? fillAccountSelect('iAccount', true) : fillSelect('iAccount', options.accounts, true);
     fillSelect('iCardPending', options.discount_accounts, true);
@@ -180,14 +199,20 @@ async function maybeDup(type, d) {
     if (r && r.dup) {
       const first = r.matches && r.matches[0];
       const hint = first ? `\n（例：${first.date}｜¥${first.amount}｜${first.category || '-'}｜${first.account || '-'}，命中 ${first.hit} 项）` : '';
-      return confirm(`⚠️ 疑似重复记账！\n已存在与该条目在「日期/金额/分类/账户」中 ≥2 项相同的记录${hint}\n\n继续保存吗？`);
+      return confirm(`⚠️ 疑似重复记账！\n已存在与该条目与当前记录高度相似的记录（金额为核心，并结合日期/分类/账户加权判断）${hint}\n\n继续保存吗？`);
     }
     return true;
   } catch (e) { return true; } // 检查失败不阻塞保存
 }
 
+async function syncIncomeSemanticLink(selectedId) {
+  const sem=(document.getElementById('iSemanticType')||{}).value||'income'; const wrap=document.getElementById('iLinkedExpenseWrap'); const sel=document.getElementById('iLinkedExpense');
+  if(!wrap||!sel)return; wrap.hidden=sem==='income'; if(sem==='income'){sel.value='';return;}
+  try{ const rows=await api('/expense'); const recent=rows.slice(0,300); sel.innerHTML='<option value="">-- 选择原支出 --</option>'+recent.map(r=>`<option value="${r.id}">${escapeHtml(r.date||'')} · ${escapeHtml(r.category||r.payee||'支出')} · ¥${fmtMoney(r.amount)}</option>`).join(''); if(selectedId)sel.value=String(selectedId); }catch(e){sel.innerHTML='<option value="">原支出读取失败</option>';}
+}
+
 async function saveIncome() {
-  const d = {
+  let d = {
     date: document.getElementById('iDate').value,
     project: document.getElementById('iProject').value,
     pay_method: '', // 收款方式已从界面移除（V5）
@@ -197,8 +222,14 @@ async function saveIncome() {
     card_pending_account: document.getElementById('iCardPending').value,
     handler: document.getElementById('iHandler').value,
     remark: document.getElementById('iRemark').value,
-    currency: (document.getElementById('iCurrency') || {}).value || BASE_CURRENCY()
+    currency: (document.getElementById('iCurrency') || {}).value || BASE_CURRENCY(),
+    semantic_type: (document.getElementById('iSemanticType') || {}).value || 'income',
+    linked_record_id: Number((document.getElementById('iLinkedExpense') || {}).value) || 0
   };
+  if(d.semantic_type!=='income' && !d.linked_record_id) return showToast('退款/报销必须选择对应的原支出','error');
+  const prepared = prepareTransaction('income', d, 'manual');
+  if (rejectPrepared(prepared)) return;
+  d = prepared.legacy;
   if (!d.date) return showToast('请选择日期', 'error');
   // 审计 M6 修复：金额必须为正数且有限（拒绝 0/负数/NaN/Infinity/1e999）
   const amt = Number(d.amount);
@@ -220,10 +251,25 @@ async function saveIncome() {
   });
 }
 
+function showLedgerUndo(trashId, label) {
+  let bar = document.getElementById('ledgerUndoBar');
+  if (!bar) {
+    bar = document.createElement('div'); bar.id = 'ledgerUndoBar'; bar.className = 'ledger-undo-bar'; document.body.appendChild(bar);
+  }
+  bar.innerHTML = `<span>${escapeHtml(label || '记录')}已移入回收站</span><button type="button">↩️ 撤销</button>`;
+  bar.classList.add('show');
+  const timer = setTimeout(() => bar.classList.remove('show'), 8000);
+  bar.querySelector('button').onclick = async () => {
+    clearTimeout(timer);
+    try { await api('/trash/' + trashId + '/restore', 'POST', {}); bar.classList.remove('show'); showToast('✅ 已恢复'); renderIncome(); renderExpense(); renderPurchase(); refreshDashboards(); }
+    catch (e) { showToast(e.message || '恢复失败', 'error'); }
+  };
+}
+
 async function deleteIncome(id) {
-  if (!confirm('确定删除这条收入记录？')) return;
-  await api('/income/' + id, 'DELETE');
-  showToast('已删除');
+  if (!confirm('确定删除这条收入记录？\n删除后会进入回收站，可以恢复。')) return;
+  const r = await api('/income/' + id, 'DELETE');
+  showLedgerUndo(r.trashId, '收入记录');
   renderIncome();
   refreshDashboards();
 }
@@ -398,6 +444,8 @@ async function renderPurchase() {
       <td class="amount ${unpaid > 0 ? 'negative' : ''}">${st.cleared ? clearedBadge : (unpaid > 0 ? '¥' + fmtMoney(unpaid) : '')}</td>
       <td>${escapeHtml(r.remark)}${r.created_by ? ` <span class="pair-created-by" title="记账人">👤${escapeHtml(r.created_by)}</span>` : ''}</td>
       <td>
+        <button class="action-btn" onclick="addPurchasePayment(${r.id})" title="登记本次付款">💵</button>
+        <button class="action-btn" onclick="showPurchasePaymentHistory(${r.id})" title="查看付款历史">📜</button>
         <button class="action-btn" onclick="editPurchase(${r.id})" title="编辑">✏️</button>
         <button class="action-btn delete" onclick="deletePurchase(${r.id})" title="删除">🗑️</button>
       </td>
@@ -440,7 +488,7 @@ function editPurchase(id) {
 
 async function savePurchase() {
   const supplier = document.getElementById('pSupplier').value || document.getElementById('pSupplierNew').value.trim();
-  const d = {
+  let d = {
     doc_date: document.getElementById('pDate').value,
     supplier,
     total_amount: document.getElementById('pTotal').value,
@@ -449,6 +497,9 @@ async function savePurchase() {
     remark: document.getElementById('pRemark').value,
     currency: (document.getElementById('pCurrency') || {}).value || BASE_CURRENCY()
   };
+  const prepared = prepareTransaction('purchase', d, 'manual');
+  if (rejectPrepared(prepared)) return;
+  d = prepared.legacy;
   if (!supplier) return showToast('请选择或输入供货商', 'error');
   // 审计 M6 修复：进货日期与进货款必填且为正数
   if (!d.doc_date) return showToast('请选择进货日期', 'error');
@@ -457,9 +508,13 @@ async function savePurchase() {
   if (d.paid_amount) {
     const paid = Number(d.paid_amount);
     if (!Number.isFinite(paid) || paid < 0) return showToast('已付金额无效', 'error');
+    if (paid > total + 0.005) return showToast('已付金额不能大于进货总额；如属预付款，请单独记录并在备注关联', 'error');
     d.paid_amount = Math.round(paid * 100) / 100;
   }
   d.total_amount = Math.round(total * 100) / 100;
+  // 付款状态由金额事实兜底，避免“已付清但状态仍未付”的统计矛盾。
+  const paidNow = Number(d.paid_amount) || 0;
+  if (paidNow >= d.total_amount - 0.005 && d.total_amount > 0 && !d.status) d.status = '清零';
   return withSubmitLock('purchase', async () => {
     if (editingPurchaseId) {
       await api('/purchase/' + editingPurchaseId, 'PUT', d);
@@ -476,10 +531,38 @@ async function savePurchase() {
   });
 }
 
+async function addPurchasePayment(id) {
+  const rows = await api('/purchase'); const r = rows.find(x => x.id === id); if (!r) return showToast('进货记录不存在','error');
+  const remain = Math.max(0, (Number(r.total_amount)||0) - (Number(r.paid_amount)||0));
+  if (remain <= 0.005) return showPurchasePaymentHistory(id);
+  const amountText = prompt(`本次付款金额（剩余 ¥${fmtMoney(remain)}）：`, String(remain));
+  if (amountText == null) return; const amount = Number(amountText);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > remain + 0.005) return showToast('付款金额无效或超过剩余未付款','error');
+  const date = prompt('付款日期（YYYY-MM-DD）：', todayLocal()); if (!date) return;
+  const account = prompt('付款账户（可留空）：', r.pay_method || '') || '';
+  const reference = prompt('参考号 / Folio（可留空）：','') || '';
+  const remark = prompt('付款备注（可留空）：','') || '';
+  try {
+    const out = await api('/purchase/' + id + '/payments','POST',{pay_date:date,amount,account,reference,remark,currency:r.currency||BASE_CURRENCY()});
+    showToast(out.remaining > 0 ? `已登记付款，剩余 ¥${fmtMoney(out.remaining)}` : '✅ 该笔货款已结清');
+    renderPurchase(); refreshDashboards(); showPurchasePaymentHistory(id);
+  } catch(e){ showToast(e.message || '付款保存失败','error'); }
+}
+
+async function showPurchasePaymentHistory(id){
+  const purchases=await api('/purchase'); const p=purchases.find(x=>x.id===id); if(!p)return showToast('进货记录不存在','error'); const rows=await api('/purchase/'+id+'/payments');
+  let modal=document.getElementById('paymentHistoryModal'); if(!modal){modal=document.createElement('div');modal.id='paymentHistoryModal';modal.className='modal-overlay';document.body.appendChild(modal);}
+  const remain=Math.max(0,(Number(p.total_amount)||0)-(Number(p.paid_amount)||0));
+  modal.innerHTML=`<div class="modal"><div class="modal-header"><h3>💵 分次付款历史</h3><button class="modal-close" onclick="closePaymentHistory()">×</button></div><div class="modal-body"><div style="margin-bottom:10px"><b>${escapeHtml(p.supplier||'供应商')}</b> · 总额 ¥${fmtMoney(p.total_amount)} · 已付 ¥${fmtMoney(p.paid_amount)} · <b>未付 ¥${fmtMoney(remain)}</b></div><div style="display:grid;gap:8px">${rows.length?rows.map(x=>`<div class="recur-item"><span>${fmtDate(x.pay_date)} · <b>¥${fmtMoney(x.amount)}</b>${x.account?' · '+escapeHtml(x.account):''}${x.reference?' · '+escapeHtml(x.reference):''}${x.remark?' · '+escapeHtml(x.remark):''}</span><button class="action-btn delete" onclick="deletePurchasePayment(${id},${x.id})" title="撤销这次付款">🗑️</button></div>`).join(''):'<div class="opt-empty">暂无分次付款流水</div>'}</div></div><div class="modal-footer"><button class="btn-secondary" onclick="closePaymentHistory()">关闭</button>${remain>0.005?`<button class="btn-primary" onclick="closePaymentHistory();addPurchasePayment(${id})">＋ 登记付款</button>`:''}</div></div>`;
+  modal.classList.add('active');
+}
+function closePaymentHistory(){const m=document.getElementById('paymentHistoryModal');if(m)m.classList.remove('active');}
+async function deletePurchasePayment(pid,payId){if(!confirm('撤销这次付款记录？\n撤销后已付款/未付款金额会自动重新计算。'))return;try{const out=await api('/purchase/'+pid+'/payments/'+payId,'DELETE');showToast(`付款已撤销，剩余 ¥${fmtMoney(out.remaining)}`);renderPurchase();refreshDashboards();showPurchasePaymentHistory(pid);}catch(e){showToast(e.message||'撤销付款失败','error');}}
+
 async function deletePurchase(id) {
-  if (!confirm('确定删除这条进货记录？')) return;
-  await api('/purchase/' + id, 'DELETE');
-  showToast('已删除');
+  if (!confirm('确定删除这条进货记录？\n删除后会进入回收站，可以恢复。')) return;
+  const r = await api('/purchase/' + id, 'DELETE');
+  showLedgerUndo(r.trashId, '进货记录');
   renderPurchase();
   refreshDashboards();
 }
@@ -579,7 +662,7 @@ function editExpense(id) {
 }
 
 async function saveExpense() {
-  const d = {
+  let d = {
     date: document.getElementById('eDate').value,
     category: document.getElementById('eCategory').value,
     amount: document.getElementById('eAmount').value,
@@ -589,6 +672,9 @@ async function saveExpense() {
     remark: document.getElementById('eRemark').value,
     currency: (document.getElementById('eCurrency') || {}).value || BASE_CURRENCY()
   };
+  const prepared = prepareTransaction('expense', d, 'manual');
+  if (rejectPrepared(prepared)) return;
+  d = prepared.legacy;
   if (!d.date) return showToast('请选择日期', 'error');
   // 审计 M6 修复：金额必须为正数且有限
   const amt = Number(d.amount);
@@ -611,19 +697,19 @@ async function saveExpense() {
 }
 
 async function deleteExpense(id) {
-  if (!confirm('确定删除这条支出记录？')) return;
-  await api('/expense/' + id, 'DELETE');
-  showToast('已删除');
+  if (!confirm('确定删除这条支出记录？\n删除后会进入回收站，可以恢复。')) return;
+  const r = await api('/expense/' + id, 'DELETE');
+  showLedgerUndo(r.trashId, '支出记录');
   renderExpense();
   refreshDashboards();
 }
 
   // ===== 显式暴露全局函数名（HTML onclick + JS 生成的 onclick 需要） =====
   Object.assign(global, {
-    renderIncome, openIncomeModal, editIncome, saveIncome, deleteIncome,
+    renderIncome, openIncomeModal, editIncome, saveIncome, syncIncomeSemanticLink, deleteIncome,
     openSupplierModal, discountBadgeHtml, renderSuppliers, addSupplier, renameSupplier, deleteSupplier,
     supplierClearDates, recordUnpaid, supplierSettlement, isClearRecord,
-    renderPurchase, openPurchaseModal, editPurchase, savePurchase, deletePurchase,
+    renderPurchase, openPurchaseModal, editPurchase, savePurchase, addPurchasePayment, showPurchasePaymentHistory, closePaymentHistory, deletePurchasePayment, deletePurchase,
     renderExpense, openExpenseModal, editExpense, saveExpense, deleteExpense,
   });
 })(typeof window !== 'undefined' ? window : globalThis);

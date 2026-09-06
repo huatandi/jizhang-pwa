@@ -1,0 +1,23 @@
+{
+  "id": "zh_zipformer_transducer",
+  "version": "REPLACE_WITH_RELEASE_VERSION",
+  "language": "zh",
+  "family": "zipformer-transducer",
+  "capabilities": [
+    "hotwords",
+    "streaming"
+  ],
+  "assets": [
+    {
+      "url": "vendor/sherpa/zh-zipformer-transducer/REPLACE_PROVIDER_JS",
+      "size": 0,
+      "sha256": "REPLACE_WITH_64_HEX"
+    },
+    {
+      "url": "vendor/sherpa/zh-zipformer-transducer/REPLACE_MODEL_ASSET",
+      "size": 0,
+      "sha256": "REPLACE_WITH_64_HEX"
+    }
+  ],
+  "decodingMethod": "modified_beam_search"
+}

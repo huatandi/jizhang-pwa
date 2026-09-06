@@ -595,7 +595,7 @@ function startReminderVoice() {
       u.lang = reminderVoiceLang === 'es-MX' ? 'es-MX' : reminderVoiceLang === 'en-US' ? 'en-US' : 'zh-CN';
       u.onend = () => {
         if (reminderVoiceSessionActive && !VoiceSR.isListening()) {
-          VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+          VoiceSR.listen({ lang: reminderVoiceLang, continuous: true, mode: 'reminder' }, reminderVoiceHandleResult);
         }
       };
       speechSynthesis.cancel();
@@ -603,16 +603,16 @@ function startReminderVoice() {
       // 兜底：某些浏览器不触发 onend（静音/后台），1.2 秒后无论如何启动监听
       setTimeout(() => {
         if (reminderVoiceSessionActive && !VoiceSR.isListening()) {
-          VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+          VoiceSR.listen({ lang: reminderVoiceLang, continuous: true, mode: 'reminder' }, reminderVoiceHandleResult);
         }
       }, 1200);
     } else {
       announce();
-      VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+      VoiceSR.listen({ lang: reminderVoiceLang, continuous: true, mode: 'reminder' }, reminderVoiceHandleResult);
     }
   } catch (e) {
     announce();
-    VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+    VoiceSR.listen({ lang: reminderVoiceLang, continuous: true, mode: 'reminder' }, reminderVoiceHandleResult);
   }
 }
 function stopReminderVoice() {
@@ -672,7 +672,7 @@ function reminderVoiceHandleResult(r) {
             reminderVoiceSessionActive = true;
             setReminderVoiceBtnState('listening');
             // 强制在线模式：WebSpeech 系统语音（Whisper 连续失败的可靠兜底）
-            VoiceSR.listen({ lang: reminderVoiceLang, continuous: true, forceOnline: useOnline }, reminderVoiceHandleResult);
+            VoiceSR.listen({ lang: reminderVoiceLang, continuous: true, mode: 'reminder', forceOnline: useOnline }, reminderVoiceHandleResult);
           }
         }, 1500);
         return;
@@ -726,7 +726,7 @@ function reminderVoiceHandleResult(r) {
       reminderVoiceSessionActive = true;
       setReminderVoiceBtnState('listening');
       resetReminderIdleTimer();
-      VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+      VoiceSR.listen({ lang: reminderVoiceLang, continuous: true, mode: 'reminder' }, reminderVoiceHandleResult);
     }, 600);
   }
 }
@@ -1097,7 +1097,7 @@ function restartReminderVoiceAfterSaveFail() {
     if (!reminderVoiceSessionActive) {
       reminderVoiceSessionActive = true;
       setReminderVoiceBtnState('listening');
-      VoiceSR.listen({ lang: reminderVoiceLang, continuous: true }, reminderVoiceHandleResult);
+      VoiceSR.listen({ lang: reminderVoiceLang, continuous: true, mode: 'reminder' }, reminderVoiceHandleResult);
     }
   }, 1200);
 }

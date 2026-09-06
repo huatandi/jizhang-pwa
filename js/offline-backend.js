@@ -55,6 +55,41 @@
     return new Response(JSON.stringify({ error: msg }), { status, headers: { 'Content-Type': 'application/json' } });
   }
 
+  function audit(action, tableName, recordId, source, detail, actorName) {
+    try {
+      const cols = DB.prepare('PRAGMA table_info(accounting_audit_log)').all();
+      const hasActor = cols.some(c => c && c.name === 'actor');
+      if (hasActor) DB.prepare('INSERT INTO accounting_audit_log (action, table_name, record_id, source, detail, actor) VALUES (?,?,?,?,?,?)')
+        .run(action, tableName || '', Number(recordId) || 0, source || 'local', detail || '', actorName || '');
+      else DB.prepare('INSERT INTO accounting_audit_log (action, table_name, record_id, source, detail) VALUES (?,?,?,?,?)')
+        .run(action, tableName || '', Number(recordId) || 0, source || 'local', detail || '');
+    } catch (e) { console.warn('[audit]', e); }
+  }
+
+  function restoreTrashRow(trash, actorName) {
+    if (!trash) throw new Error('回收站记录不存在');
+    const table = String(trash.original_table || '');
+    if (!['income','expense','purchase','internal_transfers'].includes(table)) throw new Error('不允许恢复该类型');
+    let row;
+    try { row = JSON.parse(trash.record_json || '{}'); } catch (e) { throw new Error('回收站快照损坏'); }
+    const info = DB.prepare(`PRAGMA table_info(${table})`).all();
+    const valid = new Set(info.map(c => String(c.name)));
+    let cols = Object.keys(row).filter(k => valid.has(k));
+    if (!cols.length) throw new Error('快照没有可恢复字段');
+    const originalId = Number(row.id || trash.original_id) || 0;
+    if (originalId) {
+      const exists = DB.prepare(`SELECT id FROM ${table} WHERE id=?`).get(originalId);
+      if (exists) { delete row.id; cols = cols.filter(k => k !== 'id'); }
+    }
+    const marks = cols.map(() => '?').join(',');
+    const qcols = cols.map(c => `"${c}"`).join(',');
+    const r = DB.prepare(`INSERT INTO ${table} (${qcols}) VALUES (${marks})`).run(...cols.map(c => row[c]));
+    const restoredId = (cols.includes('id') ? Number(row.id) : Number(r.lastInsertRowid)) || originalId;
+    DB.prepare("UPDATE ledger_trash SET restored_at=datetime('now','localtime'), restored_by=? WHERE id=?").run(actorName || '', Number(trash.id));
+    audit('restore', table, restoredId, 'trash', JSON.stringify({ trash_id: trash.id, original_id: trash.original_id }), actorName);
+    return { restoredId, originalId };
+  }
+
   // ---------- 鉴权（与 server 一致：token 会话） ----------
   function getHeader(headers, name) {
     if (!headers) return null;
@@ -228,7 +263,13 @@
       if (s.budget && s.budget.categories && typeof s.budget.categories === 'object') {
         for (const [k, v] of Object.entries(s.budget.categories)) { const n = Number(v); if (n > 0) catBudgets[k] = n; }
       }
-      const recurring = Array.isArray(s.recurring && s.recurring.rules) ? s.recurring.rules.slice(0, 50) : [];
+      const recurring = Array.isArray(s.recurring && s.recurring.rules) ? s.recurring.rules.slice(0, 50).map((r,i) => {
+        const x = (r && typeof r === 'object') ? { ...r } : {};
+        x.id = String(x.id || ('legacy-' + i + '-' + String(x.type||'') + '-' + String(x.category||'') + '-' + String(x.amount||''))).slice(0,120);
+        x.enabled = x.enabled !== false;
+        x.lead_days = Math.max(0, Math.min(30, Number(x.lead_days)||0));
+        return x;
+      }) : [];
       const tone = String((s.alarm && s.alarm.tone) || 'classic');
       const alarm = {
         tone: ['classic', 'urgent', 'gentle', 'silent'].includes(tone) ? tone : 'classic',
@@ -301,7 +342,8 @@
       const fp = (pf.sql ? pf.sql + ' AND mode = ?' : 'WHERE mode = ?');
       const q = (sql, ...params) => DB.prepare(sql).get(...params);
 
-      const totalIncome = q(`SELECT COALESCE(SUM(amount),0) t FROM income ${mf}`, ...f.params, mode).t;
+      const totalIncome = q(`SELECT COALESCE(SUM(amount),0) t FROM income ${mf}${mf ? ' AND' : ' WHERE'} COALESCE(semantic_type,'income')='income'`, ...f.params, mode).t;
+      const expenseOffsets = q(`SELECT COALESCE(SUM(amount),0) t FROM income ${mf}${mf ? ' AND' : ' WHERE'} COALESCE(semantic_type,'income') IN ('refund','reimbursement')`, ...f.params, mode).t;
       const totalDiscount = q(`SELECT COALESCE(SUM(discount),0) t FROM income ${mf}`, ...f.params, mode).t;
       const cardPending = q(
         `SELECT COALESCE(SUM(amount),0) t FROM income WHERE ${(mf ? mf.replace(/^WHERE /, '') + ' AND ' : '')}(account = ? OR card_pending_account <> '')`,
@@ -318,7 +360,7 @@
 
       const expenseSum = q(`SELECT COALESCE(SUM(amount),0) t FROM expense ${mf}`, ...f.params, mode).t;
       const purchasePaid = q(`SELECT COALESCE(SUM(paid_amount),0) t FROM purchase ${fp}`, ...pf.params, mode).t;
-      const totalExpense = money(expenseSum + purchasePaid);
+      const totalExpense = money(Math.max(0, expenseSum + purchasePaid - expenseOffsets));
       const balance = money(totalIncomeNet - totalExpense);
 
       // 分组
@@ -357,7 +399,9 @@
           `SELECT COALESCE(SUM(amount),0) t FROM income WHERE ${(mf ? mf.replace(/^WHERE /, '') + ' AND ' : '')}(account = ? OR card_pending_account = ?)`,
           ...f.params, mode, acc, acc
         ).t;
-        const bal = money(initial + inc - exp - pay - accPending);
+        const transferIn = q(`SELECT COALESCE(SUM(amount),0) t FROM internal_transfers WHERE mode=? AND to_account=?${start ? ' AND date >= ?' : ''}${end ? ' AND date <= ?' : ''}`, mode, acc, ...([start,end].filter(Boolean))).t;
+        const transferOut = q(`SELECT COALESCE(SUM(amount),0) t FROM internal_transfers WHERE mode=? AND from_account=?${start ? ' AND date >= ?' : ''}${end ? ' AND date <= ?' : ''}`, mode, acc, ...([start,end].filter(Boolean))).t;
+        const bal = money(initial + inc - exp - pay - accPending + transferIn - transferOut);
         accountBalances[acc] = bal;
         if (meta.acc_type === 'liability') totalLiabilities += Math.max(0, -bal);
         else totalAssets += Math.max(0, bal);
@@ -373,20 +417,22 @@
       const monthly = [];
       for (const ym of monthSet) {
         const ms = ym + '-01', me = ym + '-31';
-        const income = q(`SELECT COALESCE(SUM(amount),0) t FROM income WHERE date >= ? AND date <= ? AND mode=?`, ms, me, mode).t;
+        const income = q(`SELECT COALESCE(SUM(amount),0) t FROM income WHERE date >= ? AND date <= ? AND mode=? AND COALESCE(semantic_type,'income')='income'`, ms, me, mode).t;
+        const offsets = q(`SELECT COALESCE(SUM(amount),0) t FROM income WHERE date >= ? AND date <= ? AND mode=? AND COALESCE(semantic_type,'income') IN ('refund','reimbursement')`, ms, me, mode).t;
         const expense = q(`SELECT COALESCE(SUM(amount),0) t FROM expense WHERE date >= ? AND date <= ? AND mode=?`, ms, me, mode).t;
         const paid = q(`SELECT COALESCE(SUM(paid_amount),0) t FROM purchase WHERE doc_date >= ? AND doc_date <= ? AND mode=?`, ms, me, mode).t;
-        monthly.push({ month: ym, income: money(income), expense: money(expense + paid), net: money(income - expense - paid) });
+        monthly.push({ month: ym, income: money(income), expense: money(Math.max(0, expense + paid - offsets)), net: money(income - expense - paid + offsets) });
       }
 
       // 同比环比
       const monthSum = (ym, type) => {
         const ms = ym + '-01', me = ym + '-31';
-        if (type === 'income') return q(`SELECT COALESCE(SUM(amount),0) t FROM income WHERE date >= ? AND date <= ? AND mode=?`, ms, me, mode).t;
+        if (type === 'income') return q(`SELECT COALESCE(SUM(amount),0) t FROM income WHERE date >= ? AND date <= ? AND mode=? AND COALESCE(semantic_type,'income')='income'`, ms, me, mode).t;
         if (type === 'expense') {
           const e = q(`SELECT COALESCE(SUM(amount),0) t FROM expense WHERE date >= ? AND date <= ? AND mode=?`, ms, me, mode).t;
           const p = q(`SELECT COALESCE(SUM(paid_amount),0) t FROM purchase WHERE doc_date >= ? AND doc_date <= ? AND mode=?`, ms, me, mode).t;
-          return e + p;
+          const o = q(`SELECT COALESCE(SUM(amount),0) t FROM income WHERE date >= ? AND date <= ? AND mode=? AND COALESCE(semantic_type,'income') IN ('refund','reimbursement')`, ms, me, mode).t;
+          return Math.max(0, e + p - o);
         }
         return 0;
       };
@@ -447,9 +493,16 @@
         let r;
         if (table === 'income') {
           const baseAmount = toBaseAmount(d.amount, currency);
-          r = DB.prepare(`INSERT INTO income (date, project, pay_method, account, amount, handler, remark, discount, card_pending_account, voucher, mode, currency, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-            .run(d.date, d.project || '', d.pay_method || '', d.account || '', baseAmount, d.handler || '', d.remark || '', num(d.discount), d.card_pending_account || '', d.voucher || '', mode, currency, actorName);
+          const semantic=String(d.semantic_type||'income'); const linked=Number(d.linked_record_id)||0;
+          if (semantic !== 'income') {
+            const original=DB.prepare('SELECT * FROM expense WHERE id=? AND mode=?').get(linked,mode);
+            if(!original) return fail('退款/报销必须关联一笔有效的原支出');
+            const used=DB.prepare("SELECT COALESCE(SUM(amount),0) t FROM income WHERE mode=? AND linked_record_id=? AND semantic_type IN ('refund','reimbursement')").get(mode,linked).t;
+            if(num(used)+baseAmount>num(original.amount)+0.005) return fail('累计退款/报销金额不能超过原支出金额');
+          }
+          r = DB.prepare(`INSERT INTO income (date, project, pay_method, account, amount, handler, remark, discount, card_pending_account, voucher, mode, currency, created_by, semantic_type, linked_record_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+            .run(d.date, d.project || '', d.pay_method || '', d.account || '', baseAmount, d.handler || '', d.remark || '', num(d.discount), d.card_pending_account || '', d.voucher || '', mode, currency, actorName, semantic, linked);
         } else if (table === 'purchase') {
           const totalBase = toBaseAmount(d.total_amount, currency);
           const paidBase = toBaseAmount(d.paid_amount, currency);
@@ -459,9 +512,9 @@
           if (d.supplier) DB.prepare('INSERT OR IGNORE INTO suppliers (name) VALUES (?)').run(d.supplier);
         } else {
           const baseAmount = toBaseAmount(d.amount, currency);
-          r = DB.prepare(`INSERT INTO expense (date, category, amount, account, handler, remark, voucher, mode, currency, payee, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.remark || '', d.voucher || '', mode, currency, d.payee || '', actorName);
+          r = DB.prepare(`INSERT INTO expense (date, category, amount, account, handler, remark, voucher, mode, currency, payee, created_by, semantic_type, linked_record_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.remark || '', d.voucher || '', mode, currency, d.payee || '', actorName, d.semantic_type || 'expense', Number(d.linked_record_id)||0);
         }
         return ok({ id: r.lastInsertRowid, currency });
       }
@@ -470,11 +523,32 @@
         const currency = String(d.currency || 'MXN').toUpperCase();
         let r;
         if (method === 'DELETE') {
-          r = DB.prepare(`DELETE FROM ${table} WHERE id=? AND mode=?`).run(Number(id), mode);
+          const row = DB.prepare(`SELECT * FROM ${table} WHERE id=? AND mode=?`).get(Number(id), mode);
+          if (!row) return fail('记录不存在或已删除', 404);
+          const reason = String((body && body.reason) || query.reason || '').slice(0, 200);
+          DB.exec('BEGIN');
+          try {
+            const tr = DB.prepare(`INSERT INTO ledger_trash (original_table, original_id, record_json, mode, deleted_by, delete_reason) VALUES (?,?,?,?,?,?)`)
+              .run(table, Number(id), JSON.stringify(row), mode, actorName || '', reason);
+            r = DB.prepare(`DELETE FROM ${table} WHERE id=? AND mode=?`).run(Number(id), mode);
+            audit('soft_delete', table, Number(id), 'ledger', JSON.stringify({ trash_id: tr.lastInsertRowid, reason }), actorName);
+            DB.exec('COMMIT');
+            return ok({ ok: true, softDeleted: true, trashId: tr.lastInsertRowid, id: Number(id), table });
+          } catch (e) {
+            try { DB.exec('ROLLBACK'); } catch (e2) {}
+            return fail('删除失败，原记录未改变: ' + ((e && e.message) || e), 500);
+          }
         } else if (table === 'income') {
           const baseAmount = toBaseAmount(d.amount, currency);
-          r = DB.prepare(`UPDATE income SET date=?, project=?, pay_method=?, account=?, amount=?, handler=?, remark=?, discount=?, card_pending_account=?, voucher=?, currency=? WHERE id=? AND mode=?`)
-            .run(d.date, d.project || '', d.pay_method || '', d.account || '', baseAmount, d.handler || '', d.remark || '', num(d.discount), d.card_pending_account || '', d.voucher || '', currency, Number(id), mode);
+          const semantic=String(d.semantic_type||'income'); const linked=Number(d.linked_record_id)||0;
+          if (semantic !== 'income') {
+            const original=DB.prepare('SELECT * FROM expense WHERE id=? AND mode=?').get(linked,mode);
+            if(!original) return fail('退款/报销必须关联一笔有效的原支出');
+            const used=DB.prepare("SELECT COALESCE(SUM(amount),0) t FROM income WHERE mode=? AND linked_record_id=? AND id<>? AND semantic_type IN ('refund','reimbursement')").get(mode,linked,Number(id)).t;
+            if(num(used)+baseAmount>num(original.amount)+0.005) return fail('累计退款/报销金额不能超过原支出金额');
+          }
+          r = DB.prepare(`UPDATE income SET date=?, project=?, pay_method=?, account=?, amount=?, handler=?, remark=?, discount=?, card_pending_account=?, voucher=?, currency=?, semantic_type=?, linked_record_id=? WHERE id=? AND mode=?`)
+            .run(d.date, d.project || '', d.pay_method || '', d.account || '', baseAmount, d.handler || '', d.remark || '', num(d.discount), d.card_pending_account || '', d.voucher || '', currency, semantic, linked, Number(id), mode);
         } else if (table === 'purchase') {
           const totalBase = toBaseAmount(d.total_amount, currency);
           const paidBase = toBaseAmount(d.paid_amount, currency);
@@ -482,12 +556,68 @@
             .run(d.doc_date || '', d.supplier || '', totalBase, d.pay_method || '', paidBase, d.status || '', d.remark || '', currency, Number(id), mode);
         } else {
           const baseAmount = toBaseAmount(d.amount, currency);
-          r = DB.prepare(`UPDATE expense SET date=?, category=?, amount=?, account=?, handler=?, remark=?, voucher=?, currency=?, payee=? WHERE id=? AND mode=?`)
-            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.remark || '', d.voucher || '', currency, d.payee || '', Number(id), mode);
+          r = DB.prepare(`UPDATE expense SET date=?, category=?, amount=?, account=?, handler=?, remark=?, voucher=?, currency=?, payee=?, semantic_type=?, linked_record_id=? WHERE id=? AND mode=?`)
+            .run(d.date, d.category || '', baseAmount, d.account || '', d.handler || '', d.remark || '', d.voucher || '', currency, d.payee || '', d.semantic_type || 'expense', Number(d.linked_record_id)||0, Number(id), mode);
         }
         if (r.changes === 0) return fail('记录不存在或不属于当前账本', 404);
         return ok({ ok: true });
       }
+    }
+
+    // ---- internal transfers / partial purchase payments (V185) ----
+    if (path === '/transfers' && method === 'GET') {
+      return ok(DB.prepare('SELECT * FROM internal_transfers WHERE mode=? ORDER BY date DESC,id DESC LIMIT 1000').all(mode));
+    }
+    if (path === '/transfers' && method === 'POST') {
+      const d = body || {}; const from = String(d.from_account||'').trim(), to = String(d.to_account||'').trim();
+      const amt = toBaseAmount(d.amount, d.currency || 'MXN');
+      if (!d.date || !from || !to || from === to || !(amt > 0)) return fail('转账日期、不同的转出/转入账户和正数金额为必填');
+      const r = DB.prepare(`INSERT INTO internal_transfers(date,from_account,to_account,amount,currency,reference,remark,mode,created_by) VALUES (?,?,?,?,?,?,?,?,?)`)
+        .run(d.date, from, to, amt, String(d.currency||'MXN').toUpperCase(), d.reference||'', d.remark||'', mode, actorName);
+      audit('transfer_create','internal_transfers',r.lastInsertRowid,'ledger',JSON.stringify({from,to,amount:amt}),actorName);
+      return ok({ok:true,id:r.lastInsertRowid});
+    }
+    const transferDel = path.match(/^\/transfers\/(\d+)$/);
+    if (transferDel && method === 'DELETE') {
+      const tid=Number(transferDel[1]); const row=DB.prepare('SELECT * FROM internal_transfers WHERE id=? AND mode=?').get(tid,mode);
+      if (!row) return fail('转账记录不存在',404);
+      DB.exec('BEGIN');
+      try {
+        const tr=DB.prepare(`INSERT INTO ledger_trash(original_table,original_id,record_json,mode,deleted_by,delete_reason) VALUES (?,?,?,?,?,?)`).run('internal_transfers',tid,JSON.stringify(row),mode,actorName,'internal_transfer_delete');
+        DB.prepare('DELETE FROM internal_transfers WHERE id=? AND mode=?').run(tid,mode);
+        audit('soft_delete','internal_transfers',tid,'ledger',JSON.stringify({trash_id:tr.lastInsertRowid}),actorName); DB.exec('COMMIT');
+        return ok({ok:true,softDeleted:true,trashId:tr.lastInsertRowid});
+      } catch(e){ try{DB.exec('ROLLBACK')}catch(e2){} return fail('删除转账失败，原记录未改变: '+((e&&e.message)||e),500); }
+    }
+    const payMatch = path.match(/^\/purchase\/(\d+)\/payments$/);
+    if (payMatch && method === 'GET') return ok(DB.prepare('SELECT * FROM purchase_payments WHERE purchase_id=? AND mode=? ORDER BY pay_date DESC,id DESC').all(Number(payMatch[1]),mode));
+    const payDel = path.match(/^\/purchase\/(\d+)\/payments\/(\d+)$/);
+    if (payDel && method === 'DELETE') {
+      const pid=Number(payDel[1]), payId=Number(payDel[2]); const p=DB.prepare('SELECT * FROM purchase WHERE id=? AND mode=?').get(pid,mode); const payment=DB.prepare('SELECT * FROM purchase_payments WHERE id=? AND purchase_id=? AND mode=?').get(payId,pid,mode);
+      if(!p || !payment) return fail('付款记录不存在',404);
+      DB.exec('BEGIN');
+      try {
+        DB.prepare('DELETE FROM purchase_payments WHERE id=? AND purchase_id=? AND mode=?').run(payId,pid,mode);
+        const newPaid=money(Math.max(0,num(p.paid_amount)-num(payment.amount))); const status=newPaid>=num(p.total_amount)-0.005?'清零':(newPaid>0?'部分付款':'未付款');
+        DB.prepare('UPDATE purchase SET paid_amount=?,status=? WHERE id=? AND mode=?').run(newPaid,status,pid,mode);
+        audit('purchase_payment_delete','purchase',pid,'ledger',JSON.stringify({payment_id:payId,amount:payment.amount}),actorName); DB.exec('COMMIT');
+        return ok({ok:true,paid_amount:newPaid,remaining:money(Math.max(0,num(p.total_amount)-newPaid)),status});
+      }catch(e){try{DB.exec('ROLLBACK')}catch(e2){} return fail('撤销付款失败: '+((e&&e.message)||e),500);}
+    }
+    if (payMatch && method === 'POST') {
+      const pid=Number(payMatch[1]), d=body||{}, p=DB.prepare('SELECT * FROM purchase WHERE id=? AND mode=?').get(pid,mode);
+      if(!p) return fail('进货记录不存在',404);
+      const amt=toBaseAmount(d.amount,d.currency||p.currency||'MXN'); const remain=Math.max(0,num(p.total_amount)-num(p.paid_amount));
+      if(!d.pay_date || !(amt>0)) return fail('付款日期和正数金额为必填');
+      if(amt>remain+0.005) return fail('本次付款不能超过剩余未付款金额');
+      DB.exec('BEGIN');
+      try {
+        const r=DB.prepare(`INSERT INTO purchase_payments(purchase_id,pay_date,amount,account,reference,remark,mode,created_by) VALUES (?,?,?,?,?,?,?,?)`).run(pid,d.pay_date,amt,d.account||'',d.reference||'',d.remark||'',mode,actorName);
+        const newPaid=money(num(p.paid_amount)+amt), status=newPaid>=num(p.total_amount)-0.005?'清零':(p.status||'部分付款');
+        DB.prepare('UPDATE purchase SET paid_amount=?, status=? WHERE id=? AND mode=?').run(newPaid,status,pid,mode);
+        audit('purchase_payment','purchase',pid,'ledger',JSON.stringify({payment_id:r.lastInsertRowid,amount:amt}),actorName); DB.exec('COMMIT');
+        return ok({ok:true,id:r.lastInsertRowid,paid_amount:newPaid,remaining:money(Math.max(0,num(p.total_amount)-newPaid)),status});
+      } catch(e){ try{DB.exec('ROLLBACK')}catch(e2){} return fail('付款保存失败: '+((e&&e.message)||e),500); }
     }
 
     // ---- suppliers ----
@@ -611,28 +741,39 @@
       const catCol = type === 'income' ? 'project' : type === 'expense' ? 'category' : 'supplier';
       const amtCol = type === 'purchase' ? 'total_amount' : 'amount';
       const actCol = type === 'purchase' ? 'pay_method' : 'account';
-      const rows = DB.prepare(`SELECT id, ${dateCol} d, ${amtCol} a, ${catCol} c, ${actCol} ac FROM ${table} WHERE mode=?`).all(mode);
-      let best = null, bestCount = 0;
+      // 金额统一换算到基础货币后比较，避免 MXN/USD/CNY 跨币种误判。
+      const rows = DB.prepare(`SELECT id, ${dateCol} d, ${amtCol} a, ${catCol} c, ${actCol} ac, currency cur FROM ${table} WHERE mode=?`).all(mode);
+      let bestCount = 0, bestScore = 0;
       const matches = [];
       for (const r of rows) {
-        let hit = 0;
+        let hit = 0, score = 0;
+        const reasons = [];
         const rDate = String(r.d || '').slice(0, 10);
-        const rAmt = Math.round((Number(r.a) || 0) * 100) / 100;
+        const rCurrency = String(r.cur || 'MXN').toUpperCase();
+        const rAmt = Math.round(toBaseAmount(Number(r.a) || 0, rCurrency) * 100) / 100;
         const rCat = String(r.c || '').trim();
         const rAc = String(r.ac || '').trim();
-        if (date && rDate === date) hit++;
-        if (baseAmt > 0 && rAmt === baseAmt) hit++;
-        if (category && rCat === category) hit++;
-        if (account && rAc === account) hit++;
-        if (hit >= 2) matches.push({ id: r.id, date: rDate, amount: rAmt, category: rCat, account: rAc, hit });
-        if (hit > bestCount) { bestCount = hit; best = r; }
+        if (date && rDate === date) { hit++; score += 30; reasons.push('同日'); }
+        if (baseAmt > 0 && Math.abs(rAmt - baseAmt) <= 0.01) { hit++; score += 45; reasons.push('同金额'); }
+        if (category && rCat === category) { hit++; score += 15; reasons.push('同分类/对象'); }
+        if (account && rAc === account) { hit++; score += 10; reasons.push('同账户'); }
+        // 不再使用“任意两项相同”这种过宽规则。金额是交易身份的核心：
+        // 同日+同金额直接高风险；同金额再叠加分类/账户也提示；没有同金额则至少需三项一致。
+        const amountSame = reasons.includes('同金额');
+        const dateSame = reasons.includes('同日');
+        const risky = (amountSame && dateSame) || (amountSame && hit >= 2) || (!amountSame && hit >= 3);
+        if (risky) matches.push({ id: r.id, date: rDate, amount: rAmt, currency: rCurrency, category: rCat, account: rAc, hit, score, reasons });
+        if (hit > bestCount) bestCount = hit;
+        if (score > bestScore) bestScore = score;
       }
-      return ok({ dup: matches.length > 0, count: matches.length, matches: matches.slice(0, 5), topHit: bestCount });
+      matches.sort((a,b) => b.score - a.score || b.hit - a.hit);
+      return ok({ dup: matches.length > 0, count: matches.length, matches: matches.slice(0, 5), topHit: bestCount, topScore: bestScore });
     }
 
     // ---- query（含全局搜索） ----
     if (path === '/query' && method === 'GET') {
       const type = query.type || 'supplier';
+      const kindFilter = String(query.kind || '').trim();
       const value = (query.value || '').trim();
       const start = query.start || '', end = query.end || '';
       const build = (dateCol, extraCol, extraVal) => {
@@ -709,9 +850,9 @@
         if (end) { condsI.push('date <= ?'); paramsI.push(end); }
         const amtI = amtFilter('amount');
         if (amtI) { condsI.push(amtI); paramsI.push(...(isNaN(amtMin) ? [] : [amtMin]), ...(isNaN(amtMax) ? [] : [amtMax])); }
-        const kwE = kw ? '(remark LIKE ? OR category LIKE ? OR account LIKE ? OR handler LIKE ?)' : '';
+        const kwE = kw ? '(remark LIKE ? OR category LIKE ? OR account LIKE ? OR handler LIKE ? OR payee LIKE ?)' : '';
         const condsE = [`mode = ?`]; const paramsE = [mode];
-        if (kw) { condsE.push(kwE); paramsE.push(...[kw, kw, kw, kw].map(k => `%${k}%`)); }
+        if (kw) { condsE.push(kwE); paramsE.push(...[kw, kw, kw, kw, kw].map(k => `%${k}%`)); }
         if (start) { condsE.push('date >= ?'); paramsE.push(start); }
         if (end) { condsE.push('date <= ?'); paramsE.push(end); }
         const amtE = amtFilter('amount');
@@ -723,9 +864,9 @@
         if (end) { condsP.push('doc_date <= ?'); paramsP.push(end); }
         const amtP = amtFilter('total_amount');
         if (amtP) { condsP.push(amtP); paramsP.push(...(isNaN(amtMin) ? [] : [amtMin]), ...(isNaN(amtMax) ? [] : [amtMax])); }
-        const incomes = DB.prepare(`SELECT * FROM income WHERE ${condsI.join(' AND ')} ORDER BY date DESC, id DESC`).all(...paramsI);
-        const expenses = DB.prepare(`SELECT * FROM expense WHERE ${condsE.join(' AND ')} ORDER BY date DESC, id DESC`).all(...paramsE);
-        const purchases = DB.prepare(`SELECT * FROM purchase WHERE ${condsP.join(' AND ')} ORDER BY doc_date DESC, id DESC`).all(...paramsP);
+        const incomes = kindFilter && kindFilter!=='income' ? [] : DB.prepare(`SELECT * FROM income WHERE ${condsI.join(' AND ')} ORDER BY date DESC, id DESC`).all(...paramsI);
+        const expenses = kindFilter && kindFilter!=='expense' ? [] : DB.prepare(`SELECT * FROM expense WHERE ${condsE.join(' AND ')} ORDER BY date DESC, id DESC`).all(...paramsE);
+        const purchases = kindFilter && kindFilter!=='purchase' ? [] : DB.prepare(`SELECT * FROM purchase WHERE ${condsP.join(' AND ')} ORDER BY doc_date DESC, id DESC`).all(...paramsP);
         const inflow = incomes.reduce((s, r) => s + (Number(r.amount) || 0), 0);
         const outflow = expenses.reduce((s, r) => s + (Number(r.amount) || 0), 0) + purchases.reduce((s, r) => s + (Number(r.paid_amount) || 0), 0);
         rows = [
@@ -733,7 +874,7 @@
           ...expenses.map(r => ({ _kind: 'expense', _id: r.id, date: r.date, kind: 'expense', tag: '支出', name: r.category || '未填', account: r.account, amount: -(Number(r.amount) || 0), remark: r.remark })),
           ...purchases.map(r => ({ _kind: 'purchase', _id: r.id, date: r.doc_date, kind: 'purchase', tag: '进货', name: r.supplier || '未填', account: r.pay_method, amount: -(Number(r.total_amount) || 0), remark: r.remark }))
         ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        summary = { title: kw ? `搜索「${kw}」` : '全部流水分析', subtitle: `统计期间: ${start || '不限'} ~ ${end || '不限'} · 含收入/支出/进货`,
+        summary = { title: kw ? `搜索「${kw}」` : (kindFilter==='income'?'收入流水':kindFilter==='expense'?'支出流水':kindFilter==='purchase'?'进货流水':'全部流水分析'), subtitle: `统计期间: ${start || '不限'} ~ ${end || '不限'} · 含收入/支出/进货`,
           kpis: [{ label: '总流入', value: money(inflow), cls: 'positive' }, { label: '总流出', value: money(outflow), cls: 'negative' }, { label: '净额', value: money(inflow - outflow), cls: inflow - outflow >= 0 ? 'positive' : 'negative' }, { label: '流水笔数', value: rows.length, cls: '' }] };
       }
       return ok({ type, value, start, end, summary, rows });
@@ -849,43 +990,83 @@
       return ok({ ok: true });
     }
 
-    // ---- recurring ----
+    // ---- V186 今日待处理 + 异常雷达 ----
+    if (path === '/insights/today' && method === 'GET') {
+      const now0=new Date(); const today=`${now0.getFullYear()}-${String(now0.getMonth()+1).padStart(2,'0')}-${String(now0.getDate()).padStart(2,'0')}`; const out=[];
+      const old=DB.prepare("SELECT id,doc_date,supplier,total_amount,paid_amount FROM purchase WHERE mode=? AND total_amount>paid_amount+0.005 ORDER BY doc_date ASC LIMIT 50").all(mode);
+      for(const p of old){ const age=Math.floor((new Date(today)-new Date(String(p.doc_date).slice(0,10)))/86400000); if(age>=30) out.push({kind:'unpaid',severity:age>=60?'high':'medium',title:`${p.supplier||'供应商'} 未付款`,detail:`剩余 ¥${money(num(p.total_amount)-num(p.paid_amount)).toFixed(2)} · ${age} 天`,record_id:p.id}); }
+      let rules=[]; try{const sr=DB.prepare("SELECT value FROM options WHERE key='app_settings'").get(); if(sr){const st=JSON.parse(sr.value); rules=(st&&st.recurring&&st.recurring.rules)||[];}}catch(e){}
+      const dateOnly=(d)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()); const now=dateOnly(new Date());
+      const nextDue=(r)=>{let d=new Date(now); if(r.cycle==='daily') return d; if(r.cycle==='weekly'){const target=Number(r.day)||0,delta=(target-d.getDay()+7)%7;d.setDate(d.getDate()+delta);return d;} const day=Math.max(1,Math.min(31,Number(r.day)||1)); const last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(); d.setDate(Math.min(day,last)); if(d<now){d=new Date(now.getFullYear(),now.getMonth()+1,1);const l=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(day,l));} return d;};
+      rules.forEach((r,i)=>{if(r&&r.enabled===false)return; const due=nextDue(r); const diff=Math.round((dateOnly(due)-now)/86400000); const lead=Math.max(0,Math.min(30,Number(r.lead_days)||0)); if(diff<=lead) out.push({kind:'recurring',severity:diff===0?'high':'low',title:`${r.type==='expense'?'支出':'收入'}：${r.category||'周期账单'}`,detail:diff===0?`今天到期 · ¥${money(r.amount).toFixed(2)}`:`${diff} 天后到期 · ¥${money(r.amount).toFixed(2)}`,rule_index:i,due_date:due.toISOString().slice(0,10)});});
+      return ok(out.slice(0,50));
+    }
+    if (path === '/insights/anomalies' && method === 'GET') {
+      const out=[];
+      const dups=DB.prepare("SELECT date,amount,COUNT(*) c,GROUP_CONCAT(id) ids FROM expense WHERE mode=? GROUP BY date,ROUND(amount,2) HAVING COUNT(*)>1 ORDER BY date DESC LIMIT 10").all(mode);
+      dups.forEach(x=>out.push({kind:'duplicate',severity:'medium',title:'疑似重复支出',detail:`${x.date} · ¥${money(x.amount).toFixed(2)} · ${x.c} 笔`,date:x.date,amount:money(x.amount),record_ids:String(x.ids||'').split(',').map(Number).filter(Boolean)}));
+      const old=DB.prepare("SELECT id,doc_date,supplier,total_amount,paid_amount FROM purchase WHERE mode=? AND total_amount>paid_amount+0.005 ORDER BY doc_date ASC LIMIT 20").all(mode);
+      const today=new Date(); old.forEach(p=>{const age=Math.floor((today-new Date(String(p.doc_date).slice(0,10)))/86400000); if(age>=30)out.push({kind:'aged_unpaid',severity:age>=60?'high':'medium',title:'长期未付款',detail:`${p.supplier||'供应商'} · ${age} 天 · ¥${money(num(p.total_amount)-num(p.paid_amount)).toFixed(2)}`,record_id:p.id});});
+      const rows=DB.prepare("SELECT substr(date,1,7) m,category,SUM(amount) s FROM expense WHERE mode=? AND date>=date('now','-120 day') GROUP BY m,category").all(mode); const by={}; rows.forEach(r=>{(by[r.category]||(by[r.category]=[])).push(r)}); const _n=new Date(); const cm=`${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}`; Object.entries(by).forEach(([cat,a])=>{const cur=a.find(x=>x.m===cm); if(!cur)return; const prev=a.filter(x=>x.m!==cm).map(x=>num(x.s)); if(prev.length>=2){const avg=prev.reduce((x,y)=>x+y,0)/prev.length;if(avg>0&&num(cur.s)>avg*1.5&&num(cur.s)-avg>100)out.push({kind:'spike',severity:'medium',title:'分类支出明显增加',detail:`${cat} 本月 ¥${money(cur.s).toFixed(2)}，高于近月均值 ${Math.round((num(cur.s)/avg-1)*100)}%`,category:cat});}});
+      return ok(out.slice(0,30));
+    }
+
+    // ---- recurring V185：错过到期日也补记；recurring_runs 保证同周期绝不重复 ----
     if (path === '/recurring/run' && method === 'POST') {
       const sr = DB.prepare("SELECT value FROM options WHERE key='app_settings'").get();
-      let rules = [];
-      if (sr) { try { const s = JSON.parse(sr.value); rules = (s && s.recurring && s.recurring.rules) || []; } catch (e) {} }
-      if (!rules.length) return ok({ inserted: 0, skipped: 0 });
-      const now = new Date();
-      const pad2 = n => String(n).padStart(2, '0');
-      const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-      let inserted = 0, skipped = 0;
-      for (const rule of rules) {
-        const parts = todayStr.split('-').map(Number);
-        const y = parts[0], m = parts[1], d = parts[2];
-        let due = false;
-        if (rule.cycle === 'daily') due = true;
-        else if (rule.cycle === 'weekly') due = new Date(y, m - 1, d).getDay() === (rule.day === 0 ? 0 : rule.day);
-        else if (rule.cycle === 'monthly') {
-          const targetDay = Number(rule.day);
-          if (targetDay === 31) due = d === new Date(y, m, 0).getDate();
-          else due = d === targetDay;
-        }
-        if (!due) { skipped++; continue; }
-        const remarkTag = '🔄' + (rule.remark ? ' ' + rule.remark : '');
-        const dup = rule.type === 'expense'
-          ? DB.prepare("SELECT COUNT(*) c FROM expense WHERE date=? AND category=? AND amount=? AND remark=? AND mode=?").get(todayStr, rule.category || '', num(rule.amount), remarkTag, mode).c
-          : DB.prepare("SELECT COUNT(*) c FROM income WHERE date=? AND project=? AND amount=? AND remark=? AND mode=?").get(todayStr, rule.category || '', num(rule.amount), remarkTag, mode).c;
-        if (dup > 0) { skipped++; continue; }
-        if (rule.type === 'expense') {
-          DB.prepare(`INSERT INTO expense (date, category, amount, account, handler, remark, mode, payee) VALUES (?,?,?,?,?,?,?,?)`)
-            .run(todayStr, rule.category || '', num(rule.amount), rule.account || '', '', remarkTag, mode, '');
-        } else {
-          DB.prepare(`INSERT INTO income (date, project, pay_method, account, amount, handler, remark, mode) VALUES (?,?,?,?,?,?,?,?)`)
-            .run(todayStr, rule.category || '', '', rule.account || '', num(rule.amount), '', remarkTag, mode);
-        }
-        inserted++;
+      let rules = []; if (sr) { try { const st=JSON.parse(sr.value); rules=(st&&st.recurring&&st.recurring.rules)||[]; } catch(e){} }
+      if (!rules.length) return ok({ inserted:0, skipped:0, caughtUp:0 });
+      const now=new Date(), pad=n=>String(n).padStart(2,'0'), fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+      const today=fmt(now); let inserted=0, skipped=0, caughtUp=0;
+      const keyOf=(r,i)=>{ if(r && r.id) return 'id:'+String(r.id).slice(0,120); const raw=[r.type,r.category,r.amount,r.account,r.cycle,r.day,r.remark].join('|'); let h=2166136261; for(let j=0;j<raw.length;j++){h^=raw.charCodeAt(j);h=Math.imul(h,16777619)} return 'r'+(h>>>0).toString(36); };
+      for (let i=0;i<rules.length;i++) {
+        const rule=rules[i]||{}; if(rule.enabled===false){ skipped++; continue; } let dueDate=null;
+        if(rule.cycle==='daily') dueDate=today;
+        else if(rule.cycle==='weekly') { const target=Number(rule.day); if(Number.isInteger(target)&&target>=0&&target<=6){ const d=new Date(now.getFullYear(),now.getMonth(),now.getDate()); d.setDate(d.getDate()-((d.getDay()-target+7)%7)); dueDate=fmt(d); } }
+        else if(rule.cycle==='monthly') { let day=Math.max(1,Math.min(31,Number(rule.day)||1)); const last=new Date(now.getFullYear(),now.getMonth()+1,0).getDate(); day=Math.min(day,last); const d=new Date(now.getFullYear(),now.getMonth(),day); if(d<=now) dueDate=fmt(d); }
+        if(!dueDate){ skipped++; continue; }
+        const ruleKey=keyOf(rule,i); const done=DB.prepare('SELECT id FROM recurring_runs WHERE rule_key=? AND due_date=? AND mode=?').get(ruleKey,dueDate,mode);
+        if(done){ skipped++; continue; }
+        const remarkTag='🔄'+(rule.remark?' '+rule.remark:''); let recId=0;
+        DB.exec('BEGIN');
+        try {
+          if(rule.type==='expense') { const rr=DB.prepare(`INSERT INTO expense(date,category,amount,account,handler,remark,mode,payee,semantic_type) VALUES (?,?,?,?,?,?,?,?,?)`).run(dueDate,rule.category||'',num(rule.amount),rule.account||'','',remarkTag,mode,'','expense'); recId=Number(rr.lastInsertRowid)||0; }
+          else { const rr=DB.prepare(`INSERT INTO income(date,project,pay_method,account,amount,handler,remark,mode,semantic_type) VALUES (?,?,?,?,?,?,?,?,?)`).run(dueDate,rule.category||'','',rule.account||'',num(rule.amount),'',remarkTag,mode,'income'); recId=Number(rr.lastInsertRowid)||0; }
+          DB.prepare('INSERT INTO recurring_runs(rule_key,due_date,record_type,record_id,mode) VALUES (?,?,?,?,?)').run(ruleKey,dueDate,rule.type||'income',recId,mode);
+          audit('recurring_post',rule.type||'income',recId,'recurring',JSON.stringify({ruleKey,dueDate}),actorName); DB.exec('COMMIT'); inserted++; if(dueDate<today)caughtUp++;
+        } catch(e){ try{DB.exec('ROLLBACK')}catch(e2){} skipped++; }
       }
-      return ok({ inserted, skipped, date: todayStr });
+      return ok({inserted,skipped,caughtUp,date:today});
+    }
+
+    // ---- ledger trash：账务回收站（V184） ----
+    if (path === '/trash' && method === 'GET') {
+      const includeRestored = String(query.includeRestored || '') === '1';
+      const where = includeRestored ? 'mode=?' : "mode=? AND (restored_at='' OR restored_at IS NULL)";
+      const rows = DB.prepare(`SELECT * FROM ledger_trash WHERE ${where} ORDER BY deleted_at DESC, id DESC LIMIT 1000`).all(mode);
+      return ok(rows.map(r => {
+        let record = {}; try { record = JSON.parse(r.record_json || '{}'); } catch (e) {}
+        return { ...r, record };
+      }));
+    }
+    const trashRestore = path.match(/^\/trash\/(\d+)\/restore$/);
+    if (trashRestore && method === 'POST') {
+      const tid = Number(trashRestore[1]);
+      const trash = DB.prepare('SELECT * FROM ledger_trash WHERE id=? AND mode=?').get(tid, mode);
+      if (!trash) return fail('回收站记录不存在', 404);
+      if (trash.restored_at) return fail('该记录已经恢复');
+      DB.exec('BEGIN');
+      try { const rr = restoreTrashRow(trash, actorName); DB.exec('COMMIT'); return ok({ ok: true, ...rr }); }
+      catch (e) { try { DB.exec('ROLLBACK'); } catch (e2) {} return fail('恢复失败: ' + ((e && e.message) || e), 500); }
+    }
+    const trashDelete = path.match(/^\/trash\/(\d+)$/);
+    if (trashDelete && method === 'DELETE') {
+      const tid = Number(trashDelete[1]);
+      const trash = DB.prepare('SELECT * FROM ledger_trash WHERE id=? AND mode=?').get(tid, mode);
+      if (!trash) return fail('回收站记录不存在', 404);
+      DB.prepare('DELETE FROM ledger_trash WHERE id=? AND mode=?').run(tid, mode);
+      audit('permanent_delete', trash.original_table, trash.original_id, 'trash', JSON.stringify({ trash_id: tid }), actorName);
+      return ok({ ok: true });
     }
 
     // ---- backup（导出数据库） ----

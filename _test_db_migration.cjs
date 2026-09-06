@@ -71,6 +71,19 @@ function makeStubDB(opts) {
         if (!state.cols.accounting_audit_log.includes('actor')) state.cols.accounting_audit_log.push('actor');
         return [];
       }
+      if (/CREATE TABLE IF NOT EXISTS ledger_trash/.test(s)) {
+        if (!state.tables.includes('ledger_trash')) state.tables.push('ledger_trash');
+        state.cols.ledger_trash = ['id','original_table','original_id','record_json','mode','deleted_by','delete_reason','deleted_at','restored_at','restored_by'];
+        return [];
+      }
+
+      if (/ALTER TABLE income ADD COLUMN semantic_type/.test(s)) { if(!state.cols.income.includes('semantic_type')) state.cols.income.push('semantic_type'); return []; }
+      if (/ALTER TABLE expense ADD COLUMN semantic_type/.test(s)) { if(!state.cols.expense.includes('semantic_type')) state.cols.expense.push('semantic_type'); return []; }
+      if (/ALTER TABLE income ADD COLUMN linked_record_id/.test(s)) { if(!state.cols.income.includes('linked_record_id')) state.cols.income.push('linked_record_id'); return []; }
+      if (/ALTER TABLE expense ADD COLUMN linked_record_id/.test(s)) { if(!state.cols.expense.includes('linked_record_id')) state.cols.expense.push('linked_record_id'); return []; }
+      if (/CREATE TABLE IF NOT EXISTS internal_transfers/.test(s)) { if(!state.tables.includes('internal_transfers')) state.tables.push('internal_transfers'); state.cols.internal_transfers=['id','date','from_account','to_account','amount','currency','reference','remark','mode','created_by','created_at']; return []; }
+      if (/CREATE TABLE IF NOT EXISTS purchase_payments/.test(s)) { if(!state.tables.includes('purchase_payments')) state.tables.push('purchase_payments'); state.cols.purchase_payments=['id','purchase_id','pay_date','amount','account','reference','remark','mode','created_by','created_at']; return []; }
+      if (/CREATE TABLE IF NOT EXISTS recurring_runs/.test(s)) { if(!state.tables.includes('recurring_runs')) state.tables.push('recurring_runs'); state.cols.recurring_runs=['id','rule_key','due_date','record_type','record_id','mode','created_at']; return []; }
       if (/CREATE INDEX IF NOT EXISTS (\w+)/.test(s)) {
         const name = RegExp.$1;
         state.indexes = state.indexes || [];
@@ -111,8 +124,8 @@ function main() {
     const s = makeSandbox(stub);
     const r = s.AppCore.DBMigration.migrate(stub);
     assert('迁移 ok', r.ok === true, JSON.stringify(r));
-    assert('applied=[1,2,3]', r.applied.length === 3 && r.applied[0] === 1 && r.applied[1] === 2 && r.applied[2] === 3, JSON.stringify(r.applied));
-    assert('user_version=3', stub.state.userVersion === 3, String(stub.state.userVersion));
+    assert('applied=[1,2,3,4,5,6]', r.applied.length === 6 && r.applied.join(',') === '1,2,3,4,5,6', JSON.stringify(r.applied));
+    assert('user_version=6', stub.state.userVersion === 6, String(stub.state.userVersion));
     assert('expense 含 payee', stub.state.cols.expense.includes('payee'));
     assert('ledger_members 已建', stub.state.tables.includes('ledger_members') && stub.state.cols.ledger_members && stub.state.cols.ledger_members.includes('member_id'));
     assert('income 含 created_by', stub.state.cols.income.includes('created_by'));
@@ -120,9 +133,9 @@ function main() {
     assert('创建了索引', stub.state.indexes && stub.state.indexes.length >= 3);
   }
 
-  console.log('\n[2] 幂等：已迁移（user_version=3 且有 payee+索引+成员表）→ 不重复执行');
+  console.log('\n[2] 幂等：已迁移（user_version=6 且有回收站）→ 不重复执行');
   {
-    const stub = makeStubDB({ userVersion: 3 });
+    const stub = makeStubDB({ userVersion: 6 });
     stub.state.cols.expense.push('payee');
     stub.state.cols.income.push('created_by');
     stub.state.cols.purchase.push('created_by');
@@ -130,7 +143,14 @@ function main() {
     stub.state.cols.accounting_audit_log = ['id', 'action', 'table_name', 'record_id', 'source', 'detail', 'created_at', 'actor'];
     stub.state.tables.push('ledger_members');
     stub.state.cols.ledger_members = ['id', 'member_id', 'name', 'role', 'mode', 'is_default', 'created_at'];
-    stub.state.indexes = ['idx_income_date_mode', 'idx_expense_date_mode', 'idx_purchase_date_mode', 'idx_income_category_mode', 'idx_expense_category_mode'];
+    stub.state.tables.push('ledger_trash');
+    stub.state.cols.ledger_trash = ['id','original_table','original_id','record_json','mode','deleted_by','delete_reason','deleted_at','restored_at','restored_by'];
+    stub.state.tables.push('internal_transfers','purchase_payments','recurring_runs');
+    stub.state.cols.internal_transfers=['id','date','from_account','to_account','amount','mode']; stub.state.cols.purchase_payments=['id','purchase_id','pay_date','amount','mode']; stub.state.cols.recurring_runs=['id','rule_key','due_date','record_type','mode'];
+    stub.state.cols.income.push('semantic_type','linked_record_id'); stub.state.cols.expense.push('semantic_type','linked_record_id');
+    stub.state.tables.push('internal_transfers','purchase_payments','recurring_runs');
+    stub.state.cols.internal_transfers=['id','date','from_account','to_account','amount','mode']; stub.state.cols.purchase_payments=['id','purchase_id','pay_date','amount','mode']; stub.state.cols.recurring_runs=['id','rule_key','due_date','record_type','mode'];
+    stub.state.indexes = ['idx_income_date_mode', 'idx_expense_date_mode', 'idx_purchase_date_mode', 'idx_income_category_mode', 'idx_expense_category_mode','idx_income_linked_semantic','idx_purchase_payments_id_purchase','idx_internal_transfers_id_mode'];
     const s = makeSandbox(stub);
     const r = s.AppCore.DBMigration.migrate(stub);
     assert('无 pending 迁移', r.applied.length === 0, JSON.stringify(r.applied));
@@ -158,6 +178,12 @@ function main() {
   {
     const stub = makeStubDB({ userVersion: 1 });
     stub.state.cols.expense.push('payee');
+    stub.state.tables.push('ledger_trash');
+    stub.state.cols.ledger_trash = ['id','original_table','original_id','record_json','mode','deleted_by','delete_reason','deleted_at','restored_at','restored_by'];
+    stub.state.tables.push('internal_transfers','purchase_payments','recurring_runs');
+    stub.state.cols.internal_transfers=['id','date','from_account','to_account','amount','mode'];
+    stub.state.cols.purchase_payments=['id','purchase_id','pay_date','amount','mode'];
+    stub.state.cols.recurring_runs=['id','rule_key','due_date','record_type','mode'];
     const s = makeSandbox(stub);
     const r = s.AppCore.DbHealth.check(stub);
     assert('状态 ok', r.status === 'ok', JSON.stringify(r));
@@ -192,9 +218,9 @@ function main() {
     const s = makeSandbox(stub);
     const r = s.AppCore.DBMigration.migrate(stub);
     assert('迁移 ok（v2 索引）', r.ok === true, JSON.stringify(r));
-    assert('applied=[2,3]', r.applied.length === 2 && r.applied[0] === 2 && r.applied[1] === 3, JSON.stringify(r.applied));
-    assert('user_version=3', stub.state.userVersion === 3, String(stub.state.userVersion));
-    assert('创建了 5 个索引', stub.state.indexes && stub.state.indexes.length === 5, JSON.stringify(stub.state.indexes));
+    assert('applied=[2,3,4,5,6]', r.applied.length === 5 && r.applied.join(',') === '2,3,4,5,6', JSON.stringify(r.applied));
+    assert('user_version=6', stub.state.userVersion === 6, String(stub.state.userVersion));
+    assert('创建了账务索引（含回收站）', stub.state.indexes && stub.state.indexes.length >= 6, JSON.stringify(stub.state.indexes));
     assert('含 idx_income_date_mode', stub.state.indexes.includes('idx_income_date_mode'));
     assert('ledger_members 已建', stub.state.tables.includes('ledger_members'));
     // 幂等：再跑不重复

@@ -65,8 +65,12 @@
     sessionHandleV2: true,
     memoryCandidateMode: true,
     audioFocusV2: true,
-    adaptiveVadEnabled: false,
-    preRollEnabled: false,
+    adaptiveVadEnabled: true,
+    preRollEnabled: true,
+    neuralVadEnabled: true,
+    sherpaLocalEnabled: true,
+    dualAsrArbitration: true,
+    sherpaModelHealthCheck: true,
     voiceIntentV2Enabled: true,
     dynamicEvidenceEnabled: true,
     modelRouterV2Enabled: false,
@@ -74,6 +78,7 @@
     // OCR 试验：Paddle WebGPU 实验路径（默认关闭；开启后仅在有 navigator.gpu 时尝试 WebGPU，
     // 失败自动回 WASM 单线程，再失败 → Tesseract。用于同图 benchmark，不改变默认稳定路径）
     paddleWebGpuExperimental: false,
+    paddleWorkerFirst: true,
     voiceDraftSessionV1: true,
     glmOcrOptionalEngine: false,
   };

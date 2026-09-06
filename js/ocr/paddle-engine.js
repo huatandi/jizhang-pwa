@@ -27,7 +27,7 @@
     localWasmPath: null, // 显式；默认 vendor/onnx/
     numThreads: 2,
     simd: true,
-    worker: false,       // 官方 SDK 默认 true（CDN Worker 跨域受限）；GitHub Pages/本地无 COEP 时 false 更稳
+    worker: 'auto',      // V188: WASM Worker-first；失败自动回主线程。WebGPU 仍主线程优先
     deviceProfile: 'balanced', // high | balanced | low（由 OcrManager 传入并映射 maxEdge）
   };
 
@@ -103,13 +103,13 @@
     }
 
     /** 创建 OCR 实例（按 backend/wasmPaths/threads） */
-    async _create(P, wasm, backend, numThreads) {
+    async _create(P, wasm, backend, numThreads, workerMode) {
       return P.create({
         lang: this._resolveLang(),
         ocrVersion: this.config.ocrVersion,
         textDetectionBatchSize: 2,
         textRecognitionBatchSize: 8,
-        worker: this.config.worker,
+        worker: workerMode === true,
         ortOptions: {
           backend: backend,
           wasmPaths: wasm,
@@ -117,6 +117,33 @@
           simd: this.config.simd,
         },
       });
+    }
+
+    _workerPreferred() {
+      if (this.config.worker === true) return true;
+      if (this.config.worker === false) return false;
+      try {
+        const rt = global.AsrKit && global.AsrKit.runtime;
+        return !rt || !rt.isEnabled || rt.isEnabled('paddleWorkerFirst');
+      } catch (e) { return true; }
+    }
+
+    async _createWasmWorkerFirst(P, wasm, numThreads) {
+      const prefer = this._workerPreferred();
+      if (prefer && typeof global.Worker !== 'undefined') {
+        try {
+          const inst = await this._create(P, wasm, 'wasm', numThreads, true);
+          this._lastWorkerRuntime = { worker:true };
+          console.log('[ocr-runtime] Paddle WASM Worker SUCCESS');
+          return inst;
+        } catch (e) {
+          console.warn('[ocr-runtime] Paddle Worker init 失败，回退主线程 WASM:', e && e.message || e);
+          this._fallbackReason = (this._fallbackReason ? this._fallbackReason + '+' : '') + 'worker->main';
+        }
+      }
+      const inst = await this._create(P, wasm, 'wasm', numThreads, false);
+      this._lastWorkerRuntime = { worker:false, workerFallback:prefer };
+      return inst;
     }
 
     async initialize() {
@@ -136,7 +163,7 @@
           if (rt.backend === 'webgpu') {
             // WebGPU：先试；失败自动回退 WASM 单线程（而非直接 Tesseract），再失败才交给上层。
             try {
-              ocr = await this._create(P, wasm, 'webgpu', rt.numThreads);
+              ocr = await this._create(P, wasm, 'webgpu', rt.numThreads, false);
               this._runtime = { backend: 'webgpu', threads: rt.numThreads, model: this.config.ocrVersion, experimental: !!rt.experimental };
               console.log('[ocr-runtime] Paddle init SUCCESS backend=webgpu threads=' + rt.numThreads + ' model=' + this.config.ocrVersion + (rt.experimental ? ' [WEBGPU-EXP]' : ''));
               return ocr;
@@ -145,8 +172,8 @@
               console.warn('[ocr-runtime] WebGPU init 失败，自动回退 WASM 单线程: ' + (e && e.message || e));
             }
             try {
-              ocr = await this._create(P, wasm, 'wasm', 1);
-              this._runtime = { backend: 'wasm', threads: 1, model: this.config.ocrVersion, fallbackFrom: 'webgpu' };
+              ocr = await this._createWasmWorkerFirst(P, wasm, 1);
+              this._runtime = Object.assign({ backend: 'wasm', threads: 1, model: this.config.ocrVersion, fallbackFrom: 'webgpu' }, this._lastWorkerRuntime || {});
               console.log('[ocr-runtime] Paddle init SUCCESS backend=wasm(webgpu回退) threads=1 model=' + this.config.ocrVersion);
               return ocr;
             } catch (e2) {
@@ -155,8 +182,13 @@
               throw new Error('PaddleOCR 初始化失败: ' + (e2 && e2.message || e2));
             }
           }
-          ocr = await this._create(P, wasm, rt.backend, rt.numThreads);
-          this._runtime = { backend: rt.backend, threads: rt.numThreads, model: this.config.ocrVersion };
+          if (rt.backend === 'wasm') {
+            ocr = await this._createWasmWorkerFirst(P, wasm, rt.numThreads);
+            this._runtime = Object.assign({ backend: 'wasm', threads: rt.numThreads, model: this.config.ocrVersion }, this._lastWorkerRuntime || {});
+          } else {
+            ocr = await this._create(P, wasm, rt.backend, rt.numThreads, false);
+            this._runtime = { backend: rt.backend, threads: rt.numThreads, model: this.config.ocrVersion, worker:false };
+          }
           console.log('[ocr-runtime] Paddle init SUCCESS backend=' + rt.backend + ' threads=' + rt.numThreads + ' model=' + this.config.ocrVersion);
           return ocr;
         } catch (e) {
@@ -190,8 +222,8 @@
         let initMs = 0;
         if (this._initT0 != null) { initMs = Math.round(((global.performance && global.performance.now) ? global.performance.now() : Date.now()) - this._initT0); this._initT0 = null; }
         const bench = {
-          engine: this.name, backend: rt.backend, model: rt.model || this.config.ocrVersion,
-          threads: rt.threads, webgpuExp: !!rt.experimental, fallback: rt.fallbackFrom || this._fallbackReason || null,
+          engine: this.name, backend: rt.backend, model: rt.model || this.config.ocrVersion, lang: this._resolveLang(),
+          threads: rt.threads, worker: !!rt.worker, workerFallback: !!rt.workerFallback, webgpuExp: !!rt.experimental, fallback: rt.fallbackFrom || this._fallbackReason || null,
           imageW: width, imageH: height,
           initMs, inferenceMs: Math.round(ms), totalMs: Math.round(initMs + ms),
           device: ua.substr(0, 120), browser: (nav.userAgentData && nav.userAgentData.brands) ? nav.userAgentData.brands.map(b => b.brand).join('/') : ua.substr(0, 60),

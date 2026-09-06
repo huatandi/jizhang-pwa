@@ -1,0 +1,12 @@
+{
+  "id": "zh_zipformer_ctc",
+  "version": "deployment-controlled",
+  "language": "zh",
+  "family": "zipformer-ctc",
+  "assets": [
+    { "url": "./sherpa-onnx-asr.js" },
+    { "url": "./sherpa-onnx-wasm-main-vad-asr.js" },
+    { "url": "./sherpa-onnx-wasm-main-vad-asr.wasm" },
+    { "url": "./sherpa-onnx-wasm-main-vad-asr.data" }
+  ]
+}

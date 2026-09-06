@@ -271,6 +271,18 @@
       if (!result.documentType) {
         result.documentType = detectDocType(result);
       }
+      try {
+        if (global.IntelligenceCenter && global.IntelligenceCenter.record) {
+          global.IntelligenceCenter.record({
+            kind:'ocr',
+            ok:avgConfidence(result) >= 55,
+            ms:Number(result.processingTimeMs)||0,
+            engine:result.engine||primaryName||'unknown',
+            documentType:result.documentType||null,
+            confidence:Math.round(avgConfidence(result)*10)/10
+          });
+        }
+      } catch (e) {}
       return result;
     }
 

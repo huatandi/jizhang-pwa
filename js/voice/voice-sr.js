@@ -107,7 +107,7 @@
     return _listenChain;
   }
 
-  function _doListen(opts, cb, sid) {
+  async function _doListen(opts, cb, sid) {
     activeCb = cb || null;
     // 语音识别引擎模式（设置页，localStorage）：
     //   auto   → 本地 Whisper 优先，失败降级系统语音（WebSpeech，输入法级，不涉及账目数据外发）
@@ -130,6 +130,26 @@
     if (forceOnline) mgr.opts.forceOnline = true;
     else delete mgr.opts.forceOnline;
     mgr.setLang((opts && opts.lang) || defaultVoiceLang());
+    const contextMode = (opts && opts.mode) || 'ledger';
+    let extraHotwords = (opts && Array.isArray(opts.extraHotwords)) ? opts.extraHotwords.slice() : [];
+    // PersonalVoiceMemory 已晋级的 medium/strong 纠错词，直接进入本轮 ASR 热词；
+    // candidate/weak 不进入底层 bias，避免一次误纠正污染识别。
+    try {
+      const pvm = global.PersonalVoiceMemory;
+      if (pvm && pvm.list) {
+        const rows = await pvm.list();
+        for (const r of rows) {
+          const st = pvm.statusOf ? pvm.statusOf(r) : (r.status || '');
+          if (st !== 'medium' && st !== 'strong') continue;
+          if (r.context && contextMode && r.context !== contextMode && r.context !== 'quick') continue;
+          if (r.target) extraHotwords.push(String(r.target));
+          if (r.phrase && st === 'strong') extraHotwords.push(String(r.phrase));
+          if (extraHotwords.length >= 60) break;
+        }
+      }
+    } catch (e) { /* memory hotwords are best-effort */ }
+    extraHotwords = Array.from(new Set(extraHotwords.filter(Boolean))).slice(0,60);
+    if (mgr.setContext) mgr.setContext(contextMode, extraHotwords);
     const guard = (fn) => (...args) => { if (sid === sessionId) fn(...args); };
     const cbSet = {
       onInterim: guard((t) => activeCb && activeCb({ interim: t })),

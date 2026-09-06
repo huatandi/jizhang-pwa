@@ -70,6 +70,47 @@
         if (!columnExists(db, 'accounting_audit_log', 'actor')) db.exec("ALTER TABLE accounting_audit_log ADD COLUMN actor TEXT DEFAULT ''");
       },
     },
+    {
+      version: 4,
+      id: 'add-ledger-trash',
+      description: '账务安全删除：统一回收站、恢复审计与索引',
+      check(db) { return !columnExists(db, 'ledger_trash', 'record_json'); },
+      up(db) {
+        db.exec("CREATE TABLE IF NOT EXISTS ledger_trash (" +
+          "id INTEGER PRIMARY KEY AUTOINCREMENT, original_table TEXT NOT NULL, original_id INTEGER NOT NULL, " +
+          "record_json TEXT NOT NULL, mode TEXT DEFAULT 'business', deleted_by TEXT DEFAULT '', delete_reason TEXT DEFAULT '', " +
+          "deleted_at TEXT DEFAULT (datetime('now','localtime')), restored_at TEXT DEFAULT '', restored_by TEXT DEFAULT '')");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_ledger_trash_mode_deleted ON ledger_trash(mode, deleted_at)");
+      },
+    },
+    {
+      version: 5,
+      id: 'add-transaction-semantics',
+      description: '账务语义：内部转账、退款/报销、进货分次付款、周期执行账本',
+      check(db) { return !columnExists(db, 'income', 'semantic_type') || !columnExists(db, 'purchase_payments', 'purchase_id') || !columnExists(db, 'internal_transfers', 'from_account'); },
+      up(db) {
+        if (!columnExists(db, 'income', 'semantic_type')) db.exec("ALTER TABLE income ADD COLUMN semantic_type TEXT DEFAULT 'income'");
+        if (!columnExists(db, 'expense', 'semantic_type')) db.exec("ALTER TABLE expense ADD COLUMN semantic_type TEXT DEFAULT 'expense'");
+        if (!columnExists(db, 'income', 'linked_record_id')) db.exec("ALTER TABLE income ADD COLUMN linked_record_id INTEGER DEFAULT 0");
+        if (!columnExists(db, 'expense', 'linked_record_id')) db.exec("ALTER TABLE expense ADD COLUMN linked_record_id INTEGER DEFAULT 0");
+        db.exec("CREATE TABLE IF NOT EXISTS internal_transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, from_account TEXT NOT NULL, to_account TEXT NOT NULL, amount REAL NOT NULL, currency TEXT DEFAULT 'MXN', reference TEXT DEFAULT '', remark TEXT DEFAULT '', mode TEXT DEFAULT 'business', created_by TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')))");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_internal_transfers_mode_date ON internal_transfers(mode,date)");
+        db.exec("CREATE TABLE IF NOT EXISTS purchase_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_id INTEGER NOT NULL, pay_date TEXT NOT NULL, amount REAL NOT NULL, account TEXT DEFAULT '', reference TEXT DEFAULT '', remark TEXT DEFAULT '', mode TEXT DEFAULT 'business', created_by TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now','localtime')))");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_purchase_payments_purchase ON purchase_payments(purchase_id,mode,pay_date)");
+        db.exec("CREATE TABLE IF NOT EXISTS recurring_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_key TEXT NOT NULL, due_date TEXT NOT NULL, record_type TEXT NOT NULL, record_id INTEGER DEFAULT 0, mode TEXT DEFAULT 'business', created_at TEXT DEFAULT (datetime('now','localtime')), UNIQUE(rule_key,due_date,mode))");
+      },
+    },
+    {
+      version: 6,
+      id: 'add-v186-ledger-relations',
+      description: '账务关系闭环：退款关联索引、分次付款与内部转账恢复性能索引',
+      check(db) { return !indexExists(db, 'idx_income_linked_semantic'); },
+      up(db) {
+        db.exec("CREATE INDEX IF NOT EXISTS idx_income_linked_semantic ON income(linked_record_id, semantic_type, mode)");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_purchase_payments_id_purchase ON purchase_payments(id, purchase_id, mode)");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_internal_transfers_id_mode ON internal_transfers(id, mode)");
+      },
+    },
   ];
 
   // ================= 工具 =================
