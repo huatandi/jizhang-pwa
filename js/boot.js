@@ -59,7 +59,7 @@
     }
     // 4. 加载主应用
     const s = document.createElement('script');
-    s.src = 'js/app.js?v=v186';
+    s.src = 'js/app.js?v=966fb9e2';
     s.onload = () => hideSplash();
     s.onerror = () => { hideSplash(); console.error('[boot] app.js 加载失败'); };
     document.body.appendChild(s);
