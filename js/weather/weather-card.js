@@ -15,7 +15,7 @@
       rain: '降雨', wind: '大风', start: '预计开始', peak: '最强', end: '预计结束',
       dur: '预计持续', hours: '小时', maxRate: '最大雨量', total: '累计雨量',
       maxWind: '最大持续风', maxGust: '最大阵风', today: '今天', tomorrow: '明天',
-      rainProb: '降雨概率', clickDetail: '点击查看未来天气', hour: '逐小时', collapse: '收起',
+      rainProb: '降雨概率', clickDetail: '点击查看未来天气', hour: '逐个小时', week: '本星期', collapse: '收起',
       noEvents: '今日无降雨/大风', tapSetup: '设置城市后可看天气', from: '起', gust: '阵风', saved: '天气设置已保存', saveFail: '天气保存失败，请检查城市名',
     },
     es: {
@@ -24,7 +24,7 @@
       rain: 'Lluvia', wind: 'Viento', start: 'Inicia', peak: 'Máximo', end: 'Termina',
       dur: 'Duración', hours: 'h', maxRate: 'Pico', total: 'Total',
       maxWind: 'Viento sostenido', maxGust: 'Ráfagas', today: 'Hoy', tomorrow: 'Mañana',
-      rainProb: 'Prob. lluvia', clickDetail: 'Ver pronóstico', hour: 'Por hora', collapse: 'Cerrar',
+      rainProb: 'Prob. lluvia', clickDetail: 'Ver pronóstico', hour: 'Por hora', week: 'Esta semana', collapse: 'Cerrar',
       noEvents: 'Sin lluvia/viento hoy', tapSetup: 'Configura ciudad para el tiempo', from: 'desde', gust: 'ráfagas', saved: 'Configuración del tiempo guardada', saveFail: 'No se pudo guardar; revisa la ciudad',
     },
     en: {
@@ -33,7 +33,7 @@
       rain: 'Rain', wind: 'Wind', start: 'From', peak: 'Peak', end: 'Until',
       dur: 'Lasting', hours: 'h', maxRate: 'Peak rate', total: 'Total',
       maxWind: 'Sustained', maxGust: 'Gusts', today: 'Today', tomorrow: 'Tomorrow',
-      rainProb: 'Rain chance', clickDetail: 'View forecast', hour: 'Hourly', collapse: 'Close',
+      rainProb: 'Rain chance', clickDetail: 'View forecast', hour: 'Hourly', week: 'This week', collapse: 'Close',
       noEvents: 'No rain/wind today', tapSetup: 'Set city for weather', from: 'from', gust: 'gusts', saved: 'Weather settings saved', saveFail: 'Could not save weather; check the city',
     },
   };
@@ -170,8 +170,11 @@
       </div>`;
     }).join('');
 
-    // 逐小时（§27，折叠）
-    const hourRows = (data.hourly || []).slice(0, 24).map((h) => {
+    // 今日逐小时（§27）：只取今天 00:00–23:00；若 Provider 未带日期则回退前 24 条。
+    const todayDate = String(((data.daily || [])[0] || {}).date || '').slice(0, 10);
+    const allHourly = data.hourly || [];
+    const todayHourly = todayDate ? allHourly.filter((h) => String(h.time || '').slice(0, 10) === todayDate) : [];
+    const hourRows = (todayHourly.length ? todayHourly : allHourly.slice(0, 24)).slice(0, 24).map((h) => {
       const prob = h.precipitationProbability || 0;
       return `<div class="weather-hour-row"><span class="weather-hour-t">${clockOf(h.time)}</span><span class="weather-hour-i">${iconOf(h.weatherCode)}</span><span class="weather-hour-temp">${tempC(h.temperature)}</span>${prob ? `<span class="weather-hour-rain">${prob}%</span>` : ''}${h.windGust >= 40 ? '<span class="weather-hour-wind">💨</span>' : ''}</div>`;
     }).join('');
@@ -188,9 +191,16 @@
         </div>
       </div>
       ${evCards.length ? `<div class="weather-events">${evCards.join('')}</div>` : `<div class="weather-events-empty">${l.noEvents}</div>`}
-      <div class="weather-days">${days}</div>
-      <div class="weather-hour-toggle" onclick="WeatherCard.toggleHourly()">${l.hour} ▾</div>
-      <div class="weather-hourly" id="weatherHourly" style="display:none">${hourRows}</div>`;
+      <div class="weather-forecast-tabs" role="tablist" aria-label="Forecast view">
+        <button type="button" class="weather-forecast-tab active" id="weatherTabHourly" role="tab" aria-selected="true" onclick="WeatherCard.switchForecastView('hourly')">${l.hour}</button>
+        <button type="button" class="weather-forecast-tab" id="weatherTabWeek" role="tab" aria-selected="false" onclick="WeatherCard.switchForecastView('week')">${l.week}</button>
+      </div>
+      <div class="weather-forecast-panel" id="weatherHourly">
+        <div class="weather-hourly">${hourRows}</div>
+      </div>
+      <div class="weather-forecast-panel" id="weatherWeek" style="display:none">
+        <div class="weather-days">${days}</div>
+      </div>`;
   }
 
   function peakPct(ev) {
@@ -240,11 +250,23 @@
       el.style.display = 'block';
       el.innerHTML = rows;
     },
+    switchForecastView(view) {
+      const doc = global.document;
+      if (!doc) return;
+      const hourly = doc.getElementById('weatherHourly');
+      const week = doc.getElementById('weatherWeek');
+      const hourlyTab = doc.getElementById('weatherTabHourly');
+      const weekTab = doc.getElementById('weatherTabWeek');
+      const showWeek = view === 'week';
+      if (hourly) hourly.style.display = showWeek ? 'none' : 'block';
+      if (week) week.style.display = showWeek ? 'block' : 'none';
+      if (hourlyTab) { hourlyTab.classList.toggle('active', !showWeek); hourlyTab.setAttribute('aria-selected', String(!showWeek)); }
+      if (weekTab) { weekTab.classList.toggle('active', showWeek); weekTab.setAttribute('aria-selected', String(showWeek)); }
+    },
+    // 兼容旧调用：原 toggleHourly 现在切换“逐个小时 / 本星期”。
     toggleHourly() {
-      const el = global.document && global.document.getElementById('weatherHourly');
-      if (!el) return;
-      const show = el.style.display !== 'block';
-      el.style.display = show ? 'block' : 'none';
+      const week = global.document && global.document.getElementById('weatherWeek');
+      API.switchForecastView(week && week.style.display === 'block' ? 'hourly' : 'week');
     },
   };
   // ================= 设置页接线（WeatherSettings） =================

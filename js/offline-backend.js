@@ -55,6 +55,41 @@
     return new Response(JSON.stringify({ error: msg }), { status, headers: { 'Content-Type': 'application/json' } });
   }
 
+  function audit(action, tableName, recordId, source, detail, actorName) {
+    try {
+      const cols = DB.prepare('PRAGMA table_info(accounting_audit_log)').all();
+      const hasActor = cols.some(c => c && c.name === 'actor');
+      if (hasActor) DB.prepare('INSERT INTO accounting_audit_log (action, table_name, record_id, source, detail, actor) VALUES (?,?,?,?,?,?)')
+        .run(action, tableName || '', Number(recordId) || 0, source || 'local', detail || '', actorName || '');
+      else DB.prepare('INSERT INTO accounting_audit_log (action, table_name, record_id, source, detail) VALUES (?,?,?,?,?)')
+        .run(action, tableName || '', Number(recordId) || 0, source || 'local', detail || '');
+    } catch (e) { console.warn('[audit]', e); }
+  }
+
+  function restoreTrashRow(trash, actorName) {
+    if (!trash) throw new Error('回收站记录不存在');
+    const table = String(trash.original_table || '');
+    if (!['income','expense','purchase'].includes(table)) throw new Error('不允许恢复该类型');
+    let row;
+    try { row = JSON.parse(trash.record_json || '{}'); } catch (e) { throw new Error('回收站快照损坏'); }
+    const info = DB.prepare(`PRAGMA table_info(${table})`).all();
+    const valid = new Set(info.map(c => String(c.name)));
+    let cols = Object.keys(row).filter(k => valid.has(k));
+    if (!cols.length) throw new Error('快照没有可恢复字段');
+    const originalId = Number(row.id || trash.original_id) || 0;
+    if (originalId) {
+      const exists = DB.prepare(`SELECT id FROM ${table} WHERE id=?`).get(originalId);
+      if (exists) { delete row.id; cols = cols.filter(k => k !== 'id'); }
+    }
+    const marks = cols.map(() => '?').join(',');
+    const qcols = cols.map(c => `"${c}"`).join(',');
+    const r = DB.prepare(`INSERT INTO ${table} (${qcols}) VALUES (${marks})`).run(...cols.map(c => row[c]));
+    const restoredId = (cols.includes('id') ? Number(row.id) : Number(r.lastInsertRowid)) || originalId;
+    DB.prepare("UPDATE ledger_trash SET restored_at=datetime('now','localtime'), restored_by=? WHERE id=?").run(actorName || '', Number(trash.id));
+    audit('restore', table, restoredId, 'trash', JSON.stringify({ trash_id: trash.id, original_id: trash.original_id }), actorName);
+    return { restoredId, originalId };
+  }
+
   // ---------- 鉴权（与 server 一致：token 会话） ----------
   function getHeader(headers, name) {
     if (!headers) return null;
@@ -470,7 +505,21 @@
         const currency = String(d.currency || 'MXN').toUpperCase();
         let r;
         if (method === 'DELETE') {
-          r = DB.prepare(`DELETE FROM ${table} WHERE id=? AND mode=?`).run(Number(id), mode);
+          const row = DB.prepare(`SELECT * FROM ${table} WHERE id=? AND mode=?`).get(Number(id), mode);
+          if (!row) return fail('记录不存在或已删除', 404);
+          const reason = String((body && body.reason) || query.reason || '').slice(0, 200);
+          DB.exec('BEGIN');
+          try {
+            const tr = DB.prepare(`INSERT INTO ledger_trash (original_table, original_id, record_json, mode, deleted_by, delete_reason) VALUES (?,?,?,?,?,?)`)
+              .run(table, Number(id), JSON.stringify(row), mode, actorName || '', reason);
+            r = DB.prepare(`DELETE FROM ${table} WHERE id=? AND mode=?`).run(Number(id), mode);
+            audit('soft_delete', table, Number(id), 'ledger', JSON.stringify({ trash_id: tr.lastInsertRowid, reason }), actorName);
+            DB.exec('COMMIT');
+            return ok({ ok: true, softDeleted: true, trashId: tr.lastInsertRowid, id: Number(id), table });
+          } catch (e) {
+            try { DB.exec('ROLLBACK'); } catch (e2) {}
+            return fail('删除失败，原记录未改变: ' + ((e && e.message) || e), 500);
+          }
         } else if (table === 'income') {
           const baseAmount = toBaseAmount(d.amount, currency);
           r = DB.prepare(`UPDATE income SET date=?, project=?, pay_method=?, account=?, amount=?, handler=?, remark=?, discount=?, card_pending_account=?, voucher=?, currency=? WHERE id=? AND mode=?`)
@@ -611,23 +660,33 @@
       const catCol = type === 'income' ? 'project' : type === 'expense' ? 'category' : 'supplier';
       const amtCol = type === 'purchase' ? 'total_amount' : 'amount';
       const actCol = type === 'purchase' ? 'pay_method' : 'account';
-      const rows = DB.prepare(`SELECT id, ${dateCol} d, ${amtCol} a, ${catCol} c, ${actCol} ac FROM ${table} WHERE mode=?`).all(mode);
-      let best = null, bestCount = 0;
+      // 金额统一换算到基础货币后比较，避免 MXN/USD/CNY 跨币种误判。
+      const rows = DB.prepare(`SELECT id, ${dateCol} d, ${amtCol} a, ${catCol} c, ${actCol} ac, currency cur FROM ${table} WHERE mode=?`).all(mode);
+      let bestCount = 0, bestScore = 0;
       const matches = [];
       for (const r of rows) {
-        let hit = 0;
+        let hit = 0, score = 0;
+        const reasons = [];
         const rDate = String(r.d || '').slice(0, 10);
-        const rAmt = Math.round((Number(r.a) || 0) * 100) / 100;
+        const rCurrency = String(r.cur || 'MXN').toUpperCase();
+        const rAmt = Math.round(toBaseAmount(Number(r.a) || 0, rCurrency) * 100) / 100;
         const rCat = String(r.c || '').trim();
         const rAc = String(r.ac || '').trim();
-        if (date && rDate === date) hit++;
-        if (baseAmt > 0 && rAmt === baseAmt) hit++;
-        if (category && rCat === category) hit++;
-        if (account && rAc === account) hit++;
-        if (hit >= 2) matches.push({ id: r.id, date: rDate, amount: rAmt, category: rCat, account: rAc, hit });
-        if (hit > bestCount) { bestCount = hit; best = r; }
+        if (date && rDate === date) { hit++; score += 30; reasons.push('同日'); }
+        if (baseAmt > 0 && Math.abs(rAmt - baseAmt) <= 0.01) { hit++; score += 45; reasons.push('同金额'); }
+        if (category && rCat === category) { hit++; score += 15; reasons.push('同分类/对象'); }
+        if (account && rAc === account) { hit++; score += 10; reasons.push('同账户'); }
+        // 不再使用“任意两项相同”这种过宽规则。金额是交易身份的核心：
+        // 同日+同金额直接高风险；同金额再叠加分类/账户也提示；没有同金额则至少需三项一致。
+        const amountSame = reasons.includes('同金额');
+        const dateSame = reasons.includes('同日');
+        const risky = (amountSame && dateSame) || (amountSame && hit >= 2) || (!amountSame && hit >= 3);
+        if (risky) matches.push({ id: r.id, date: rDate, amount: rAmt, currency: rCurrency, category: rCat, account: rAc, hit, score, reasons });
+        if (hit > bestCount) bestCount = hit;
+        if (score > bestScore) bestScore = score;
       }
-      return ok({ dup: matches.length > 0, count: matches.length, matches: matches.slice(0, 5), topHit: bestCount });
+      matches.sort((a,b) => b.score - a.score || b.hit - a.hit);
+      return ok({ dup: matches.length > 0, count: matches.length, matches: matches.slice(0, 5), topHit: bestCount, topScore: bestScore });
     }
 
     // ---- query（含全局搜索） ----
@@ -709,9 +768,9 @@
         if (end) { condsI.push('date <= ?'); paramsI.push(end); }
         const amtI = amtFilter('amount');
         if (amtI) { condsI.push(amtI); paramsI.push(...(isNaN(amtMin) ? [] : [amtMin]), ...(isNaN(amtMax) ? [] : [amtMax])); }
-        const kwE = kw ? '(remark LIKE ? OR category LIKE ? OR account LIKE ? OR handler LIKE ?)' : '';
+        const kwE = kw ? '(remark LIKE ? OR category LIKE ? OR account LIKE ? OR handler LIKE ? OR payee LIKE ?)' : '';
         const condsE = [`mode = ?`]; const paramsE = [mode];
-        if (kw) { condsE.push(kwE); paramsE.push(...[kw, kw, kw, kw].map(k => `%${k}%`)); }
+        if (kw) { condsE.push(kwE); paramsE.push(...[kw, kw, kw, kw, kw].map(k => `%${k}%`)); }
         if (start) { condsE.push('date >= ?'); paramsE.push(start); }
         if (end) { condsE.push('date <= ?'); paramsE.push(end); }
         const amtE = amtFilter('amount');
@@ -886,6 +945,36 @@
         inserted++;
       }
       return ok({ inserted, skipped, date: todayStr });
+    }
+
+    // ---- ledger trash：账务回收站（V184） ----
+    if (path === '/trash' && method === 'GET') {
+      const includeRestored = String(query.includeRestored || '') === '1';
+      const where = includeRestored ? 'mode=?' : "mode=? AND (restored_at='' OR restored_at IS NULL)";
+      const rows = DB.prepare(`SELECT * FROM ledger_trash WHERE ${where} ORDER BY deleted_at DESC, id DESC LIMIT 1000`).all(mode);
+      return ok(rows.map(r => {
+        let record = {}; try { record = JSON.parse(r.record_json || '{}'); } catch (e) {}
+        return { ...r, record };
+      }));
+    }
+    const trashRestore = path.match(/^\/trash\/(\d+)\/restore$/);
+    if (trashRestore && method === 'POST') {
+      const tid = Number(trashRestore[1]);
+      const trash = DB.prepare('SELECT * FROM ledger_trash WHERE id=? AND mode=?').get(tid, mode);
+      if (!trash) return fail('回收站记录不存在', 404);
+      if (trash.restored_at) return fail('该记录已经恢复');
+      DB.exec('BEGIN');
+      try { const rr = restoreTrashRow(trash, actorName); DB.exec('COMMIT'); return ok({ ok: true, ...rr }); }
+      catch (e) { try { DB.exec('ROLLBACK'); } catch (e2) {} return fail('恢复失败: ' + ((e && e.message) || e), 500); }
+    }
+    const trashDelete = path.match(/^\/trash\/(\d+)$/);
+    if (trashDelete && method === 'DELETE') {
+      const tid = Number(trashDelete[1]);
+      const trash = DB.prepare('SELECT * FROM ledger_trash WHERE id=? AND mode=?').get(tid, mode);
+      if (!trash) return fail('回收站记录不存在', 404);
+      DB.prepare('DELETE FROM ledger_trash WHERE id=? AND mode=?').run(tid, mode);
+      audit('permanent_delete', trash.original_table, trash.original_id, 'trash', JSON.stringify({ trash_id: tid }), actorName);
+      return ok({ ok: true });
     }
 
     // ---- backup（导出数据库） ----

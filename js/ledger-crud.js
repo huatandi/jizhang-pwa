@@ -20,6 +20,19 @@ let expensePageRows = null;
 let purchasePageRows = null;
 let incomePageLen = 0, expensePageLen = 0, purchasePageLen = 0;
 
+function prepareTransaction(type, body, source) {
+  const core = global.JizhangIntelligence && global.JizhangIntelligence.TransactionCore;
+  if (!core || typeof core.prepare !== 'function') return { ok: true, legacy: body, transaction: null, errors: [], warnings: [] };
+  return core.prepare(type, body, source || 'manual');
+}
+function rejectPrepared(prepared) {
+  if (prepared && prepared.ok) return false;
+  const core = global.JizhangIntelligence && global.JizhangIntelligence.TransactionCore;
+  const msg = core && core.userMessage ? core.userMessage(prepared && prepared.errors) : '交易数据校验失败';
+  showToast(msg, 'error');
+  return true;
+}
+
 /** 生成"加载更多"行（若还有未渲染数据） */
 function moreRow(tbodyId, len, total, kind) {
   const moreBtn = `<tr class="pager-more-row"><td colspan="8" style="text-align:center;padding:10px">
@@ -180,14 +193,14 @@ async function maybeDup(type, d) {
     if (r && r.dup) {
       const first = r.matches && r.matches[0];
       const hint = first ? `\n（例：${first.date}｜¥${first.amount}｜${first.category || '-'}｜${first.account || '-'}，命中 ${first.hit} 项）` : '';
-      return confirm(`⚠️ 疑似重复记账！\n已存在与该条目在「日期/金额/分类/账户」中 ≥2 项相同的记录${hint}\n\n继续保存吗？`);
+      return confirm(`⚠️ 疑似重复记账！\n已存在与该条目与当前记录高度相似的记录（金额为核心，并结合日期/分类/账户加权判断）${hint}\n\n继续保存吗？`);
     }
     return true;
   } catch (e) { return true; } // 检查失败不阻塞保存
 }
 
 async function saveIncome() {
-  const d = {
+  let d = {
     date: document.getElementById('iDate').value,
     project: document.getElementById('iProject').value,
     pay_method: '', // 收款方式已从界面移除（V5）
@@ -199,6 +212,9 @@ async function saveIncome() {
     remark: document.getElementById('iRemark').value,
     currency: (document.getElementById('iCurrency') || {}).value || BASE_CURRENCY()
   };
+  const prepared = prepareTransaction('income', d, 'manual');
+  if (rejectPrepared(prepared)) return;
+  d = prepared.legacy;
   if (!d.date) return showToast('请选择日期', 'error');
   // 审计 M6 修复：金额必须为正数且有限（拒绝 0/负数/NaN/Infinity/1e999）
   const amt = Number(d.amount);
@@ -220,10 +236,25 @@ async function saveIncome() {
   });
 }
 
+function showLedgerUndo(trashId, label) {
+  let bar = document.getElementById('ledgerUndoBar');
+  if (!bar) {
+    bar = document.createElement('div'); bar.id = 'ledgerUndoBar'; bar.className = 'ledger-undo-bar'; document.body.appendChild(bar);
+  }
+  bar.innerHTML = `<span>${escapeHtml(label || '记录')}已移入回收站</span><button type="button">↩️ 撤销</button>`;
+  bar.classList.add('show');
+  const timer = setTimeout(() => bar.classList.remove('show'), 8000);
+  bar.querySelector('button').onclick = async () => {
+    clearTimeout(timer);
+    try { await api('/trash/' + trashId + '/restore', 'POST', {}); bar.classList.remove('show'); showToast('✅ 已恢复'); renderIncome(); renderExpense(); renderPurchase(); refreshDashboards(); }
+    catch (e) { showToast(e.message || '恢复失败', 'error'); }
+  };
+}
+
 async function deleteIncome(id) {
-  if (!confirm('确定删除这条收入记录？')) return;
-  await api('/income/' + id, 'DELETE');
-  showToast('已删除');
+  if (!confirm('确定删除这条收入记录？\n删除后会进入回收站，可以恢复。')) return;
+  const r = await api('/income/' + id, 'DELETE');
+  showLedgerUndo(r.trashId, '收入记录');
   renderIncome();
   refreshDashboards();
 }
@@ -440,7 +471,7 @@ function editPurchase(id) {
 
 async function savePurchase() {
   const supplier = document.getElementById('pSupplier').value || document.getElementById('pSupplierNew').value.trim();
-  const d = {
+  let d = {
     doc_date: document.getElementById('pDate').value,
     supplier,
     total_amount: document.getElementById('pTotal').value,
@@ -449,6 +480,9 @@ async function savePurchase() {
     remark: document.getElementById('pRemark').value,
     currency: (document.getElementById('pCurrency') || {}).value || BASE_CURRENCY()
   };
+  const prepared = prepareTransaction('purchase', d, 'manual');
+  if (rejectPrepared(prepared)) return;
+  d = prepared.legacy;
   if (!supplier) return showToast('请选择或输入供货商', 'error');
   // 审计 M6 修复：进货日期与进货款必填且为正数
   if (!d.doc_date) return showToast('请选择进货日期', 'error');
@@ -457,9 +491,13 @@ async function savePurchase() {
   if (d.paid_amount) {
     const paid = Number(d.paid_amount);
     if (!Number.isFinite(paid) || paid < 0) return showToast('已付金额无效', 'error');
+    if (paid > total + 0.005) return showToast('已付金额不能大于进货总额；如属预付款，请单独记录并在备注关联', 'error');
     d.paid_amount = Math.round(paid * 100) / 100;
   }
   d.total_amount = Math.round(total * 100) / 100;
+  // 付款状态由金额事实兜底，避免“已付清但状态仍未付”的统计矛盾。
+  const paidNow = Number(d.paid_amount) || 0;
+  if (paidNow >= d.total_amount - 0.005 && d.total_amount > 0 && !d.status) d.status = '清零';
   return withSubmitLock('purchase', async () => {
     if (editingPurchaseId) {
       await api('/purchase/' + editingPurchaseId, 'PUT', d);
@@ -477,9 +515,9 @@ async function savePurchase() {
 }
 
 async function deletePurchase(id) {
-  if (!confirm('确定删除这条进货记录？')) return;
-  await api('/purchase/' + id, 'DELETE');
-  showToast('已删除');
+  if (!confirm('确定删除这条进货记录？\n删除后会进入回收站，可以恢复。')) return;
+  const r = await api('/purchase/' + id, 'DELETE');
+  showLedgerUndo(r.trashId, '进货记录');
   renderPurchase();
   refreshDashboards();
 }
@@ -579,7 +617,7 @@ function editExpense(id) {
 }
 
 async function saveExpense() {
-  const d = {
+  let d = {
     date: document.getElementById('eDate').value,
     category: document.getElementById('eCategory').value,
     amount: document.getElementById('eAmount').value,
@@ -589,6 +627,9 @@ async function saveExpense() {
     remark: document.getElementById('eRemark').value,
     currency: (document.getElementById('eCurrency') || {}).value || BASE_CURRENCY()
   };
+  const prepared = prepareTransaction('expense', d, 'manual');
+  if (rejectPrepared(prepared)) return;
+  d = prepared.legacy;
   if (!d.date) return showToast('请选择日期', 'error');
   // 审计 M6 修复：金额必须为正数且有限
   const amt = Number(d.amount);
@@ -611,9 +652,9 @@ async function saveExpense() {
 }
 
 async function deleteExpense(id) {
-  if (!confirm('确定删除这条支出记录？')) return;
-  await api('/expense/' + id, 'DELETE');
-  showToast('已删除');
+  if (!confirm('确定删除这条支出记录？\n删除后会进入回收站，可以恢复。')) return;
+  const r = await api('/expense/' + id, 'DELETE');
+  showLedgerUndo(r.trashId, '支出记录');
   renderExpense();
   refreshDashboards();
 }

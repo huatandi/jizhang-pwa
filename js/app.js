@@ -1331,7 +1331,7 @@ async function downloadBackup() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     const hint = document.getElementById('backupHint');
-    if (hint) hint.textContent = '✅ 备份已生成并下载：' + filename + '（已自动保留最近 10 份）';
+    if (hint) hint.textContent = '✅ 备份已生成并下载：' + filename + '（请妥善保存该备份文件）';
     showToast('✅ 备份已下载');
   } catch (e) {
     showToast(e.message, 'error');
@@ -3107,57 +3107,93 @@ const BackupV2 = {
   async restore(input) {
     const file = input && input.files && input.files[0];
     if (!file) return;
-    if (!confirm('恢复备份将覆盖当前数据。\n恢复前会先校验文件，并临时保存当前数据（校验失败不会覆盖）。\n确定继续？')) { input.value = ''; return; }
+    if (!confirm('恢复备份将覆盖当前数据。\n系统会先校验备份，并在内存保存当前数据库快照；任何一步失败都会自动回滚。\n确定继续？')) { input.value = ''; return; }
+    const DB = window.OfflineDB;
+    let currentSnapshot = null;
+    let imported = false;
+    const prevMigrationFailure = (() => { try { return localStorage.getItem('db_migration_failure'); } catch (e) { return null; } })();
+    const prevSafeMode = (() => { try { return localStorage.getItem('db_safe_mode'); } catch (e) { return null; } })();
     try {
+      if (!DB || !DB.exportDB || !DB.importDB) throw new Error('离线数据库模块不可用');
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
-      // 1) 校验：前 32 字节可能是 JSON 元数据头（V2 备份）或裸 sqlite 库（V1）
-      let meta = null;
-      let payload = bytes;
-      try {
-        const head = new TextDecoder().decode(bytes.slice(0, 2000));
-        if (head.trim().startsWith('{')) {
-          // V2 JSON 信封：{ metadata, data(base64), checksum }
-          const env = JSON.parse(head.split('\n')[0]); // 仅解析首行（data 可能很大）
-          const full = JSON.parse(new TextDecoder().decode(bytes));
-          if (full && full.metadata && full.data) {
-            // checksum 校验（SHA-256 canonical）
-            const cryptoObj = window.crypto;
-            const canonical = JSON.stringify(full.data);
-            const digest = await cryptoObj.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
-            const hex = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
-            if (full.checksum && hex !== full.checksum) throw new Error('备份文件校验和不匹配（可能损坏）');
-            meta = full.metadata;
-            // data 为 base64 的 sqlite 导出
-            const bin = atob(full.data);
-            payload = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) payload[i] = bin.charCodeAt(i);
-          }
-        }
-      } catch (e) { /* 非 V2 信封 → 按 V1 原始库处理 */ }
-      // 2) 临时快照当前库（导入失败可回滚）
-      const DB = window.OfflineDB;
-      const currentSnapshot = DB && DB.exportDB ? DB.exportDB() : null;
-      // 3) 导入
-      if (DB && DB.importDB) {
-        DB.importDB(payload);
-        // 迁移框架校验（新库 schema 可能旧 → 补迁移）
-        try {
-          const DM = window.AppCore && window.AppCore.DBMigration;
-          const raw = DB.prepare ? DB : { exec: () => {} };
-          if (DM && DM.migrate && raw.exec) { const r = DM.migrate(raw); if (!r.ok) throw new Error('恢复后迁移失败: ' + r.error); }
-        } catch (me) { /* 迁移失败不阻断，提示 */ }
-        showToast('✅ 备份已恢复' + (meta ? '（' + (meta.app || '') + ' · ' + (meta.version || '') + '）' : ''));
-        setTimeout(() => location.reload(), 1200);
-      } else {
-        throw new Error('离线数据库模块不可用');
+      let meta = null, payload = bytes;
+      // V2 JSON 信封；JSON 解析错误若文件看起来就是 JSON，则必须报错，不能误当 SQLite。
+      const head = new TextDecoder().decode(bytes.slice(0, Math.min(bytes.length, 2000))).trim();
+      if (head.startsWith('{')) {
+        const full = JSON.parse(new TextDecoder().decode(bytes));
+        if (!full || !full.metadata || !full.data) throw new Error('备份 JSON 结构无效');
+        const canonical = JSON.stringify(full.data);
+        const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
+        const hex = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+        if (full.checksum && hex !== full.checksum) throw new Error('备份文件校验和不匹配（可能损坏）');
+        meta = full.metadata;
+        const bin = atob(full.data); payload = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) payload[i] = bin.charCodeAt(i);
       }
+      const validation = DB.validateDB ? DB.validateDB(payload) : { ok: true };
+      if (!validation.ok) throw new Error(validation.error || '备份数据库完整性检查失败');
+      currentSnapshot = DB.exportDB();
+      if (DB.saveRecoverySnapshot) await DB.saveRecoverySnapshot(currentSnapshot);
+      DB.importDB(payload); imported = true;
+      const DM = window.AppCore && window.AppCore.DBMigration;
+      if (DM && DM.migrate) { const r = DM.migrate(DB); if (!r.ok) throw new Error('恢复后数据库迁移失败: ' + r.error); }
+      const DH = window.AppCore && window.AppCore.DbHealth;
+      if (DH) { const ic = DH.integrityCheck(DB), hc = DH.check(DB); if (!ic.ok || hc.status === 'error') throw new Error('恢复后数据库健康检查失败'); }
+      if (DB.flush) DB.flush();
+      if (DB.clearRecoverySnapshot) await DB.clearRecoverySnapshot();
+      showToast('✅ 备份已安全恢复' + (meta ? '（' + (meta.version || meta.app || '') + '）' : ''));
+      setTimeout(() => location.reload(), 1200);
     } catch (e) {
-      showToast('恢复失败（未覆盖当前数据）: ' + (e && e.message || e), 'error');
-    } finally {
-      input.value = '';
-    }
+      if (imported && currentSnapshot && DB && DB.importDB) {
+        try {
+          DB.importDB(currentSnapshot); if (DB.flush) DB.flush();
+          try {
+            if (prevMigrationFailure == null) localStorage.removeItem('db_migration_failure'); else localStorage.setItem('db_migration_failure', prevMigrationFailure);
+            if (prevSafeMode == null) localStorage.removeItem('db_safe_mode'); else localStorage.setItem('db_safe_mode', prevSafeMode);
+          } catch (se) {}
+          if (DB.clearRecoverySnapshot) await DB.clearRecoverySnapshot();
+          showToast('恢复失败，已自动回滚到恢复前数据', 'error');
+        } catch (rollbackError) {
+          let recovered = false;
+          try {
+            const diskSnapshot = DB.loadRecoverySnapshot ? await DB.loadRecoverySnapshot() : null;
+            if (diskSnapshot && diskSnapshot.length) { DB.importDB(diskSnapshot); if (DB.flush) DB.flush(); recovered = true; }
+          } catch (diskErr) { console.error('[backup disk recovery]', diskErr); }
+          showToast(recovered ? '恢复失败，已从安全快照恢复原数据' : '⚠️ 恢复失败且自动回滚失败，请停止记账并使用最近下载备份', 'error');
+          console.error('[backup rollback]', rollbackError);
+        }
+      } else showToast('恢复失败（当前数据未改变）: ' + (e && e.message || e), 'error');
+      console.error('[backup restore]', e);
+    } finally { input.value = ''; }
   },
+};
+
+const LedgerTrash = {
+  async open() { openModal('trashModal'); await this.refresh(); },
+  async refresh() {
+    const body = document.getElementById('trashTableBody'); const empty = document.getElementById('trashEmpty');
+    if (!body) return;
+    try {
+      const rows = await api('/trash');
+      if (empty) empty.style.display = rows.length ? 'none' : 'block';
+      body.innerHTML = rows.map(r => {
+        const x = r.record || {}; const type = r.original_table === 'income' ? '收入' : r.original_table === 'expense' ? '支出' : '进货';
+        const date = x.date || x.doc_date || ''; const party = x.project || x.category || x.supplier || x.payee || '';
+        const amount = x.amount != null ? x.amount : x.total_amount;
+        return `<tr><td>${escapeHtml(type)}</td><td>${escapeHtml(date)}</td><td>${escapeHtml(party)}</td><td class="amount">¥${fmtMoney(amount || 0)}</td><td>${escapeHtml(r.deleted_by || '本机')}</td><td>${escapeHtml(r.deleted_at || '')}</td><td><button class="btn-small" onclick="LedgerTrash.restore(${r.id})">↩️ 恢复</button> <button class="btn-small" onclick="LedgerTrash.purge(${r.id})">永久删除</button></td></tr>`;
+      }).join('');
+    } catch (e) { showToast('回收站加载失败: ' + (e.message || e), 'error'); }
+  },
+  async restore(id) {
+    try { await api('/trash/' + id + '/restore', 'POST', {}); showToast('✅ 记录已恢复'); await this.refresh(); refreshDashboards(); }
+    catch (e) { showToast(e.message || '恢复失败', 'error'); }
+  },
+  async purge(id) {
+    if (!confirm('永久删除后无法恢复。\n确定永久删除这条回收站记录？')) return;
+    try { await api('/trash/' + id, 'DELETE'); showToast('已永久删除'); await this.refresh(); }
+    catch (e) { showToast(e.message || '永久删除失败', 'error'); }
+  }
 };
 
 const DbSettings = {
@@ -3178,6 +3214,14 @@ const DbSettings = {
       for (const [t, cols] of Object.entries(r.missingColumns)) detail.push('缺列(' + t + '): ' + cols.join(','));
       detail.push('schema v' + r.userVersion);
       detail.push('完整性: ' + (ic.ok ? '正常' : '异常'));
+      if (DH.ledgerDiagnostics) {
+        const dg = DH.ledgerDiagnostics(DB);
+        detail.push('回收站: ' + dg.trashCount + ' 条');
+        if (dg.staleTrashCount) detail.push('超过90天: ' + dg.staleTrashCount);
+        if (dg.invalidTrashCount) detail.push('⚠ 回收站异常: ' + dg.invalidTrashCount);
+        if (dg.nonPositiveAmounts) detail.push('⚠ 金额异常: ' + dg.nonPositiveAmounts);
+        if (dg.duplicateCandidates) detail.push('疑似重复组: ' + dg.duplicateCandidates);
+      }
       if (detailEl) detailEl.textContent = detail.join(' · ');
       if (r.status === 'ok' && ic.ok) show('✅ 正常', 'recur-hint');
       else if (r.status === 'migration') show('⚠️ 需要迁移', 'recur-hint');

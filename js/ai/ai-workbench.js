@@ -2365,6 +2365,14 @@ function wbLearnCorrections(fields) {
 }
 
 // 「保存」：对号入座 —— 把工作台识别字段填入记账表单(支出/收入弹窗)，用户核对后点弹窗保存入账
+function prepareWorkbenchTransaction(type, body, confidenceValue) {
+  const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+  if (!core || typeof core.prepare !== 'function') return { ok: true, legacy: body, decision: 'CONFIRM', errors: [] };
+  return core.prepare(type, Object.assign({}, body, {
+    confidence: confidenceValue == null ? 0.86 : confidenceValue
+  }), 'ocr');
+}
+
 async function wbSave() {
   const fields = wbCollectFields();
   await wbEnsureTemplateForLearning(fields); // V7：第一次纠错也先建立 candidate template
@@ -2480,7 +2488,12 @@ async function wbSave() {
         remark: fields.remark || fields.merchant || '',
         currency: BASE_CURRENCY(),
       };
-      await api(isIncome ? '/income' : '/expense', 'POST', body);
+      const prepared = prepareWorkbenchTransaction(isIncome ? 'income' : 'expense', body, fields.amountConfidence);
+      if (!prepared.ok || prepared.decision === 'RETRY') {
+        const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+        return showToast(core && core.userMessage ? core.userMessage(prepared.errors) : 'OCR 结果不可靠，请核对后再保存', 'error');
+      }
+      await api(isIncome ? '/income' : '/expense', 'POST', prepared.legacy);
       showToast(isIncome ? '✅ 收入已入账' : '✅ 支出已入账');
       refreshDashboards();
       renderIncome && renderIncome();
@@ -2538,7 +2551,12 @@ async function wbSaveTemplate() {
         remark: fields.remark || fields.merchant || '',
         currency: BASE_CURRENCY(),
       };
-      await api(isIncome ? '/income' : '/expense', 'POST', body);
+      const prepared = prepareWorkbenchTransaction(isIncome ? 'income' : 'expense', body, fields.amountConfidence);
+      if (!prepared.ok || prepared.decision === 'RETRY') {
+        const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+        return showToast(core && core.userMessage ? core.userMessage(prepared.errors) : 'OCR 结果不可靠，请核对后再保存', 'error');
+      }
+      await api(isIncome ? '/income' : '/expense', 'POST', prepared.legacy);
       // 本地模板记忆（无服务器时）：按"商户/银行/尾号"记住常用字段，下次识别自动补位
       try {
         const key = isIncome ? 'sm_wb_tpl_income' : 'sm_wb_tpl_expense';

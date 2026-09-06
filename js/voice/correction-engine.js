@@ -40,7 +40,12 @@
   function extractValue(text, field) {
     const t = String(text || '').trim();
     if (field === 'amount') {
-      // 金额：阿拉伯数字（含千分位/小数），或中文数字
+      // V4.6：金额改口也必须走统一 VoiceKit 金额解析器，支持 万/十万/百万/千万/亿 与 ASR 常见同音纠错。
+      if (global.VoiceKit && typeof global.VoiceKit.parseAmount === 'function') {
+        const canonical = global.VoiceKit.parseAmount(t);
+        if (canonical != null && Number.isFinite(Number(canonical)) && Number(canonical) > 0) return Number(canonical);
+      }
+      // 兼容回退：阿拉伯数字（含千分位/小数），或中文数字
       let m = t.match(/(\d[\d,\.]*)\s*(?:比索|pesos|块|元|比索|MXN)?/);
       if (m) {
         const n = Number(m[1].replace(/,/g, ''));

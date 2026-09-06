@@ -70,6 +70,19 @@
         if (!columnExists(db, 'accounting_audit_log', 'actor')) db.exec("ALTER TABLE accounting_audit_log ADD COLUMN actor TEXT DEFAULT ''");
       },
     },
+    {
+      version: 4,
+      id: 'add-ledger-trash',
+      description: '账务安全删除：统一回收站、恢复审计与索引',
+      check(db) { return !columnExists(db, 'ledger_trash', 'record_json'); },
+      up(db) {
+        db.exec("CREATE TABLE IF NOT EXISTS ledger_trash (" +
+          "id INTEGER PRIMARY KEY AUTOINCREMENT, original_table TEXT NOT NULL, original_id INTEGER NOT NULL, " +
+          "record_json TEXT NOT NULL, mode TEXT DEFAULT 'business', deleted_by TEXT DEFAULT '', delete_reason TEXT DEFAULT '', " +
+          "deleted_at TEXT DEFAULT (datetime('now','localtime')), restored_at TEXT DEFAULT '', restored_by TEXT DEFAULT '')");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_ledger_trash_mode_deleted ON ledger_trash(mode, deleted_at)");
+      },
+    },
   ];
 
   // ================= 工具 =================

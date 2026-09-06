@@ -86,7 +86,19 @@
       const text = (res.data && res.data.text) || '';
       const confidence = (res.data && res.data.confidence) || 0;
       const fields = parseFields(text, opts);
-      return { text, confidence, fields };
+      const core = global.JizhangIntelligence && global.JizhangIntelligence.TransactionCore;
+      let transaction = null, decision = 'CONFIRM', validation = null;
+      if (core && typeof core.normalize === 'function') {
+        const normalizedConfidence = Math.max(0, Math.min(1, Number(confidence || 0) / 100));
+        transaction = core.normalize(Object.assign({}, fields, {
+          type: fields.transaction_type,
+          confidence: normalizedConfidence,
+          source: 'ocr'
+        }), 'ocr');
+        validation = core.validate(transaction);
+        decision = core.decision(normalizedConfidence, !validation.ok);
+      }
+      return { text, confidence, fields, transaction, decision, validation };
     } finally {
       working = false;
     }

@@ -71,6 +71,11 @@ function makeStubDB(opts) {
         if (!state.cols.accounting_audit_log.includes('actor')) state.cols.accounting_audit_log.push('actor');
         return [];
       }
+      if (/CREATE TABLE IF NOT EXISTS ledger_trash/.test(s)) {
+        if (!state.tables.includes('ledger_trash')) state.tables.push('ledger_trash');
+        state.cols.ledger_trash = ['id','original_table','original_id','record_json','mode','deleted_by','delete_reason','deleted_at','restored_at','restored_by'];
+        return [];
+      }
       if (/CREATE INDEX IF NOT EXISTS (\w+)/.test(s)) {
         const name = RegExp.$1;
         state.indexes = state.indexes || [];
@@ -111,8 +116,8 @@ function main() {
     const s = makeSandbox(stub);
     const r = s.AppCore.DBMigration.migrate(stub);
     assert('迁移 ok', r.ok === true, JSON.stringify(r));
-    assert('applied=[1,2,3]', r.applied.length === 3 && r.applied[0] === 1 && r.applied[1] === 2 && r.applied[2] === 3, JSON.stringify(r.applied));
-    assert('user_version=3', stub.state.userVersion === 3, String(stub.state.userVersion));
+    assert('applied=[1,2,3,4]', r.applied.length === 4 && r.applied.join(',') === '1,2,3,4', JSON.stringify(r.applied));
+    assert('user_version=4', stub.state.userVersion === 4, String(stub.state.userVersion));
     assert('expense 含 payee', stub.state.cols.expense.includes('payee'));
     assert('ledger_members 已建', stub.state.tables.includes('ledger_members') && stub.state.cols.ledger_members && stub.state.cols.ledger_members.includes('member_id'));
     assert('income 含 created_by', stub.state.cols.income.includes('created_by'));
@@ -120,9 +125,9 @@ function main() {
     assert('创建了索引', stub.state.indexes && stub.state.indexes.length >= 3);
   }
 
-  console.log('\n[2] 幂等：已迁移（user_version=3 且有 payee+索引+成员表）→ 不重复执行');
+  console.log('\n[2] 幂等：已迁移（user_version=4 且有回收站）→ 不重复执行');
   {
-    const stub = makeStubDB({ userVersion: 3 });
+    const stub = makeStubDB({ userVersion: 4 });
     stub.state.cols.expense.push('payee');
     stub.state.cols.income.push('created_by');
     stub.state.cols.purchase.push('created_by');
@@ -130,6 +135,8 @@ function main() {
     stub.state.cols.accounting_audit_log = ['id', 'action', 'table_name', 'record_id', 'source', 'detail', 'created_at', 'actor'];
     stub.state.tables.push('ledger_members');
     stub.state.cols.ledger_members = ['id', 'member_id', 'name', 'role', 'mode', 'is_default', 'created_at'];
+    stub.state.tables.push('ledger_trash');
+    stub.state.cols.ledger_trash = ['id','original_table','original_id','record_json','mode','deleted_by','delete_reason','deleted_at','restored_at','restored_by'];
     stub.state.indexes = ['idx_income_date_mode', 'idx_expense_date_mode', 'idx_purchase_date_mode', 'idx_income_category_mode', 'idx_expense_category_mode'];
     const s = makeSandbox(stub);
     const r = s.AppCore.DBMigration.migrate(stub);
@@ -158,6 +165,8 @@ function main() {
   {
     const stub = makeStubDB({ userVersion: 1 });
     stub.state.cols.expense.push('payee');
+    stub.state.tables.push('ledger_trash');
+    stub.state.cols.ledger_trash = ['id','original_table','original_id','record_json','mode','deleted_by','delete_reason','deleted_at','restored_at','restored_by'];
     const s = makeSandbox(stub);
     const r = s.AppCore.DbHealth.check(stub);
     assert('状态 ok', r.status === 'ok', JSON.stringify(r));
@@ -192,9 +201,9 @@ function main() {
     const s = makeSandbox(stub);
     const r = s.AppCore.DBMigration.migrate(stub);
     assert('迁移 ok（v2 索引）', r.ok === true, JSON.stringify(r));
-    assert('applied=[2,3]', r.applied.length === 2 && r.applied[0] === 2 && r.applied[1] === 3, JSON.stringify(r.applied));
-    assert('user_version=3', stub.state.userVersion === 3, String(stub.state.userVersion));
-    assert('创建了 5 个索引', stub.state.indexes && stub.state.indexes.length === 5, JSON.stringify(stub.state.indexes));
+    assert('applied=[2,3,4]', r.applied.length === 3 && r.applied.join(',') === '2,3,4', JSON.stringify(r.applied));
+    assert('user_version=4', stub.state.userVersion === 4, String(stub.state.userVersion));
+    assert('创建了账务索引（含回收站）', stub.state.indexes && stub.state.indexes.length >= 6, JSON.stringify(stub.state.indexes));
     assert('含 idx_income_date_mode', stub.state.indexes.includes('idx_income_date_mode'));
     assert('ledger_members 已建', stub.state.tables.includes('ledger_members'));
     // 幂等：再跑不重复

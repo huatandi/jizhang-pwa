@@ -11,13 +11,14 @@
   const REQUIRED_TABLES = [
     'income', 'expense', 'purchase', 'suppliers', 'options', 'reminders',
     'account_meta', 'documents', 'ai_extractions', 'ai_processing_jobs',
-    'document_templates', 'merchant_category_rules', 'accounting_audit_log', 'field_resolution_rules',
+    'document_templates', 'merchant_category_rules', 'accounting_audit_log', 'field_resolution_rules', 'ledger_trash',
   ];
   // 必要字段（关键列存在性）
   const REQUIRED_COLUMNS = {
     income: ['date', 'amount', 'project', 'account', 'mode'],
     expense: ['date', 'category', 'amount', 'account', 'payee', 'mode'],
     purchase: ['doc_date', 'supplier', 'total_amount', 'mode'],
+    ledger_trash: ['original_table', 'original_id', 'record_json', 'mode', 'deleted_at'],
   };
 
   function tables(db) {
@@ -65,6 +66,27 @@
     return out;
   }
 
+  function ledgerDiagnostics(db) {
+    const out = { trashCount: 0, staleTrashCount: 0, invalidTrashCount: 0, duplicateCandidates: 0, nonPositiveAmounts: 0 };
+    try {
+      const r = db.exec("SELECT COUNT(*), SUM(CASE WHEN deleted_at < datetime('now','-90 day') THEN 1 ELSE 0 END) FROM ledger_trash WHERE restored_at='' OR restored_at IS NULL");
+      if (r && r[0] && r[0].values && r[0].values[0]) { out.trashCount = Number(r[0].values[0][0]) || 0; out.staleTrashCount = Number(r[0].values[0][1]) || 0; }
+    } catch (e) {}
+    try {
+      const r = db.exec("SELECT COUNT(*) FROM ledger_trash WHERE original_table NOT IN ('income','expense','purchase') OR record_json='' OR record_json IS NULL");
+      out.invalidTrashCount = r && r[0] && r[0].values ? Number(r[0].values[0][0]) || 0 : 0;
+    } catch (e) {}
+    try {
+      const r = db.exec("SELECT (SELECT COUNT(*) FROM income WHERE amount<=0) + (SELECT COUNT(*) FROM expense WHERE amount<=0) + (SELECT COUNT(*) FROM purchase WHERE total_amount<0)");
+      out.nonPositiveAmounts = r && r[0] && r[0].values ? Number(r[0].values[0][0]) || 0 : 0;
+    } catch (e) {}
+    try {
+      const r = db.exec("SELECT COUNT(*) FROM (SELECT date,amount,account,mode,COUNT(*) c FROM income GROUP BY date,amount,account,mode HAVING c>1 UNION ALL SELECT date,amount,account,mode,COUNT(*) c FROM expense GROUP BY date,amount,account,mode HAVING c>1)");
+      out.duplicateCandidates = r && r[0] && r[0].values ? Number(r[0].values[0][0]) || 0 : 0;
+    } catch (e) {}
+    return out;
+  }
+
   /** 完整完整性检查（手动触发，可能耗时） */
   function integrityCheck(db) {
     try {
@@ -78,5 +100,5 @@
   }
 
   global.AppCore = global.AppCore || {};
-  global.AppCore.DbHealth = { check, integrityCheck, REQUIRED_TABLES, REQUIRED_COLUMNS };
+  global.AppCore.DbHealth = { check, integrityCheck, ledgerDiagnostics, REQUIRED_TABLES, REQUIRED_COLUMNS };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -13,7 +13,33 @@
   const VK = {};
 
   /* ================== 数字解析 ================== */
+
+  // V4.6 中文金额 ASR 纠错：只在“数字邻域”修正常见同音/近音单位，避免改写普通文本。
+  // 例：1完3千4拜5十5 → 1万3千4百5十5；十万/百万/千万/亿级继续交给层级解析器。
+  VK.normalizeCnAmountSpeech = function (text) {
+    // 只压缩“中文/阿拉伯数字金额 token 内部”的空格，绝不能删除整句空格。
+    // 旧实现把 "two hundred fifty" 拼成 "twohundredfifty"，导致英/西语数字全部失效。
+    let t = String(text || '').trim();
+    const numToken = '0-9零〇○一二两三四五六七八九十百千万亿完玩晚拜白仟拾';
+    for (let i = 0; i < 3; i++) {
+      t = t.replace(new RegExp('([' + numToken + '])\\s+(?=[' + numToken + '])', 'g'), '$1');
+    }
+    const digit = '0-9零〇○一二两三四五六七八九十百千万亿';
+    // 单位被 ASR 写成常见同音字时，仅当前后至少一侧为数字/数位单位才纠正。
+    const fixes = [
+      [/[完玩晚]/g, '万'], [/[拜白]/g, '百'], [/[仟]/g, '千'], [/[拾]/g, '十']
+    ];
+    for (const [re, unit] of fixes) {
+      t = t.replace(re, (m, off, whole) => {
+        const prev = off > 0 ? whole[off - 1] : '';
+        const next = off + m.length < whole.length ? whole[off + m.length] : '';
+        return (prev && new RegExp('[' + digit + ']').test(prev)) || (next && new RegExp('[' + digit + ']').test(next)) ? unit : m;
+      });
+    }
+    return t;
+  };
   VK.parseCnNumber = function (s) {
+    s = VK.normalizeCnAmountSpeech(s);
     const cnMap = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
     let num = 0, section = 0, cur = 0;
     let hasDigit = false, lastUnit = 0;
@@ -79,32 +105,43 @@
   const CN_SMALL = { '十':10,'百':100,'千':1000 };
   // 中文整数 → 数字（万/千/百/十/零 + 阿拉伯数字混排；<亿）
   VK._cnInt = function (s) {
-    const str = String(s || '').replace(/[，,\s]/g, '');
+    const str = VK.normalizeCnAmountSpeech(s).replace(/[，,\s]/g, '');
     if (!str) return null;
     if (/^\d+$/.test(str)) return parseInt(str, 10);
-    let total = 0, section = 0, num = 0;
+    // 大单位按中文数位层级递归，避免“一亿三千万”被重复放大。
+    const splitLarge = (text, unit, scale) => {
+      const i = text.indexOf(unit);
+      if (i < 0) return null;
+      const left = text.slice(0, i), right = text.slice(i + 1);
+      const lv = left ? VK._cnInt(left) : 1;
+      const rv = right ? VK._cnInt(right) : 0;
+      return (lv == null ? 0 : lv) * scale + (rv == null ? 0 : rv);
+    };
+    let large = splitLarge(str, '亿', 100000000);
+    if (large != null) return large;
+    large = splitLarge(str, '万', 10000);
+    if (large != null) return large;
+
+    let section = 0, num = 0, saw = false;
     for (const ch of str) {
-      if (ch >= '0' && ch <= '9') num = num * 10 + Number(ch);
-      else if (CN_D[ch] !== undefined) num = CN_D[ch];
-      else if (CN_SMALL[ch]) { if (num === 0) num = 1; section += num * CN_SMALL[ch]; num = 0; }
-      else if (ch === '万') { section = (section + num) * 10000; total += section; section = 0; num = 0; }
-      else if (ch === '亿') { total = (total + section + num) * 100000000; section = 0; num = 0; }
-      // 零：占位，无值
+      if (ch >= '0' && ch <= '9') { num = num * 10 + Number(ch); saw = true; }
+      else if (CN_D[ch] !== undefined) { num = CN_D[ch]; saw = true; }
+      else if (CN_SMALL[ch]) { section += (num || 1) * CN_SMALL[ch]; num = 0; saw = true; }
     }
-    total += section + num;
-    return total;
+    return saw ? section + num : null;
   };
   // 中文金额（万 零 块/元 毛/角/分 点 + 数字）→ 数字，如 "10万零78.36"→100078.36、"1万零3百二十六块7毛三"→10326.73
   VK.parseCnMoney = function (text) {
-    const t = String(text || '').trim().replace(/[，,\s]/g, '');
+    const t = VK.normalizeCnAmountSpeech(text).trim().replace(/[，,\s]/g, '');
     if (!t) return null;
     let s = t.replace(/^(?:人民币|￥|¥|CNY|元|块)?/i, '');
     let sign = 1;
     if (/^[-负]/.test(s)) { sign = -1; s = s.replace(/^[-负]/, ''); }
     // 尾部缩放："3.5万"/"1.2亿" → ×1万/×1亿
     let scale = 1;
-    const sm = s.match(/([万亿])$/);
-    if (sm) { scale = (sm[1] === '亿') ? 1e8 : 1e4; s = s.slice(0, -1); }
+    // 仅小数缩写需要先剥离大单位（3.5万/1.2亿）；整数中文数位交给 _cnInt 层级解析。
+    const sm = s.match(/^([0-9]+(?:[点.][0-9]+))([万亿])$/);
+    if (sm) { scale = (sm[2] === '亿') ? 1e8 : 1e4; s = sm[1]; }
     const dval = (x) => (CN_D[x] != null ? CN_D[x] : (/^\d$/.test(x) ? Number(x) : 0));
     let intStr = s, fracStr = '', splitMode = null;
     let m = String(s).match(/^(.*?)[点.]\s*(.*)$/);
@@ -140,7 +177,7 @@
     return sign < 0 ? -total : (Math.round(total * 100) / 100);
   };
   VK.parseAmount = function (text) {
-    const t = String(text || '').trim();
+    const t = VK.normalizeCnAmountSpeech(text).trim();
     if (!t) return null;
     // 中文金额（万/零/块/毛/角/分/亿）
     if (/[零一两二三四五六七八九十百千万亿元块钱毛角分点]/.test(t)) {
@@ -159,7 +196,7 @@
   VK.amountConfidence = function (amount, text) {
     const a = Number(amount);
     if (!(a > 0)) return 0.3;
-    let t = String(text || '').trim();
+    let t = VK.normalizeCnAmountSpeech(text).trim();
     if (!t) return 0.8;
     // 先剥离日期/时间短语与命令词，避免"8月15号"的15、"3点"的3被当成金额候选
     if (VK.stripDatePhrases) t = VK.stripDatePhrases(t);

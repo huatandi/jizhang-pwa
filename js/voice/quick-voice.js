@@ -1505,6 +1505,13 @@ function removeVoiceEntry(idx) {
   showToast('已删除该笔');
 }
 
+function prepareQuickTransaction(type, body, confidenceValue) {
+  const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+  if (!core || typeof core.prepare !== 'function') return { ok: true, legacy: body, decision: 'ACCEPT', errors: [] };
+  const enriched = Object.assign({}, body, { confidence: confidenceValue == null ? 0.9 : confidenceValue });
+  return core.prepare(type, enriched, 'voice');
+}
+
 async function saveQuick() {
   // 多笔模式：批量入账全部识别条目
   if (voiceMultiEntries && voiceMultiEntries.length >= 2) {
@@ -1520,11 +1527,15 @@ async function saveQuick() {
       const d = e.date || document.getElementById('qDate').value || todayLocal();
       const rem = e.remark || '';
       try {
-        if (k === 'expense') {
-          await api('/expense', 'POST', { date: d, category: cat, amount: e.amount, account: acc, handler: '', remark: rem });
-        } else {
-          await api('/income', 'POST', { date: d, project: cat, pay_method: '', account: acc, amount: e.amount, handler: '', remark: rem, discount: 0, card_pending_account: '' });
+        const rawBody = k === 'expense'
+          ? { date: d, category: cat, amount: e.amount, account: acc, handler: '', remark: rem }
+          : { date: d, project: cat, pay_method: '', account: acc, amount: e.amount, handler: '', remark: rem, discount: 0, card_pending_account: '' };
+        const prepared = prepareQuickTransaction(k, rawBody, e.confidence);
+        if (!prepared.ok || prepared.decision === 'RETRY') {
+          errors++;
+          continue;
         }
+        await api(k === 'expense' ? '/expense' : '/income', 'POST', prepared.legacy);
         saved++;
       } catch (err) { errors++; }
     }
@@ -1561,11 +1572,17 @@ async function saveQuick() {
   setQuickMem({ account, category: cat, type: quickType });
   // 保存：加 try/catch，避免接口异常变成"点了没反应"的静默失败
   try {
-    if (quickType === 'expense') {
-      await api('/expense', 'POST', { date, category: cat, amount: amtConfirmed, account, handler: '', remark });
-    } else {
-      await api('/income', 'POST', { date, project: cat, pay_method: '', account, amount: amtConfirmed, handler: '', remark, discount: 0, card_pending_account: '' });
+    const rawBody = quickType === 'expense'
+      ? { date, category: cat, amount: amtConfirmed, account, handler: '', remark }
+      : { date, project: cat, pay_method: '', account, amount: amtConfirmed, handler: '', remark, discount: 0, card_pending_account: '' };
+    // 用户在快速记账表单点击“保存”即代表对当前草稿进行了人工确认；
+    // 仍由 TransactionCore 做结构/金额/日期校验，但不再把低 ASR 置信度当成自动保存许可。
+    const prepared = prepareQuickTransaction(quickType, rawBody, 1);
+    if (!prepared.ok) {
+      const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
+      return showToast(core && core.userMessage ? core.userMessage(prepared.errors) : '交易数据校验失败', 'error');
     }
+    await api(quickType === 'expense' ? '/expense' : '/income', 'POST', prepared.legacy);
   } catch (e) {
     showToast('保存失败：' + (e && e.message ? e.message : '请重试'), 'error');
     if (voiceSessionActive) stopVoiceSession();
