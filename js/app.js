@@ -3289,8 +3289,11 @@ const LedgerTrash = {
       const rows = await api('/trash');
       if (empty) empty.style.display = rows.length ? 'none' : 'block';
       body.innerHTML = rows.map(r => {
-        const x = r.record || {}; const type = r.original_table === 'income' ? '收入' : r.original_table === 'expense' ? '支出' : '进货';
-        const date = x.date || x.doc_date || ''; const party = x.project || x.category || x.supplier || x.payee || '';
+        const x = r.record || {}; const type = r.original_table === 'income' ? '收入' : r.original_table === 'expense' ? '支出' : r.original_table === 'internal_transfers' ? '内部转账' : '进货';
+        const date = x.date || x.doc_date || '';
+        const party = r.original_table === 'internal_transfers'
+          ? `${x.from_account || '-'} → ${x.to_account || '-'}`
+          : (x.project || x.category || x.supplier || x.payee || '');
         const amount = x.amount != null ? x.amount : x.total_amount;
         return `<tr><td>${escapeHtml(type)}</td><td>${escapeHtml(date)}</td><td>${escapeHtml(party)}</td><td class="amount">¥${fmtMoney(amount || 0)}</td><td>${escapeHtml(r.deleted_by || '本机')}</td><td>${escapeHtml(r.deleted_at || '')}</td><td><button class="btn-small" onclick="LedgerTrash.restore(${r.id})">↩️ 恢复</button> <button class="btn-small" onclick="LedgerTrash.purge(${r.id})">永久删除</button></td></tr>`;
       }).join('');
