@@ -897,10 +897,18 @@ function tryRemindModeByVoice(text) {
     if (has.ring)    { any |= changed('rModeRing', false);    set('rModeRing', false); }
     if (has.vibrate) { any |= changed('rModeVibrate', false); set('rModeVibrate', false); }
   } else {
-    // 互斥多选：提到哪个开哪个，未提到的全部关闭（默认关闭）
-    any |= changed('rModeSpeak', has.speak); set('rModeSpeak', has.speak);
-    any |= changed('rModeRing', has.ring);   set('rModeRing', has.ring);
-    any |= changed('rModeVibrate', has.vibrate); set('rModeVibrate', has.vibrate);
+    // V211 CI hotfix：只有“只要/仅/only/solo”才是互斥选择。
+    // “开启响铃 / 打开震动 / 语音播报”只修改被点名的通道，其余保持原值。
+    const exclusive = /(?:只要|仅|只|只开|只留|solo|sólo|only|solamente)/i.test(t);
+    if (exclusive) {
+      any |= changed('rModeSpeak', has.speak); set('rModeSpeak', has.speak);
+      any |= changed('rModeRing', has.ring);   set('rModeRing', has.ring);
+      any |= changed('rModeVibrate', has.vibrate); set('rModeVibrate', has.vibrate);
+    } else {
+      if (has.speak)   { any |= changed('rModeSpeak', true);   set('rModeSpeak', true); }
+      if (has.ring)    { any |= changed('rModeRing', true);    set('rModeRing', true); }
+      if (has.vibrate) { any |= changed('rModeVibrate', true); set('rModeVibrate', true); }
+    }
   }
   const modeDesc = [has.speak && '语音播报', has.ring && '响铃', has.vibrate && '震动'].filter(Boolean).join('、') || '全关';
   renderReminderVoicePreview();
