@@ -1,43 +1,32 @@
 (function(g){'use strict';
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const hexToRgb=(hex)=>{const s=String(hex||'#ffffff').replace('#','');const n=parseInt(s.length===3?s.split('').map(x=>x+x).join(''):s,16);return {r:(n>>16)&255,g:(n>>8)&255,b:n&255};};
+  function cloneCanvas(canvas){const c=document.createElement('canvas');c.width=canvas.width;c.height=canvas.height;c.getContext('2d',{willReadFrequently:true}).drawImage(canvas,0,0);return c;}
   function canvasFromImage(img){const c=document.createElement('canvas');c.width=img.naturalWidth||img.videoWidth||img.width;c.height=img.naturalHeight||img.videoHeight||img.height;c.getContext('2d',{willReadFrequently:true}).drawImage(img,0,0,c.width,c.height);return c;}
-  function relight(canvas,strength=.45){
-    strength=clamp(Number(strength)||0,0,.85); if(!strength)return canvas;
-    const c=document.createElement('canvas');c.width=canvas.width;c.height=canvas.height;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(canvas,0,0);
-    const im=x.getImageData(0,0,c.width,c.height),d=im.data;
-    // Estimate left/right illumination from low-frequency column samples and compensate smoothly.
-    let L=0,R=0,ln=0,rn=0;
-    for(let y=0;y<c.height;y+=Math.max(1,Math.floor(c.height/90))) for(let xx=0;xx<c.width;xx+=Math.max(1,Math.floor(c.width/90))){const i=(y*c.width+xx)*4,lum=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];if(xx<c.width*.5){L+=lum;ln++;}else{R+=lum;rn++;}}
-    L/=ln||1;R/=rn||1;const target=(L+R)/2;
-    for(let y=0;y<c.height;y++)for(let xx=0;xx<c.width;xx++){const i=(y*c.width+xx)*4;const pos=xx/Math.max(1,c.width-1),base=L*(1-pos)+R*pos;const gain=clamp(1+(target-base)/Math.max(40,target)*strength,.72,1.32);for(let k=0;k<3;k++){let v=d[i+k]*gain; // gentle highlight protection
-      if(v>220)v=220+(v-220)*.35; d[i+k]=clamp(Math.round(v),0,255);}}
+  function faceWeight(x,y,face,w,h){if(!face)return 1;const cx=face.x+face.width*.5,cy=face.y+face.height*.52;const rx=Math.max(1,face.width*.72),ry=Math.max(1,face.height*.82);const dx=(x-cx)/rx,dy=(y-cy)/ry;const r=dx*dx+dy*dy;return r>=1?0:Math.pow(1-r,1.8);}
+  function relight(canvas,strength=.45,face=null){
+    strength=clamp(Number(strength)||0,0,.9);if(!strength)return cloneCanvas(canvas);
+    const c=cloneCanvas(canvas),x=c.getContext('2d',{willReadFrequently:true}),im=x.getImageData(0,0,c.width,c.height),d=im.data;
+    const region=face?{x:Math.max(0,Math.floor(face.x)),y:Math.max(0,Math.floor(face.y)),w:Math.min(c.width,Math.ceil(face.width)),h:Math.min(c.height,Math.ceil(face.height))}:{x:0,y:0,w:c.width,h:c.height};
+    let left=0,right=0,ln=0,rn=0;const sx=Math.max(1,Math.floor(region.w/70)),sy=Math.max(1,Math.floor(region.h/70));
+    for(let yy=region.y;yy<region.y+region.h;yy+=sy)for(let xx=region.x;xx<region.x+region.w;xx+=sx){const i=(yy*c.width+xx)*4,lum=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2],fw=faceWeight(xx,yy,face,c.width,c.height)||.15;if(xx<(region.x+region.w*.5)){left+=lum*fw;ln+=fw;}else{right+=lum*fw;rn+=fw;}}
+    left/=ln||1;right/=rn||1;const target=Math.min(182,Math.max(92,(left+right)/2+8*strength));
+    for(let yy=0;yy<c.height;yy++)for(let xx=0;xx<c.width;xx++){const i=(yy*c.width+xx)*4;const fw=faceWeight(xx,yy,face,c.width,c.height);if(face&&fw<=0)continue;const pos=clamp((xx-region.x)/Math.max(1,region.w),0,1),base=left*(1-pos)+right*pos;const lum=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];const shadow=Math.max(0,(target-Math.min(base,lum))/Math.max(55,target));const gain=clamp(1+shadow*strength*.62,1,1.42);const mix=face?fw:1;
+      for(let k=0;k<3;k++){let v=d[i+k]*(1+(gain-1)*mix);if(v>218)v=218+(v-218)*.32;d[i+k]=clamp(Math.round(v),0,255);}}
     x.putImageData(im,0,0);return c;
   }
   function backgroundMatte(canvas,color='#ffffff',tolerance=44,softness=28){
-    // Local lightweight background cleanup for plain walls. It never fabricates face pixels.
-    const c=document.createElement('canvas');c.width=canvas.width;c.height=canvas.height;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(canvas,0,0);const im=x.getImageData(0,0,c.width,c.height),d=im.data;
-    const sample=[];const step=Math.max(1,Math.floor(Math.min(c.width,c.height)/80));
-    for(let xx=0;xx<c.width;xx+=step){for(const yy of [0,Math.min(c.height-1,step)]){const i=(yy*c.width+xx)*4;sample.push([d[i],d[i+1],d[i+2]]);}for(const yy of [c.height-1,Math.max(0,c.height-1-step)]){const i=(yy*c.width+xx)*4;sample.push([d[i],d[i+1],d[i+2]]);}}
+    const c=cloneCanvas(canvas),x=c.getContext('2d',{willReadFrequently:true}),im=x.getImageData(0,0,c.width,c.height),d=im.data;const sample=[],step=Math.max(1,Math.floor(Math.min(c.width,c.height)/80));
+    for(let xx=0;xx<c.width;xx+=step){for(const yy of [0,Math.min(c.height-1,step),c.height-1,Math.max(0,c.height-1-step)]){const i=(yy*c.width+xx)*4;sample.push([d[i],d[i+1],d[i+2]]);}}
     for(let yy=0;yy<c.height;yy+=step){for(const xx of [0,Math.min(c.width-1,step),c.width-1,Math.max(0,c.width-1-step)]){const i=(yy*c.width+xx)*4;sample.push([d[i],d[i+1],d[i+2]]);}}
     const bg={r:0,g:0,b:0};for(const a of sample){bg.r+=a[0];bg.g+=a[1];bg.b+=a[2];}bg.r/=sample.length||1;bg.g/=sample.length||1;bg.b/=sample.length||1;const out=hexToRgb(color);
-    for(let i=0;i<d.length;i+=4){const dr=d[i]-bg.r,dg=d[i+1]-bg.g,db=d[i+2]-bg.b;const dist=Math.sqrt(dr*dr+dg*dg+db*db);let a=clamp((dist-tolerance)/Math.max(1,softness),0,1);a=a*a*(3-2*a);d[i]=Math.round(out.r*(1-a)+d[i]*a);d[i+1]=Math.round(out.g*(1-a)+d[i+1]*a);d[i+2]=Math.round(out.b*(1-a)+d[i+2]*a);}
-    x.putImageData(im,0,0);return c;
+    for(let i=0;i<d.length;i+=4){const dr=d[i]-bg.r,dg=d[i+1]-bg.g,db=d[i+2]-bg.b,dist=Math.sqrt(dr*dr+dg*dg+db*db);let a=clamp((dist-tolerance)/Math.max(1,softness),0,1);a=a*a*(3-2*a);d[i]=Math.round(out.r*(1-a)+d[i]*a);d[i+1]=Math.round(out.g*(1-a)+d[i+1]*a);d[i+2]=Math.round(out.b*(1-a)+d[i+2]*a);}x.putImageData(im,0,0);return c;
   }
-  function cropToSpec(canvas,spec,face){
-    const widthMm=Number(spec&&spec.widthMm)||35,heightMm=Number(spec&&spec.heightMm)||49,ratio=widthMm/heightMm;
-    let cx=canvas.width/2,cy=canvas.height/2,desiredH=canvas.height;
-    if(face){cx=face.x+face.width/2; const targetHead=Number(spec&&spec.headHeightRatio)||.46; desiredH=face.height/clamp(targetHead,.28,.68); cy=face.y+face.height*.48 + desiredH*.07;}
-    let h=Math.min(canvas.height,desiredH),w=h*ratio;if(w>canvas.width){w=canvas.width;h=w/ratio;}
-    let x=clamp(cx-w/2,0,canvas.width-w),y=clamp(cy-h*.42,0,canvas.height-h);
-    const c=document.createElement('canvas');const dpi=Number(spec&&spec.dpi)||300;c.width=Math.max(1,Math.round(widthMm/25.4*dpi));c.height=Math.max(1,Math.round(heightMm/25.4*dpi));c.getContext('2d').drawImage(canvas,x,y,w,h,0,0,c.width,c.height);return c;
-  }
-  async function toJpegTargetKb(canvas,targetKb,maxKb){
-    const hi=Number(maxKb)||Number(targetKb)||0;if(!hi)return await new Promise(r=>canvas.toBlob(r,'image/jpeg',.92));
-    let lo=.35,up=.96,best=null;for(let n=0;n<8;n++){const q=(lo+up)/2;const blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',q));if(!blob)break;best=blob;const kb=blob.size/1024;if(kb>hi)up=q;else lo=q;}return best;
-  }
-  function makePrintSheet(photo,{paper='4x6',count=8,dpi=300,gapMm=3}={}){
-    const mm=paper==='a4'?[210,297]:[101.6,152.4],W=Math.round(mm[0]/25.4*dpi),H=Math.round(mm[1]/25.4*dpi),gap=Math.round(gapMm/25.4*dpi);const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);let px=gap,py=gap,n=0;while(n<count&&py+photo.height<=H-gap){if(px+photo.width>W-gap){px=gap;py+=photo.height+gap;if(py+photo.height>H-gap)break;}x.drawImage(photo,px,py);x.strokeStyle='#bbb';x.lineWidth=1;x.strokeRect(px-.5,py-.5,photo.width+1,photo.height+1);px+=photo.width+gap;n++;}return {canvas:c,placed:n};
-  }
-  g.IDPhotoImageProcessor={canvasFromImage,relight,backgroundMatte,cropToSpec,toJpegTargetKb,makePrintSheet,VERSION:1};
+  function cropToSpec(canvas,spec,face){const widthMm=Number(spec&&spec.widthMm)||35,heightMm=Number(spec&&spec.heightMm)||49,ratio=widthMm/heightMm;let cx=canvas.width/2,desiredH=canvas.height;if(face){cx=face.x+face.width/2;const targetHead=Number(spec&&spec.headHeightRatio)||.46;desiredH=face.height/clamp(targetHead,.28,.68);}let h=Math.min(canvas.height,desiredH),w=h*ratio;if(w>canvas.width){w=canvas.width;h=w/ratio;}let y=face?clamp(face.y-face.height*.28,0,canvas.height-h):Math.max(0,(canvas.height-h)/2),xx=clamp(cx-w/2,0,canvas.width-w);const c=document.createElement('canvas');const dpi=Number(spec&&spec.dpi)||300;c.width=Math.max(1,Math.round(widthMm/25.4*dpi));c.height=Math.max(1,Math.round(heightMm/25.4*dpi));c.getContext('2d').drawImage(canvas,xx,y,w,h,0,0,c.width,c.height);return c;}
+  async function encode(canvas,{format='jpeg',quality=.92,targetKb=null,maxKb=null}={}){const mime=format==='png'?'image/png':'image/jpeg';if(format==='png')return await new Promise(r=>canvas.toBlob(r,mime));const hi=Number(maxKb)||Number(targetKb)||0;if(!hi)return await new Promise(r=>canvas.toBlob(r,mime,quality));let lo=.35,up=.98,best=null;for(let n=0;n<9;n++){const q=(lo+up)/2,blob=await new Promise(r=>canvas.toBlob(r,mime,q));if(!blob)break;best=blob;blob.size/1024>hi?up=q:lo=q;}return best;}
+  async function toJpegTargetKb(canvas,targetKb,maxKb){return encode(canvas,{format:'jpeg',targetKb,maxKb});}
+  function paperMm(paper,w,h){if(paper==='a4')return[210,297];if(paper==='5x7')return[127,177.8];if(paper==='custom')return[Number(w)||101.6,Number(h)||152.4];return[101.6,152.4];}
+  function layoutCapacity(photo,{paper='4x6',paperWidthMm,paperHeightMm,dpi=300,gapMm=3,marginMm=3,allowRotate=true}={}){const [mw,mh]=paperMm(paper,paperWidthMm,paperHeightMm),W=Math.round(mw/25.4*dpi),H=Math.round(mh/25.4*dpi),gap=Math.round(gapMm/25.4*dpi),margin=Math.round(marginMm/25.4*dpi);const cap=(pw,ph)=>Math.max(0,Math.floor((W-2*margin+gap)/(pw+gap))*Math.floor((H-2*margin+gap)/(ph+gap)));const normal=cap(photo.width,photo.height),rot=allowRotate?cap(photo.height,photo.width):0;return {capacity:Math.max(normal,rot),rotate:rot>normal,widthPx:W,heightPx:H,paperMm:[mw,mh]};}
+  function makePrintSheet(photo,opts={}){const dpi=Number(opts.dpi)||300,gapMm=Number(opts.gapMm??3),marginMm=Number(opts.marginMm??3),count=Number(opts.count)||999;const meta=layoutCapacity(photo,{...opts,dpi,gapMm,marginMm});const c=document.createElement('canvas');c.width=meta.widthPx;c.height=meta.heightPx;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);const gap=Math.round(gapMm/25.4*dpi),margin=Math.round(marginMm/25.4*dpi),drawW=meta.rotate?photo.height:photo.width,drawH=meta.rotate?photo.width:photo.height;let px=margin,py=margin,n=0;while(n<Math.min(count,meta.capacity)&&py+drawH<=c.height-margin){if(px+drawW>c.width-margin){px=margin;py+=drawH+gap;if(py+drawH>c.height-margin)break;}x.save();if(meta.rotate){x.translate(px+drawW,py);x.rotate(Math.PI/2);x.drawImage(photo,0,0);}else x.drawImage(photo,px,py);x.restore();if(opts.cropMarks!==false){x.strokeStyle='#a0a0a0';x.lineWidth=1;x.strokeRect(px-.5,py-.5,drawW+1,drawH+1);}px+=drawW+gap;n++;}return {canvas:c,placed:n,capacity:meta.capacity,rotated:meta.rotate,paperMm:meta.paperMm,dpi};}
+  g.IDPhotoImageProcessor={canvasFromImage,cloneCanvas,relight,backgroundMatte,cropToSpec,encode,toJpegTargetKb,layoutCapacity,makePrintSheet,VERSION:2};
 })(window);

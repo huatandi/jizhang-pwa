@@ -50,9 +50,9 @@
   <!-- DB 基础设施（V3.0 Phase0D）：迁移框架 + 健康检查（先于 offline-db 加载） -->
   <script src="js/db/migrations.js?v=2fb2d721"></script>
   <script src="js/db/health-check.js?v=24dcecc5"></script>
-  <!-- 主题切换（秋色「试穿」）：head 尽早加载，读 localStorage 设 data-theme，避免主题闪烁。
+  <!-- 主题切换（秋色）：head 尽早加载，读 localStorage 设 data-theme，避免主题闪烁。
        data-theme 与 <meta name="theme-color"> 联动由 theme.js 的 apply() 统一处理。 -->
-  <script src="js/theme.js?v=5bfaabb6"></script>
+  <script src="js/theme.js?v=fdeb79cc"></script>
 </head>
 <body>
   <!-- ======== 登录页面（开店经营 / 家庭明细 双入口） ======== -->
@@ -646,7 +646,10 @@
             <div class="ai-panel">
               <div class="chart-title">2. 拍照或导入</div>
               <div class="idp-actions"><label class="btn-primary idp-file-btn">📷 拍照<input id="idpCamera" type="file" accept="image/*" capture="user"></label><label class="btn-secondary idp-file-btn">🖼️ 相册<input id="idpFile" type="file" accept="image/*"></label></div>
-              <div id="idpStatus" class="recur-hint">选择照片后自动检查太近/太远、有效人脸像素、模糊、多人、构图余量、曝光与左右脸阴影。</div>
+              <div class="idp-mobile-primary"><button class="btn-secondary" id="idpImportBtn" type="button">🖼️ 导入照片</button><button class="btn-primary" id="idpStartCamera" type="button">● 拍照</button><button class="btn-secondary" id="idpMoreBtn" type="button">⋯ 更多</button></div>
+              <div class="idp-more-panel" id="idpMorePanel" hidden><button class="btn-secondary" id="idpSwitchCamera" type="button">↻ 前/后摄像头</button> <button class="btn-secondary" id="idpStopCamera" type="button">停止相机</button></div>
+              <div class="idp-live-panel" id="idpLivePanel" hidden><video id="idpLiveVideo" playsinline muted></video><canvas id="idpGuide"></canvas><div class="idp-coach-message" id="idpCoachMessage">请将头部放入证件规格头像框</div></div>
+              <div id="idpStatus" class="recur-hint">头像框会跟随当前证件规格变化；系统实时提示靠近、后退和左右调整，拍摄后再次检查清晰度、曝光和阴影。</div>
             </div>
           </div>
           <div class="idp-grid">
@@ -666,13 +669,10 @@
             </div>
           </div>
           <div class="ai-panel">
-            <div class="chart-title">5. 输出与排版</div>
-            <div class="idp-output-row">
-              <label>打印纸 <select id="idpPaper"><option value="4x6">4×6 英寸</option><option value="a4">A4</option></select></label>
-              <label>数量 <input id="idpCount" type="number" min="1" max="30" value="8"></label>
-              <button class="btn-primary" id="idpDownload" type="button">保存证件照 JPG</button>
-              <button class="btn-secondary" id="idpPrint" type="button">排版 / 打印</button>
-            </div>
+            <div class="chart-title">5. 输出与排版（证件要求、文件格式、打印纸、打印店要求互相独立）</div>
+            <div class="idp-output-row"><label>输出用途 <select id="idpPurpose"><option value="shop">🏪 拿到照相店打印</option><option value="single">单张电子照片</option><option value="home">家庭打印</option><option value="custom">自定义</option></select></label><label>文件格式 <select id="idpFormat"><option value="jpeg">JPG</option><option value="png">PNG</option></select></label><label>打印纸 <select id="idpPaper"><option value="4x6">4×6 英寸</option><option value="5x7">5×7 英寸</option><option value="a4">A4</option><option value="custom">自定义</option></select></label><label>数量 <input id="idpCount" type="number" min="1" max="99" value="8"></label></div>
+            <div class="idp-output-advanced"><label>DPI<input id="idpDpi" type="number" min="72" max="1200" value="300"></label><label>质量 %<input id="idpQualityOut" type="number" min="30" max="100" value="92"></label><label>自定义纸宽<input id="idpPaperW" type="number" min="1" value="101.6"></label><label>自定义纸高<input id="idpPaperH" type="number" min="1" value="152.4"></label><label>单位<select id="idpPaperUnit"><option value="mm">mm</option><option value="cm">cm</option><option value="inch">inch</option></select></label><label>外边距 mm<input id="idpMargin" type="number" min="0" value="3"></label><label>照片间距 mm<input id="idpGap" type="number" min="0" value="3"></label><label><span>裁切辅助线</span><input id="idpCropMarks" type="checkbox" checked></label></div>
+            <div class="idp-output-row" style="margin-top:10px"><button class="btn-primary" id="idpDownload" type="button">保存单张照片</button><button class="btn-secondary" id="idpPrint" type="button">生成打印店排版</button></div>
             <div class="recur-hint">若具体证件规格禁止数字修图，系统应切换为“检测 + 拍摄指导”，不自动美颜、补脸或改变身份特征。最终以办理机构当前要求为准。</div>
           </div>
         </div>
@@ -768,7 +768,7 @@
           <h2>⚙️ 设置</h2>
           <button class="btn-theme-toggle" id="themeToggle" type="button" title="切换主题（秋色 / 暗色）">
             <span class="tt-dot"></span>
-            <span class="tt-label">🍂 秋色试穿</span>
+            <span class="tt-label">🍂 秋色</span>
           </button>
         </header>
 
@@ -810,7 +810,7 @@
           </div>
           <div class="theme-hero-text">
             <h3>🍂 秋色主题</h3>
-            <p>亮色暖调「试穿」：焦糖橙 + 奶黄暖底。点击右上角按钮切换，默认仍是暗色兜底。</p>
+            <p>亮色暖调：焦糖橙 + 奶黄暖底。点击右上角按钮切换，默认仍是暗色兜底。</p>
           </div>
         </div>
         <div class="settings-body">
@@ -830,6 +830,8 @@
               <div class="fn-card" onclick="gotoPage('settings')"><span class="fn-icon" style="background:linear-gradient(135deg,#64748b,#475569)">⚙️</span><span class="fn-name">设置</span></div>
             </div>
           </div>
+
+          <div class="settings-section" id="personalizationSettings"><div class="settings-title">🎨 个性化 <span class="settings-sub">主题、图标和萌宠完全独立，可自由搭配</span></div><div class="personalization-grid"><div><b>主题</b><div class="choice-row"><button class="choice-chip" data-theme-choice="dark">🌙 深色</button><button class="choice-chip" data-theme-choice="light">☀️ 浅色</button><button class="choice-chip" data-theme-choice="autumn">🍂 秋色</button><button class="choice-chip" data-theme-choice="spring-summer">🌿 春夏</button></div></div><div><b>图标风格</b><div class="choice-row"><button class="choice-chip" data-icon-pack-choice="standard">标准</button><button class="choice-chip" data-icon-pack-choice="cartoon">卡通</button><button class="choice-chip" data-icon-pack-choice="chinese">中国风</button><button class="choice-chip" data-icon-pack-choice="tech">科技</button><button class="choice-chip" data-icon-pack-choice="punk">朋克</button><button class="choice-chip" data-icon-pack-choice="future">未来</button></div></div><div><b>十二生肖萌宠</b> <label><input id="petEnabled" type="checkbox" checked> 开启</label> <select id="petActivity"><option value="quiet">安静</option><option value="normal">正常</option><option value="active">活泼</option></select><div class="choice-row"><button class="choice-chip pet-choice" data-pet-choice="rat">🐭<small>鼠</small></button><button class="choice-chip pet-choice" data-pet-choice="ox">🐮<small>牛</small></button><button class="choice-chip pet-choice" data-pet-choice="tiger">🐯<small>虎</small></button><button class="choice-chip pet-choice" data-pet-choice="rabbit">🐰<small>兔</small></button><button class="choice-chip pet-choice" data-pet-choice="dragon">🐲<small>龙</small></button><button class="choice-chip pet-choice" data-pet-choice="snake">🐍<small>蛇</small></button><button class="choice-chip pet-choice" data-pet-choice="horse">🐴<small>马</small></button><button class="choice-chip pet-choice" data-pet-choice="goat">🐑<small>羊</small></button><button class="choice-chip pet-choice" data-pet-choice="monkey">🐵<small>猴</small></button><button class="choice-chip pet-choice" data-pet-choice="rooster">🐔<small>鸡</small></button><button class="choice-chip pet-choice" data-pet-choice="dog">🐶<small>狗</small></button><button class="choice-chip pet-choice" data-pet-choice="pig">🐷<small>猪</small></button></div><div class="settings-note">宠物只是表现层：睡觉、跑跳、记账成功和提醒动画均不参与账务/OCR/语音核心逻辑；关闭后核心功能不受影响。</div></div></div></div>
 
           <!-- 数据范围（日期期间设置） -->
           <div class="settings-section">
@@ -1640,10 +1642,14 @@
   <script src="js/intelligence/recognition-finalizer.js?v=6e11ec36"></script>
   <script src="js/intelligence/recognition-model-manager.js?v=29eb9889"></script>
   <script src="js/intelligence/intelligence-center.js?v=3e837be2"></script>
+  <script src="js/personalization/icon-packs.js"></script>
+  <script src="js/personalization/pet-engine.js"></script>
+  <script src="js/idphoto/output-profiles.js"></script>
+  <script src="js/idphoto/camera-coach.js"></script>
   <script src="js/idphoto/spec-registry.js?v=3a408fc2"></script>
   <script src="js/idphoto/capture-quality-gate.js?v=d4d37215"></script>
-  <script src="js/idphoto/image-processor.js?v=8bb6e9a2"></script>
-  <script src="js/idphoto/idphoto-studio.js?v=f54bc39a"></script>
+  <script src="js/idphoto/image-processor.js?v=20c6bf57"></script>
+  <script src="js/idphoto/idphoto-studio.js?v=074715ee"></script>
   <script src="js/boot.js?v=e3183636"></script>
 
   <!-- V190-V193 智能识别中心 -->

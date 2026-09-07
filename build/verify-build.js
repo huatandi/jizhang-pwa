@@ -26,7 +26,7 @@ function fail(msg) { errors++; console.error('✗ ' + msg); }
 function ok(msg) { console.log('✓ ' + msg); }
 
 function sha256(s) { return crypto.createHash('sha256').update(s).digest('hex'); }
-function hashFile(p) { return sha256(fs.readFileSync(p)).slice(0, 8); }
+function hashFile(p) { const ext=path.extname(p).toLowerCase(); if(['.js','.css','.html','.json'].includes(ext)){const t=fs.readFileSync(p,'utf8').replace(/\r\n/g,'\n').replace(/\r/g,'\n');return sha256(t).slice(0,8);} return sha256(fs.readFileSync(p)).slice(0,8); }
 
 function main() {
   // 0) manifest 存在
