@@ -27,9 +27,17 @@ const SW = path.join(ROOT, 'sw.js');
 const MANIFEST = path.join(__dirname, 'build-manifest.json');
 
 function sha256(s) { return crypto.createHash('sha256').update(s).digest('hex'); }
+function lf(s) { return String(s).replace(/\r\n/g, '\n').replace(/\r/g, '\n'); }
+function writeText(file, text) { fs.writeFileSync(file, lf(text), 'utf8'); }
 function shortHash(file) {
-  const buf = fs.readFileSync(file);
-  return sha256(buf).slice(0, 8);
+  // GitHub Actions runs on Linux while local development is often Windows.
+  // Hash logical UTF-8 text, not platform-specific CRLF/LF bytes.
+  const ext = path.extname(file).toLowerCase();
+  if (ext === '.js' || ext === '.css' || ext === '.html' || ext === '.json') {
+    const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    return sha256(text).slice(0, 8);
+  }
+  return sha256(fs.readFileSync(file)).slice(0, 8);
 }
 function resolveAsset(rel) {
   // rel 形如 'js/app.js' / 'css/style.css'；去掉查询串
@@ -100,7 +108,7 @@ function computeBuildId(assets) {
 function applySw(buildId) {
   let sw = fs.readFileSync(SW, 'utf8');
   sw = sw.replace(/CACHE_NAME = 'jizhang-pwa-[^']*';/, `CACHE_NAME = 'jizhang-pwa-${buildId}';`);
-  fs.writeFileSync(SW, sw, 'utf8');
+  writeText(SW, sw);
 }
 
 // ---------- main（两阶段幂等收敛） ----------
@@ -114,8 +122,8 @@ function main() {
   const boot1 = scanBoot();
   const assets1 = new Map([...idx1.assets, ...boot1.assets]);
   const { h, b } = applyVersions(idx1.html, boot1.js, assets1);
-  fs.writeFileSync(INDEX, h, 'utf8');
-  fs.writeFileSync(BOOT, b, 'utf8');
+  writeText(INDEX, h);
+  writeText(BOOT, b);
 
   console.log('[build] 阶段2：收敛重扫（构建后内容）…');
   const idx2 = scanIndex();
@@ -126,8 +134,8 @@ function main() {
   // 阶段2写回：boot.js 被阶段1改写后自身 hash 变化，index 中 boot.js 版本须用最终 hash。
   // 用收敛后的 assets 再替换一次（此时 index/boot 内容与阶段1一致，替换是幂等的）。
   const { h: h2, b: b2 } = applyVersions(idx2.html, boot2.js, assets);
-  fs.writeFileSync(INDEX, h2, 'utf8');
-  fs.writeFileSync(BOOT, b2, 'utf8');
+  writeText(INDEX, h2);
+  writeText(BOOT, b2);
 
   const buildId = computeBuildId(assets);
   applySw(buildId);
@@ -144,7 +152,7 @@ function main() {
     generatedAt,
     assets: Object.fromEntries([...assets.entries()].sort()),
   };
-  fs.writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2), 'utf8');
+  writeText(MANIFEST, JSON.stringify(manifest, null, 2) + '\n');
 
   console.log('[build] buildId: ' + buildId);
   console.log('[build] CACHE_NAME → jizhang-pwa-' + buildId);

@@ -52,7 +52,7 @@
   <script src="js/db/health-check.js?v=24dcecc5"></script>
   <!-- 主题切换（秋色「试穿」）：head 尽早加载，读 localStorage 设 data-theme，避免主题闪烁。
        data-theme 与 <meta name="theme-color"> 联动由 theme.js 的 apply() 统一处理。 -->
-  <script src="js/theme.js?v=d51b659a"></script>
+  <script src="js/theme.js?v=5bfaabb6"></script>
 </head>
 <body>
   <!-- ======== 登录页面（开店经营 / 家庭明细 双入口） ======== -->
@@ -1523,21 +1523,21 @@
   <script src="js/intelligence/template-engine.js?v=949b8d08"></script>
   <script src="js/intelligence/correction-learner.js?v=839f00d3"></script>
   <!-- V7：Document Intelligence（字段候选/金额裁决/商户过滤/日期/错误归因） -->
-  <script src="js/intelligence/document-intelligence-v7.js?v=00ce2271"></script>
+  <script src="js/intelligence/document-intelligence-v7.js?v=4f51615e"></script>
   <script src="js/voice-engine.js?v=9cc4fddb"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
   <script src="js/ai/global-config.js?v=735f4bc8"></script>
   <script src="js/offline-ocr.js?v=92958796"></script>
   <!-- AI 引擎层（OcrKit / MexicoParser / ValidateKit / AsrKit / VoiceKit） -->
-  <script src="js/validation/validators.js?v=8094156f"></script>
-  <script src="js/validation/confidence.js?v=627a878c"></script>
-  <script src="js/validation/transaction.js?v=c929b2c4"></script>
+  <script src="js/validation/validators.js?v=91a5357f"></script>
+  <script src="js/validation/confidence.js?v=04b8ddcc"></script>
+  <script src="js/validation/transaction.js?v=fd530795"></script>
   <script src="js/intelligence/transaction-core.js?v=0f420842"></script>
-  <script src="js/ocr/ocr-types.js?v=fd0c8097"></script>
+  <script src="js/ocr/ocr-types.js?v=416d33d7"></script>
   <!-- V5 P3：图像质量分析（preprocess 的 auto 增强依赖，必须先加载） -->
-  <script src="js/ocr/image-quality.js?v=d8eb8292"></script>
-  <script src="js/ocr/preprocess.js?v=40a9d286"></script>
-  <script src="js/ocr/tesseract-engine.js?v=da583653"></script>
+  <script src="js/ocr/image-quality.js?v=39419609"></script>
+  <script src="js/ocr/preprocess.js?v=f909ad03"></script>
+  <script src="js/ocr/tesseract-engine.js?v=dbfca5cd"></script>
   <script src="js/ocr/paddle-engine.js?v=ba60a752"></script>
   <script src="js/ocr/model-benchmark-store.js?v=7812ccea"></script>
   <script src="js/ocr/region-rescue-planner.js?v=a1a88540"></script>
@@ -1551,38 +1551,38 @@
   <script src="js/ocr/region-retry.js?v=2ff461e1"></script>
   <!-- V5 P2：OCR 候选池（多引擎/混淆变体/数学证据裁决） -->
   <script src="js/ocr/ocr-candidate-pool.js?v=e5c98050"></script>
-  <script src="js/mexico/money.js?v=97d11262"></script>
-  <script src="js/mexico/field-normalizer.js?v=1786e5c7"></script>
+  <script src="js/mexico/money.js?v=b6882d52"></script>
+  <script src="js/mexico/field-normalizer.js?v=9afc4dee"></script>
   <script src="js/mexico/currency-evidence.js?v=49a87a0a"></script>
-  <script src="js/mexico/document-detector.js?v=74cb1961"></script>
-  <script src="js/mexico/cfdi-parser.js?v=42e64a16"></script>
-  <script src="js/mexico/spei-parser.js?v=83e20d70"></script>
-  <script src="js/mexico/oxxo-parser.js?v=c8ab77cc"></script>
-  <script src="js/mexico/parser.js?v=cd2101a9"></script>
+  <script src="js/mexico/document-detector.js?v=2fa8ce5a"></script>
+  <script src="js/mexico/cfdi-parser.js?v=fb36fb7d"></script>
+  <script src="js/mexico/spei-parser.js?v=cb637b29"></script>
+  <script src="js/mexico/oxxo-parser.js?v=d019e57e"></script>
+  <script src="js/mexico/parser.js?v=36795661"></script>
   <!-- V5 P4：Region Router（语义字段/文档分类；地区 Profile 插件，Core 无地区规则） -->
   <script src="js/regions/router.js?v=10dc05c4"></script>
   <script src="js/regions/mx.js?v=b09df2a4"></script>
   <script src="js/regions/cn.js?v=294039d1"></script>
-  <script src="js/asr/asr-types.js?v=5a62ee66"></script>
+  <script src="js/asr/asr-types.js?v=5f811893"></script>
   <!-- V5 Phase1 Runtime Foundation: 能力门控/设备熔断/音频焦点 -->
   <script src="js/asr/voice-runtime-profile.js?v=f32a0287"></script>
   <script src="js/asr/circuit-breaker.js?v=b4554e60"></script>
   <script src="js/asr/audio-focus.js?v=baad55b4"></script>
   <!-- audio-processor.js 由 audioWorklet.addModule('js/asr/audio-processor.js') 动态加载，不在主线程执行 -->
-  <script src="js/asr/audio-capture.js?v=725447e4"></script>
+  <script src="js/asr/audio-capture.js?v=624d906c"></script>
   <script src="js/asr/vad.js?v=1b771e23"></script>
   <script src="js/asr/context-bias.js?v=f85fb26c"></script>
   <script src="js/asr/result-arbitrator.js?v=e4b1d5bd"></script>
   <script src="js/asr/sherpa-model-store.js?v=9e13b9f6"></script>
   <script src="js/asr/sherpa-engine.js?v=7b72bd86"></script>
   <script src="js/asr/whisper-engine.js?v=d01ed010"></script>
-  <script src="js/asr/webspeech-engine.js?v=0445f7d1"></script>
-  <script src="js/asr/model-manager.js?v=bb9f0837"></script>
+  <script src="js/asr/webspeech-engine.js?v=1e2e58f2"></script>
+  <script src="js/asr/model-manager.js?v=9d53ed9d"></script>
   <script src="js/asr/asr-manager.js?v=d7c6fa2c"></script>
   <script src="js/voice/voice-parser.js?v=d71b543e"></script>
   <script src="js/voice/voice-sr.js?v=643e0c70"></script>
-  <script src="js/voice/voice-qa.js?v=a791c753"></script>
-  <script src="js/ai/engine-manager.js?v=b7c87a85"></script>
+  <script src="js/voice/voice-qa.js?v=26fdabba"></script>
+  <script src="js/ai/engine-manager.js?v=9fa65a8e"></script>
   <script src="js/intelligence/recognition-fusion-gate.js?v=4eb65b3a"></script>
   <script src="js/ai/multimodal.js?v=ac0fa51c"></script>
   <!-- AI Provider 接口预留（V4.5 P2：纯接口骨架，不接真实 API，Local-First） -->
@@ -1602,34 +1602,34 @@
   <script src="js/ledger-crud.js?v=fcf81349"></script>
   <script src="js/ai/ai-workbench.js?v=6cd95578"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
-  <script src="js/pull-refresh.js?v=fd0e553a"></script>
+  <script src="js/pull-refresh.js?v=ba1b2e2f"></script>
   <!-- ===== Weather Intelligence：天气预报（Open-Meteo Provider，可独立降级） ===== -->
-  <script src="js/weather/weather-types.js?v=1f2bcb78"></script>
-  <script src="js/weather/weather-provider.js?v=e5935e0b"></script>
-  <script src="js/weather/weather-normalizer.js?v=75e1535a"></script>
+  <script src="js/weather/weather-types.js?v=f11ce14f"></script>
+  <script src="js/weather/weather-provider.js?v=647bf92d"></script>
+  <script src="js/weather/weather-normalizer.js?v=3bffef25"></script>
   <script src="js/weather/weather-config.js?v=2152b6dc"></script>
-  <script src="js/weather/weather-cache.js?v=3fdb8a13"></script>
-  <script src="js/weather/open-meteo-provider.js?v=3d720741"></script>
-  <script src="js/weather/rain-event-resolver.js?v=6f8ee5be"></script>
-  <script src="js/weather/wind-event-resolver.js?v=fc0c73b0"></script>
-  <script src="js/weather/weather-event-engine.js?v=e88660d0"></script>
-  <script src="js/weather/weather-diff-engine.js?v=b813d015"></script>
-  <script src="js/weather/weather-reminder-engine.js?v=63b96619"></script>
-  <script src="js/weather/weather-voice-intent.js?v=a639db5b"></script>
-  <script src="js/weather/weather-service.js?v=5ec266df"></script>
+  <script src="js/weather/weather-cache.js?v=fe442426"></script>
+  <script src="js/weather/open-meteo-provider.js?v=82f31ee6"></script>
+  <script src="js/weather/rain-event-resolver.js?v=6d08c268"></script>
+  <script src="js/weather/wind-event-resolver.js?v=2591b7ae"></script>
+  <script src="js/weather/weather-event-engine.js?v=5865cbcc"></script>
+  <script src="js/weather/weather-diff-engine.js?v=114725a3"></script>
+  <script src="js/weather/weather-reminder-engine.js?v=8ddbe4fc"></script>
+  <script src="js/weather/weather-voice-intent.js?v=b83b85d5"></script>
+  <script src="js/weather/weather-service.js?v=635076f1"></script>
   <script src="js/weather/weather-card.js?v=weather-tabs-01"></script>
 
   <!-- ===== 参考汇率工具（Exchange Rate Engine V1.0）=====
        分层：UI(fx-tool) → Engine → Provider(Frankfurter) → API
        独立于记账汇率（options.exchange_rates），仅信息参考 -->
-  <script src="js/exchange-rate/exchange-rate-types.js?v=288b2d2f"></script>
+  <script src="js/exchange-rate/exchange-rate-types.js?v=0f1f05ac"></script>
   <script src="js/exchange-rate/currency-registry.js?v=fieldcmd-01"></script>
-  <script src="js/exchange-rate/http-client.js?v=1b5c8a8f"></script>
-  <script src="js/exchange-rate/rate-cache.js?v=291617d5"></script>
+  <script src="js/exchange-rate/http-client.js?v=fe466eb2"></script>
+  <script src="js/exchange-rate/rate-cache.js?v=a738f6d3"></script>
   <script src="js/exchange-rate/frankfurter-provider.js?v=90b66a4b"></script>
-  <script src="js/exchange-rate/rate-calculator.js?v=926a42a5"></script>
+  <script src="js/exchange-rate/rate-calculator.js?v=a232287e"></script>
   <script src="js/exchange-rate/exchange-rate-engine.js?v=d0bd4b7c"></script>
-  <script src="js/exchange-rate/fx-tool.js?v=3d487144"></script>
+  <script src="js/exchange-rate/fx-tool.js?v=d47f48f8"></script>
   <!-- 导出（V3.0 §八 CSV V2） -->
   <script src="js/export/export-csv.js?v=70dfa464"></script>
   <script src="js/asr/ten-vad-runtime-installer.js?v=81871975"></script>
