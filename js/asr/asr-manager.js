@@ -190,6 +190,7 @@
 
     /** 开始连续识别（VAD + Whisper / WebSpeech 伪连续） */
     async start() {
+      try { if (global.SmAppEvents) global.SmAppEvents.emit('recognition:start', { channel:'voice' }); } catch (_e) {}
       // ⚠️ 竞态修复：start() 必须串行化。
       // 旧实现 `if (this.active) return;` 会吞掉"上一轮 stop 尚未完成时的新 start"，
       // 导致 iOS 单次识别 end→restart 时识别器实际未启动（用户只能说一句）。
@@ -467,7 +468,10 @@
       this._speaking = false;
       this._hasPendingUtterance = false;
       this.audioQueue = [];
-      if (wasActive) this._emit('onEnd');
+      if (wasActive) {
+        try { if (global.SmAppEvents) global.SmAppEvents.emit('recognition:end', { channel:'voice', ok:true }); } catch (_e) {}
+        this._emit('onEnd');
+      }
     }
 
     async dispose() {

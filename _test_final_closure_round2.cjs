@@ -1,0 +1,14 @@
+'use strict';
+const fs=require('fs'),assert=require('assert'),path=require('path'),R=__dirname;
+const read=p=>fs.readFileSync(path.join(R,p),'utf8');let n=0;const ok=(x,m)=>{assert(x,m);console.log('PASS',m);n++};
+const bus=read('js/personalization/app-event-bus.js'),dir=read('js/personalization/pet-director.js'),ledger=read('js/ledger-crud.js'),rem=read('js/voice/reminders.js'),ocr=read('js/ocr/ocr-manager.js'),asr=read('js/asr/asr-manager.js'),sw=read('sw.js');
+ok(/VERSION:2/.test(bus)&&/bindConnectivity/.test(bus),'Event Bus V2 监听在线/离线');
+ok(/delete safe\.amount/.test(bus)&&/delete safe\.account/.test(bus)&&/delete safe\.photo/.test(bus),'事件总线继续过滤敏感字段');
+ok((ledger.match(/emit\('ledger:saved'/g)||[]).length>=2,'收入/支出成功保存生产 ledger:saved');
+ok(/emit\('reminder:due'/.test(rem),'到期提醒生产 reminder:due');
+ok(/emit\('recognition:start'.*ocr/.test(ocr)&&/emit\('recognition:end'.*ocr/.test(ocr),'OCR 生产开始/结束事件');
+ok(/emit\('recognition:start'.*voice/.test(asr)&&/emit\('recognition:end'.*voice/.test(asr),'Voice 生产开始/结束事件');
+ok(/recognition:end/.test(dir)&&/system:online/.test(dir),'Pet Director 消费结束/恢复联网事件');
+for(const x of ['rat','ox','tiger','rabbit','dragon','snake','horse','goat','monkey','rooster','dog','pig']) ok(sw.includes(`./assets/pets/zodiac/${x}.png`),`${x} 离线预缓存`);
+ok(sw.includes('./js/personalization/app-event-bus.js')&&sw.includes('./js/personalization/pet-director.js'),'宠物助手核心离线预缓存');
+console.log(`Final Closure Round2: ${n}/${n} PASS`);

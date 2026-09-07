@@ -1149,6 +1149,7 @@ async function checkRemindersDue() {
         `;
       }
       openModal('reminderNotifyModal');
+      try { if (window.SmAppEvents) window.SmAppEvents.emit('reminder:due', { count: data.reminders.length }); } catch (_e) {}
       // 提醒方式：三开关（语音播报/响铃/震动），兼容旧值 voice（全开）/ manual（仅响铃+震动，隐私）
       const mode = parseRemindMode(r.remind_method);
       // 渐进式重响（10/20/30 分钟）：按提醒方式传递震动开关

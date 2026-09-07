@@ -2078,6 +2078,7 @@ async function renderActionCenter(){
   const btn=(label,js)=>`<button class="btn-small" onclick="${js}">${label}</button>`;
   try{
     const items=await api('/insights/today');
+    try{ if(window.SmAppEvents) window.SmAppEvents.emit('action:center',{count:Array.isArray(items)?items.length:0}); }catch(_e){}
     if(todayBox) todayBox.innerHTML=items.length?items.slice(0,8).map(x=>{
       let action='';
       if(x.kind==='unpaid'&&x.record_id)action=btn('处理','editPurchase('+Number(x.record_id)+')');

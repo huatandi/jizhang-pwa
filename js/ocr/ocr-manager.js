@@ -138,6 +138,7 @@
     }
 
     async recognize(src, opts) {
+      try { if (global.SmAppEvents) global.SmAppEvents.emit('recognition:start', { channel:'ocr' }); } catch (_e) {}
       const o = Object.assign({}, DEFAULT_OPTS, opts || {});
       const profile = o.profile === 'auto' ? detectProfile() : o.profile;
       const baseEdge = o.maxEdge || (global.OcrKit.preprocess.PROFILES[profile] || 1800);
@@ -283,6 +284,7 @@
           });
         }
       } catch (e) {}
+      try { if (global.SmAppEvents) global.SmAppEvents.emit('recognition:end', { channel:'ocr', ok:true }); } catch (_e) {}
       return result;
     }
 

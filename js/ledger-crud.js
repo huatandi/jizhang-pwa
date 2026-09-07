@@ -247,6 +247,7 @@ async function saveIncome() {
       showToast('收入已添加');
     }
     closeModal('incomeModal');
+    try { if (window.SmAppEvents) window.SmAppEvents.emit('ledger:saved', { kind:'income', operation: editingIncomeId ? 'update' : 'create' }); } catch (_e) {}
     renderIncome();
     refreshDashboards();
   });
@@ -702,6 +703,7 @@ async function saveExpense() {
       showToast('支出已添加');
     }
     closeModal('expenseModal');
+    try { if (window.SmAppEvents) window.SmAppEvents.emit('ledger:saved', { kind:'expense', operation: editingExpenseId ? 'update' : 'create' }); } catch (_e) {}
     renderExpense();
     refreshDashboards();
   });

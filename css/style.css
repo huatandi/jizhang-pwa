@@ -4007,3 +4007,37 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .idp-output-advanced{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:9px;margin-top:10px}.idp-output-advanced label{display:grid;gap:4px}.idp-output-advanced input,.idp-output-advanced select{min-height:38px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);padding:6px 8px}
 @media(max-width:760px){.idp-actions{display:none}.idp-mobile-primary{position:sticky;bottom:70px;z-index:8;background:color-mix(in srgb,var(--surface) 92%,transparent);padding:9px;border:1px solid var(--border);border-radius:16px}.idp-mobile-primary>*{flex:0 1 auto}.idp-output-advanced{grid-template-columns:1fr 1fr}.sm-pet{right:10px;bottom:76px;font-size:38px}.quick-page-body .voice-preview{padding:12px;border-radius:14px;line-height:1.55}}
 .idp-live-panel[data-facing="user"] video{transform:scaleX(-1)}
+
+/* V213 萌宠中心视觉预览：高清概念图不替代运行时精灵，避免假装已有完整动画资产 */
+.pet-studio-card{margin:10px 0 14px;border:1px solid var(--border);border-radius:18px;overflow:hidden;background:var(--surface);box-shadow:0 8px 26px rgba(15,23,42,.08)}
+.pet-studio-card img{display:block;width:100%;max-height:440px;object-fit:cover;object-position:center}
+.pet-studio-copy{display:flex;gap:8px;align-items:baseline;justify-content:space-between;padding:12px 14px}
+.pet-studio-copy span{font-size:12px;color:var(--text-secondary)}
+@media(max-width:700px){.pet-studio-card img{max-height:250px}.pet-studio-copy{display:block}.pet-studio-copy span{display:block;margin-top:4px}.pet-choice{min-width:54px}.sm-pet{z-index:1300}}
+
+/* V213.1 十二生肖高清透明萌宠运行资源 */
+.pet-choice{display:inline-flex!important;flex-direction:column;align-items:center;justify-content:center;min-width:70px;min-height:78px;padding:4px 7px!important;overflow:hidden}
+.pet-choice img{width:52px;height:52px;object-fit:contain;filter:drop-shadow(0 4px 5px rgba(0,0,0,.12));transition:transform .2s ease}
+.pet-choice:hover img,.pet-choice.active img{transform:translateY(-2px) scale(1.06)}
+.sm-pet-v2{width:94px!important;height:94px!important;background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important;overflow:visible!important}
+.sm-pet-v2 .sm-pet-img{width:94px;height:94px;object-fit:contain;pointer-events:none;filter:drop-shadow(0 8px 8px rgba(0,0,0,.18));transform-origin:50% 85%}
+.sm-pet-v2[data-state="sleep"] .sm-pet-img{animation:petBreathe 3.6s ease-in-out infinite}
+.sm-pet-v2[data-state="happy"] .sm-pet-img{animation:petHappy .7s ease-in-out 3}
+.sm-pet-v2[data-state="remind"] .sm-pet-img{animation:petRemind .55s ease-in-out infinite}
+.sm-pet-v2[data-state="focus"] .sm-pet-img{animation:petFocus 1.1s ease-in-out infinite}
+.sm-pet-v2[data-state="walk"]{animation:petWander 3.5s ease-in-out both}
+.sm-pet-v2.pet-left[data-state="walk"] .sm-pet-img{transform:scaleX(-1)}
+@keyframes petBreathe{0%,100%{transform:translateY(2px) scale(1)}50%{transform:translateY(0) scale(1.025)}}
+@keyframes petHappy{0%,100%{transform:translateY(0) rotate(0)}45%{transform:translateY(-18px) rotate(-5deg)}70%{transform:translateY(-5px) rotate(5deg)}}
+@keyframes petRemind{0%,100%{transform:translateY(0) rotate(-5deg)}50%{transform:translateY(-12px) rotate(7deg)}}
+@keyframes petFocus{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+@keyframes petWander{0%{transform:translateX(0)}45%{transform:translateX(-120px) translateY(-8px)}100%{transform:translateX(0)}}
+@media(max-width:700px){.pet-choice{min-width:58px;min-height:68px}.pet-choice img{width:44px;height:44px}.sm-pet-v2,.sm-pet-v2 .sm-pet-img{width:76px!important;height:76px!important}}
+@media(prefers-reduced-motion:reduce){.sm-pet-v2,.sm-pet-v2 .sm-pet-img{animation:none!important;transition:none!important}}
+
+/* Final Engineering: richer pet states, still GPU-light */
+.sm-pet-v2[data-state="yawn"] .sm-pet-img{animation:petYawn 1.8s ease-in-out 1}
+.sm-pet-v2[data-state="speak"] .sm-pet-img{animation:petSpeak .42s ease-in-out infinite}
+@keyframes petYawn{0%,100%{transform:scale(1)}45%{transform:scale(.96,1.07) translateY(3px)}70%{transform:scale(1.04,.97)}}
+@keyframes petSpeak{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px) rotate(2deg)}}
+.pet-quiet-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
