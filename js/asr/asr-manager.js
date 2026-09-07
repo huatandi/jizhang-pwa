@@ -347,7 +347,7 @@
       try {
         const shadowEngine = await this._getShadowWhisper();
         const shadow = await shadowEngine.transcribe(audio, { language:this.lang.split('-')[0], hotwords:this._hotwords() });
-        const arb = global.AsrKit.resultArbitrator.adjudicate([primary, shadow], { lang:this.lang });
+        const arb = global.AsrKit.resultArbitrator.adjudicate([primary, shadow], { lang:this.lang, mode:this.contextMode||'ledger' });
         try {
           if (global.IntelligenceCenter && global.IntelligenceCenter.record) global.IntelligenceCenter.record({
             kind:'asr', ok:arb.decision==='ACCEPT', ms:Date.now()-t0, engine:'sherpa+whisper',

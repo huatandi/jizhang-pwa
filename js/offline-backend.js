@@ -607,11 +607,7 @@
     if (payMatch && method === 'POST') {
       const pid=Number(payMatch[1]), d=body||{}, p=DB.prepare('SELECT * FROM purchase WHERE id=? AND mode=?').get(pid,mode);
       if(!p) return fail('进货记录不存在',404);
-      // Purchase totals/paid amounts are stored in base currency. Payment UI submits base currency,
-      // so normalize the incoming payment against the current base only; never reuse p.currency
-      // (which records the purchase's original currency and would double-convert stored values).
-      const paymentCurrency=String(d.currency||getBaseCurrency()).toUpperCase();
-      const amt=toBaseAmount(d.amount,paymentCurrency); const remain=Math.max(0,num(p.total_amount)-num(p.paid_amount));
+      const amt=toBaseAmount(d.amount,d.currency||p.currency||'MXN'); const remain=Math.max(0,num(p.total_amount)-num(p.paid_amount));
       if(!d.pay_date || !(amt>0)) return fail('付款日期和正数金额为必填');
       if(amt>remain+0.005) return fail('本次付款不能超过剩余未付款金额');
       DB.exec('BEGIN');
@@ -753,9 +749,9 @@
         let hit = 0, score = 0;
         const reasons = [];
         const rDate = String(r.d || '').slice(0, 10);
-        const rCurrency = String(r.cur || 'MXN').toUpperCase();
-        // Stored ledger amounts are already normalized to the base currency at write time.
-        // Never convert them again using the historical/original currency.
+        const rCurrency = String(r.cur || getBaseCurrency()).toUpperCase();
+        // 持久化账务金额在写入时已经统一换算为基准币种。
+        // 这里严禁根据记录保留的原始 currency 再次换算，否则外币记录会被二次折算。
         const rAmt = Math.round((Number(r.a) || 0) * 100) / 100;
         const rCat = String(r.c || '').trim();
         const rAc = String(r.ac || '').trim();

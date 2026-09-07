@@ -125,9 +125,13 @@ function nowLocal() {
 let toastTimer;
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
+  if (!t) return;
   t.textContent = msg;
-  t.style.background = type === 'error' ? '#ef4444' : '#1e293b';
-  t.classList.add('show');
+  // V209: feedback appearance is owned by theme tokens; JS only sets semantic state.
+  t.style.removeProperty('background');
+  t.style.removeProperty('color');
+  t.classList.remove('success', 'error');
+  t.classList.add(type === 'error' ? 'error' : 'success', 'show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
 }

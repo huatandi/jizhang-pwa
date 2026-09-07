@@ -20,5 +20,5 @@ assert(!ledger.includes("currency:r.currency||BASE_CURRENCY()"), 'partial paymen
 assert(app.includes("r.original_table === 'internal_transfers' ? '内部转账'"));
 assert(app.includes("${x.from_account || '-'} → ${x.to_account || '-'}"));
 
-assert(sw.includes("jizhang-pwa-v208-data-safety-reconcile"));
+assert(sw.includes("jizhang-pwa-v208-data-safety-reconcile") || /const CACHE_NAME = 'jizhang-pwa-[0-9a-f]{8}'/.test(sw), "V208+ build cache namespace missing");
 console.log('V208 data safety reconcile: 8/8 PASS');

@@ -48,8 +48,8 @@
   <script src="js/config/recognition-models.js?v=9139e75d"></script>
   <script src="js/core/app-services.js?v=ef71b3a5"></script>
   <!-- DB 基础设施（V3.0 Phase0D）：迁移框架 + 健康检查（先于 offline-db 加载） -->
-  <script src="js/db/migrations.js?v=a46b6eea"></script>
-  <script src="js/db/health-check.js?v=6974ba92"></script>
+  <script src="js/db/migrations.js?v=2fb2d721"></script>
+  <script src="js/db/health-check.js?v=24dcecc5"></script>
   <!-- 主题切换（秋色「试穿」）：head 尽早加载，读 localStorage 设 data-theme，避免主题闪烁。
        data-theme 与 <meta name="theme-color"> 联动由 theme.js 的 apply() 统一处理。 -->
   <script src="js/theme.js?v=d51b659a"></script>
@@ -104,9 +104,9 @@
     <!-- 侧边栏 -->
     <aside class="sidebar" id="sidebar">
       <div class="logo">
-        <div class="logo-icon">📋</div>
-        <div class="logo-text">
-          <h1>明细 <button class="mode-switch" id="modeSwitch" onclick="quickSwitchMode()" title="点击切换记账模式">🏪 开店</button></h1>
+        <div class="logo-seal-wrap"><img src="assets/brand/mingxi-seal.png" class="mingxi-seal" alt="明细"></div>
+        <div class="logo-text brand-meta">
+          <h1><button class="mode-switch" id="modeSwitch" onclick="quickSwitchMode()" title="点击切换记账模式">🏪 开店</button></h1>
           <p>飞常明细 · V260818</p>
         </div>
       </div>
@@ -118,6 +118,7 @@
         <button class="nav-item" data-page="monthly"><span class="nav-icon">📅</span>月度统计</button>
         <button class="nav-item" data-page="query"><span class="nav-icon">🔍</span>明细查询</button>
         <button class="nav-item" data-page="scan"><span class="nav-icon">📷</span>扫描识别</button>
+        <button class="nav-item" data-page="idphoto"><span class="nav-icon">🪪</span>证件照</button>
         <button class="nav-item" data-page="quick"><span class="nav-icon">⚡</span>快速记账</button>
         <button class="nav-item" data-page="reminder"><span class="nav-icon">⏰</span>语音提醒</button>
       </nav>
@@ -630,6 +631,53 @@
         </div>
       </section>
 
+      <!-- ======== V211 本地证件照工作台 ======== -->
+      <section class="page" id="page-idphoto">
+        <header class="page-header"><h2>🪪 证件照工作台</h2></header>
+        <div class="idp-shell">
+          <div class="idp-privacy">🔒 本机处理 · 默认不上传照片 · 规格、拍摄质量与处理引擎彼此解耦</div>
+          <div class="idp-grid">
+            <div class="ai-panel">
+              <div class="chart-title">1. 选择用途与规格</div>
+              <label>证件 / 用途参考</label><select id="idpSpec" class="ai-ocr-select"></select>
+              <div id="idpPolicy" class="recur-hint"></div>
+              <div class="recur-hint">护照、签证、驾驶证、考试/高考等规则通过可更新 Spec Pack 提供；核心程序不写死任何国家或地区。</div>
+            </div>
+            <div class="ai-panel">
+              <div class="chart-title">2. 拍照或导入</div>
+              <div class="idp-actions"><label class="btn-primary idp-file-btn">📷 拍照<input id="idpCamera" type="file" accept="image/*" capture="user"></label><label class="btn-secondary idp-file-btn">🖼️ 相册<input id="idpFile" type="file" accept="image/*"></label></div>
+              <div id="idpStatus" class="recur-hint">选择照片后自动检查太近/太远、有效人脸像素、模糊、多人、构图余量、曝光与左右脸阴影。</div>
+            </div>
+          </div>
+          <div class="idp-grid">
+            <div class="ai-panel idp-workbench">
+              <div class="chart-title">3. 原图与智能质量评判</div>
+              <div class="idp-preview-wrap"><img id="idpPreview" alt="证件照原图预览"></div>
+              <div id="idpQuality" class="idp-quality"><strong>等待照片</strong><div>系统不会用 AI 虚构缺失的头顶/肩部；太近造成的缺失区域不可恢复，太远造成的真实细节不足不以超分辨率伪装为合格。</div></div>
+            </div>
+            <div class="ai-panel idp-workbench">
+              <div class="chart-title">4. 本地制作预览</div>
+              <div class="idp-preview-wrap"><canvas id="idpProcessed"></canvas></div>
+              <div class="idp-controls">
+                <label>光影修复 <input id="idpRelight" type="range" min="0" max="80" value="35"><small>只做低频照明均衡，不生成五官</small></label>
+                <label>背景 <select id="idpBg"><option value="original">保持原背景</option><option value="#ffffff">白色</option><option value="#e9f2ff">浅蓝</option><option value="#d71920">红色</option><option value="#d9d9d9">灰色</option></select></label>
+                <label>背景容差 <input id="idpTolerance" type="range" min="20" max="80" value="44"></label>
+              </div>
+            </div>
+          </div>
+          <div class="ai-panel">
+            <div class="chart-title">5. 输出与排版</div>
+            <div class="idp-output-row">
+              <label>打印纸 <select id="idpPaper"><option value="4x6">4×6 英寸</option><option value="a4">A4</option></select></label>
+              <label>数量 <input id="idpCount" type="number" min="1" max="30" value="8"></label>
+              <button class="btn-primary" id="idpDownload" type="button">保存证件照 JPG</button>
+              <button class="btn-secondary" id="idpPrint" type="button">排版 / 打印</button>
+            </div>
+            <div class="recur-hint">若具体证件规格禁止数字修图，系统应切换为“检测 + 拍摄指导”，不自动美颜、补脸或改变身份特征。最终以办理机构当前要求为准。</div>
+          </div>
+        </div>
+      </section>
+
       <!-- ======== 语音提醒 ======== -->
       <section class="page" id="page-reminder">
         <header class="page-header">
@@ -894,11 +942,14 @@
             <div class="cat-budget-list" id="catBudgetList"></div>
           </div>
 
-          <!-- V190-V193 智能识别中心 -->
-          <div class="settings-section">
-            <div class="settings-title">🧠 智能识别中心 <span class="settings-sub">设备能力 · 模型健康 · 准确率 · 学习规则</span></div>
-            <div class="recur-hint">本地自检，不上传账目或识别内容。用于判断模型是否真正可用，而不是只看“已安装”。</div>
-            <button class="btn-secondary" onclick="openIntelligenceCenter()">打开识别诊断中心</button>
+          <!-- V209 智能识别与模型管理：普通用户可直接找到安装/检测入口 -->
+          <div class="settings-section" id="recognitionModelSettings">
+            <div class="settings-title">🧠 智能识别与模型管理 <span class="settings-sub">语音 · TEN‑VAD · OCR · 本机检测</span></div>
+            <div class="recur-hint">需要安装或检查最新的本地语音 / OCR 能力，就在这里。不会偷偷下载；只有你点击安装/预加载后才开始。</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+              <button class="btn-primary" onclick="openIntelligenceCenter()">📦 打开语音 / OCR 模型管理</button>
+              <button class="btn-secondary" onclick="openIntelligenceCenter()">🩺 检测识别能力</button>
+            </div>
           </div>
 
           <!-- 内部转账 -->
@@ -1318,6 +1369,7 @@
     <button class="nav-item m-add-center" data-page="quick"><span class="nav-icon">＋</span><span class="m-label">记账</span></button>
     <button class="nav-item" data-page="monthly"><span class="nav-icon">📅</span><span class="m-label">月度</span></button>
     <button class="nav-item" data-page="scan"><span class="nav-icon">📷</span><span class="m-label">识别</span></button>
+    <button class="nav-item" data-page="idphoto"><span class="nav-icon">🪪</span><span class="m-label">证件照</span></button>
     <button class="nav-item" data-page="reminder"><span class="nav-icon">⏰</span><span class="m-label">提醒</span></button>
     <button class="nav-item" data-page="query"><span class="nav-icon">🔍</span><span class="m-label">查询</span></button>
     <button class="nav-item" data-page="purchase"><span class="nav-icon">📦</span><span class="m-label">进货</span></button>
@@ -1455,7 +1507,7 @@
   <script src="js/recognition/index.js?v=0cfd4637"></script>
 
   <script src="js/offline-db.js?v=ca158039"></script>
-  <script src="js/offline-backend.js?v=63da6f3a"></script>
+  <script src="js/offline-backend.js?v=e2fd2497"></script>
   <script src="js/voice/personal-voice-memory.js?v=80723396"></script>
   <!-- Intelligence Layer：Field Evidence / Conflict Resolver（V4 Phase 1） -->
   <script src="js/intelligence/evidence-engine.js?v=96d63660"></script>
@@ -1480,7 +1532,7 @@
   <script src="js/validation/validators.js?v=8094156f"></script>
   <script src="js/validation/confidence.js?v=627a878c"></script>
   <script src="js/validation/transaction.js?v=c929b2c4"></script>
-  <script src="js/intelligence/transaction-core.js?v=06ae6746"></script>
+  <script src="js/intelligence/transaction-core.js?v=0f420842"></script>
   <script src="js/ocr/ocr-types.js?v=fd0c8097"></script>
   <!-- V5 P3：图像质量分析（preprocess 的 auto 增强依赖，必须先加载） -->
   <script src="js/ocr/image-quality.js?v=d8eb8292"></script>
@@ -1519,15 +1571,15 @@
   <!-- audio-processor.js 由 audioWorklet.addModule('js/asr/audio-processor.js') 动态加载，不在主线程执行 -->
   <script src="js/asr/audio-capture.js?v=725447e4"></script>
   <script src="js/asr/vad.js?v=1b771e23"></script>
-  <script src="js/asr/context-bias.js?v=a63345af"></script>
-  <script src="js/asr/result-arbitrator.js?v=0e2817a9"></script>
+  <script src="js/asr/context-bias.js?v=f85fb26c"></script>
+  <script src="js/asr/result-arbitrator.js?v=e4b1d5bd"></script>
   <script src="js/asr/sherpa-model-store.js?v=9e13b9f6"></script>
   <script src="js/asr/sherpa-engine.js?v=7b72bd86"></script>
   <script src="js/asr/whisper-engine.js?v=d01ed010"></script>
   <script src="js/asr/webspeech-engine.js?v=0445f7d1"></script>
   <script src="js/asr/model-manager.js?v=bb9f0837"></script>
-  <script src="js/asr/asr-manager.js?v=cda00abc"></script>
-  <script src="js/voice/voice-parser.js?v=f7fc4ae1"></script>
+  <script src="js/asr/asr-manager.js?v=d7c6fa2c"></script>
+  <script src="js/voice/voice-parser.js?v=d71b543e"></script>
   <script src="js/voice/voice-sr.js?v=643e0c70"></script>
   <script src="js/voice/voice-qa.js?v=a791c753"></script>
   <script src="js/ai/engine-manager.js?v=b7c87a85"></script>
@@ -1547,7 +1599,7 @@
   <script src="js/voice/reminders.js?v=fieldcmd-01"></script>
   <script src="js/voice/correction-engine.js?v=75bd5319"></script>
   <script src="js/voice/quick-voice.js?v=de027f5a"></script>
-  <script src="js/ledger-crud.js?v=e594bb44"></script>
+  <script src="js/ledger-crud.js?v=fcf81349"></script>
   <script src="js/ai/ai-workbench.js?v=6cd95578"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=fd0e553a"></script>
@@ -1587,8 +1639,12 @@
   <script src="js/intelligence/recognition-benchmark-lab.js?v=e5f8cafe"></script>
   <script src="js/intelligence/recognition-finalizer.js?v=6e11ec36"></script>
   <script src="js/intelligence/recognition-model-manager.js?v=29eb9889"></script>
-  <script src="js/intelligence/intelligence-center.js?v=f6e7a727"></script>
-  <script src="js/boot.js?v=b3b267e4"></script>
+  <script src="js/intelligence/intelligence-center.js?v=3e837be2"></script>
+  <script src="js/idphoto/spec-registry.js?v=3a408fc2"></script>
+  <script src="js/idphoto/capture-quality-gate.js?v=d4d37215"></script>
+  <script src="js/idphoto/image-processor.js?v=8bb6e9a2"></script>
+  <script src="js/idphoto/idphoto-studio.js?v=f54bc39a"></script>
+  <script src="js/boot.js?v=e3183636"></script>
 
   <!-- V190-V193 智能识别中心 -->
   <div class="modal-overlay" id="intelligenceCenterModal">

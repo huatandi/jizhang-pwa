@@ -1,6 +1,6 @@
 'use strict';
 /**
- * IntelligenceCenter V190-193 integrated foundation.
+ * IntelligenceCenter V209 integrated foundation.
  * Local-only diagnostics, self-test, recognition telemetry and learning-rule visibility.
  * No cloud dependency; never writes ledger records.
  */
@@ -44,6 +44,16 @@
     const ocrRank=global.OcrKit&&global.OcrKit.ModelBenchmarkStore&&global.OcrKit.ModelBenchmarkStore.rankings?
       global.OcrKit.ModelBenchmarkStore.rankings():[];
     return {sherpa,ocrRank:ocrRank.slice(0,5)};
+  }
+  function ocrRuntimeStatus(){
+    try{
+      const get=global.OcrKit&&global.OcrKit.getManager;
+      if(!get)return {ready:false,status:'MANAGER_NOT_LOADED',engines:[]};
+      const mgr=get();
+      const engines=Object.keys((mgr&&mgr.engines)||{});
+      const paddle=(mgr&&mgr.engines&&mgr.engines.paddle&&mgr.engines.paddle.engine)||null;
+      return {ready:!!mgr,status:(paddle&&paddle._initFailed)?'PADDLE_FAILED':'READY',engines};
+    }catch(e){return {ready:false,status:'ERROR:'+String(e&&e.message||e),engines:[]};}
   }
   async function selfTest(){
     const checks=[];
@@ -119,6 +129,15 @@
               <button class="btn-primary" onclick="IntelligenceCenter.installTenVad()">安装 TEN‑VAD</button>
               <button class="btn-secondary" onclick="IntelligenceCenter.checkTenVad()">检查 TEN‑VAD</button>
               <button class="btn-danger" onclick="IntelligenceCenter.removeTenVad()">删除 TEN‑VAD</button>
+            </div>
+          </div>
+          <div style="padding:10px 0;border-bottom:1px solid var(--border,#ddd);margin:8px 0">
+            <b>👁️ OCR 本地识别</b>
+            <p>OCR 管理器：${ocrRuntimeStatus().ready?'🟢 READY':'🟡 '+esc(ocrRuntimeStatus().status)}　引擎：${esc(ocrRuntimeStatus().engines.join(' / ')||'未加载')}</p>
+            <p class="recur-hint">首次“安装/预加载 OCR”可能下载本地运行模型；完成后由浏览器缓存。失败时仍保留现有 OCR 回退链。</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn-primary" onclick="IntelligenceCenter.preloadOcrModels()">安装 / 预加载 OCR</button>
+              <button class="btn-secondary" onclick="IntelligenceCenter.checkOcr()">检查 OCR</button>
             </div>
           </div>
           <p>Sherpa 模型文件：${installed?'🟢 已缓存 '+fmtBytes(installed.bytes):'⚪ 尚未安装'}</p>
@@ -215,6 +234,22 @@
     await render();
   }
 
+  async function checkOcr(){
+    const st=ocrRuntimeStatus();
+    if(st.ready) progress('OCR READY：管理器已加载；可用引擎 '+(st.engines.join(' / ')||'已注册')+'。如需验证真实准确率，请用真实票据识别。');
+    else progress('OCR 检查未通过：'+st.status+'。可点击“安装 / 预加载 OCR”重试初始化。');
+    return st;
+  }
+  async function preloadOcrModels(){
+    if(!global.AIKit||!global.AIKit.preloadOcr){progress('OCR 预加载入口未加载。');return false;}
+    progress('正在安装 / 预加载 OCR 本地模型…首次可能需要一些时间。');
+    try{
+      const ok=await global.AIKit.preloadOcr();
+      const st=ocrRuntimeStatus();
+      progress(ok===false?'OCR 预加载未完成，识别时将继续自动重试/回退。':('OCR 预加载完成；状态 '+st.status+'。'));
+      await render(); return ok!==false;
+    }catch(e){progress('OCR 预加载失败：'+String(e&&e.message||e)+'；现有回退链保持可用。');return false;}
+  }
   async function inspectSherpaModel(){
     const mm=global.RecognitionModelManager, url=manifestInput();
     if(!mm||!url){progress('请先填写同源 manifest.json 地址。');return;}
@@ -264,7 +299,7 @@
   }
   async function deleteRule(key){if(await removeRule(key))await render();}
   async function deleteVoiceRule(id){if(await removeVoiceMemory(id))await render();}
-  global.IntelligenceCenter={VERSION:3,record,summarize,deviceProfile,modelHealth,selfTest,learnedRules,voiceMemories,removeRule,removeVoiceMemory,
-    render,deleteRule,deleteVoiceRule,installTenVad,checkTenVad,removeTenVad,inspectSherpaModel,installSherpaModel,cancelModelInstall,removeSherpaModel,exportBenchmark,resetBenchmark};
+  global.IntelligenceCenter={VERSION:4,record,summarize,deviceProfile,modelHealth,ocrRuntimeStatus,selfTest,learnedRules,voiceMemories,removeRule,removeVoiceMemory,
+    render,deleteRule,deleteVoiceRule,installTenVad,checkTenVad,removeTenVad,checkOcr,preloadOcrModels,inspectSherpaModel,installSherpaModel,cancelModelInstall,removeSherpaModel,exportBenchmark,resetBenchmark};
 
 })(typeof window!=='undefined'?window:globalThis);

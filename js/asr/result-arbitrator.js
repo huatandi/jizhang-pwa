@@ -42,8 +42,29 @@
     const digits=(t.match(/[0-9零〇一二两三四五六七八九两点\.]+/g)||[]).join('|');
     return { units, digits, hasLarge:/[万亿]/.test(t), raw:t };
   }
-  function criticalConflict(a,b,lang){
+  function semanticAmount(text,lang,mode){
+    if(String(lang||'').toLowerCase().split('-')[0]!=='zh') return null;
+    try{
+      const vk=global.VoiceKit;
+      if(vk&&vk.parseAmount){
+        const cb=global.AsrKit&&global.AsrKit.contextBias;
+        const n=cb&&cb.normalizeTranscript?cb.normalizeTranscript(text,{lang,mode:mode||'ledger'}).text:String(text||'');
+        const v=vk.parseAmount(n);
+        return Number.isFinite(Number(v))&&Number(v)>0?Number(v):null;
+      }
+    }catch(e){}
+    return null;
+  }
+  function semanticAgreement(a,b,lang,mode){
+    const A=semanticAmount(a,lang,mode),B=semanticAmount(b,lang,mode);
+    if(A==null||B==null) return {agree:false,a:A,b:B};
+    const tol=Math.max(0.01,Math.max(A,B)*0.000001);
+    return {agree:Math.abs(A-B)<=tol,a:A,b:B};
+  }
+  function criticalConflict(a,b,lang,mode){
     if (String(lang||'').toLowerCase().split('-')[0] !== 'zh') return false;
+    const sem=semanticAgreement(a,b,lang,mode);
+    if(sem.agree) return false;
     const A=amountSignature(a), B=amountSignature(b);
     // 一方明确有“万/亿”而另一方没有，是金额数量级高风险冲突。
     if (A.hasLarge !== B.hasLarge && (A.digits || B.digits)) return true;
@@ -62,7 +83,12 @@
     const ranked=(Array.isArray(candidates)?candidates:[]).map(c=>score(c,lang)).filter(x=>x.text).sort((a,b)=>b.score-a.score);
     if (!ranked.length) return {decision:'RETRY', best:null, alternatives:[], reason:'NO_RESULT', ranked};
     if (ranked.length===1) return ranked[0].score>=0.55 ? {decision:'ACCEPT',best:ranked[0],alternatives:[],reason:'SINGLE',ranked} : {decision:'RETRY',best:null,alternatives:[],reason:'LOW_CONFIDENCE',ranked};
-    const a=ranked[0], b=ranked[1], sim=similarity(a.text,b.text), critical=criticalConflict(a.text,b.text,lang);
+    const a=ranked[0], b=ranked[1], sim=similarity(a.text,b.text), sem=semanticAgreement(a.text,b.text,lang,o.mode), critical=criticalConflict(a.text,b.text,lang,o.mode);
+    // V211：文本不同但金额语义相同（万/玩/晚，或严格恢复的漏“万”）时，直接接受，绝不弹两个选项。
+    if(sem.agree){
+      const prefer=[a,b].find(x=>/[万亿]/.test(x.text))||a;
+      return {decision:'ACCEPT',best:prefer,alternatives:[],reason:'AMOUNT_SEMANTIC_AGREEMENT',similarity:sim,amount:sem.a,ranked};
+    }
     // 高一致：采用分高者，不打扰用户。
     if (sim>=0.86) return {decision:'ACCEPT',best:a,alternatives:[],reason:'ENGINE_AGREEMENT',similarity:sim,ranked};
     // 有关键数量级冲突：只有置信差足够大才自动采用；否则重说金额比“二选一错答案”更安全。
@@ -85,5 +111,5 @@
     }catch(e){}
     return out;
   }
-  global.AsrKit.resultArbitrator={adjudicate:adjudicateTracked, similarity, criticalConflict, VERSION:2};
+  global.AsrKit.resultArbitrator={adjudicate:adjudicateTracked, similarity, criticalConflict, semanticAgreement, VERSION:3};
 })(typeof window !== 'undefined' ? window : globalThis);

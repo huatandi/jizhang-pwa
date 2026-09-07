@@ -23,6 +23,29 @@
   --text-2: #ffffff;
   --text-3: #ffffff;
   --accent-text: #ffcf5e;
+  /* V209 semantic surfaces: theme-aware KPI + feedback */
+  --surface-feedback: #1e293b;
+  --surface-feedback-error: #7f1d1d;
+  --text-on-feedback: #f8fafc;
+  --text-on-feedback-error: #ffffff;
+  --border-feedback: #475569;
+  --border-feedback-error: #ef4444;
+  --kpi-income-bg: linear-gradient(135deg, #18261d 0%, #163526 100%);
+  --kpi-income-border: #2f6f47; --kpi-income-text: #dcfce7;
+  --kpi-expense-bg: linear-gradient(135deg, #2a171b 0%, #3a1a22 100%);
+  --kpi-expense-border: #7f3342; --kpi-expense-text: #ffe4e6;
+  --kpi-balance-bg: linear-gradient(135deg, #152434 0%, #173147 100%);
+  --kpi-balance-border: #285c7a; --kpi-balance-text: #e0f2fe;
+  --kpi-paid-bg: linear-gradient(135deg, #16261d 0%, #173724 100%);
+  --kpi-paid-border: #2f6f47; --kpi-paid-text: #dcfce7;
+  --kpi-unpaid-bg: linear-gradient(135deg, #2b2115 0%, #3a2a18 100%);
+  --kpi-unpaid-border: #805b2b; --kpi-unpaid-text: #ffedd5;
+  --kpi-asset-bg: linear-gradient(135deg, #171f31 0%, #1f2a44 100%);
+  --kpi-asset-border: #40577c; --kpi-asset-text: #dbeafe;
+  --kpi-liability-bg: linear-gradient(135deg, #2b181d 0%, #3b1d25 100%);
+  --kpi-liability-border: #844052; --kpi-liability-text: #ffe4e6;
+  --kpi-networth-bg: linear-gradient(135deg, #221a31 0%, #302344 100%);
+  --kpi-networth-border: #644c86; --kpi-networth-text: #f3e8ff;
   --radius: 14px;
   --radius-sm: 10px;
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
@@ -53,6 +76,28 @@
   --blue: #6a8bb0; --purple: #9a7fb0; --brown: #8a6a4a;
   --orange: #c9702b; --orange-soft: #f3e3cc;
   --amber: #c9702b; --amber-soft: #f3e3cc;
+  --surface-feedback: #fff3df;
+  --surface-feedback-error: #f7ddd4;
+  --text-on-feedback: #3a2816;
+  --text-on-feedback-error: #7f2419;
+  --border-feedback: #d7b98d;
+  --border-feedback-error: #c96a55;
+  --kpi-income-bg: linear-gradient(135deg, #fff8dc 0%, #f7e7ad 100%);
+  --kpi-income-border: #d2a947; --kpi-income-text: #6f4800;
+  --kpi-expense-bg: linear-gradient(135deg, #fff0f1 0%, #f6d6d9 100%);
+  --kpi-expense-border: #d48a91; --kpi-expense-text: #8f1725;
+  --kpi-balance-bg: linear-gradient(135deg, #eef8f5 0%, #d9ece6 100%);
+  --kpi-balance-border: #7aa99b; --kpi-balance-text: #315e52;
+  --kpi-paid-bg: linear-gradient(135deg, #f0f7e8 0%, #dce9c8 100%);
+  --kpi-paid-border: #98af69; --kpi-paid-text: #466124;
+  --kpi-unpaid-bg: linear-gradient(135deg, #fff3e6 0%, #f3d7b3 100%);
+  --kpi-unpaid-border: #c78d4c; --kpi-unpaid-text: #7c4318;
+  --kpi-asset-bg: linear-gradient(135deg, #f3eee3 0%, #e5d7bf 100%);
+  --kpi-asset-border: #b49872; --kpi-asset-text: #4f3a25;
+  --kpi-liability-bg: linear-gradient(135deg, #f7e8df 0%, #e9cbbd 100%);
+  --kpi-liability-border: #b57f69; --kpi-liability-text: #6b3729;
+  --kpi-networth-bg: linear-gradient(135deg, #f0e9f0 0%, #ddd0df 100%);
+  --kpi-networth-border: #a28aa5; --kpi-networth-text: #563f58;
   --shadow: 0 2px 10px rgba(122, 92, 60, 0.08);
   --shadow-lg: 0 6px 20px rgba(122, 92, 60, 0.12);
   --sidebar-bg: #efe2c8;
@@ -405,57 +450,39 @@ input, select, textarea, button { font-size: 16px; } /* iOS 防止聚焦自动�
   min-height: 96px;
 }
 .kpi-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow-lg); }
-/* KPI 彩色容器：使用明亮柔和底色，彻底取消近黑/黑色背景 */
-.income-card {
-  background: linear-gradient(135deg, #fff8dc 0%, #ffefb0 58%, #ffe28a 100%);
-  border-color: rgba(217, 151, 0, 0.30);
+/* V209 KPI：所有首页财务卡只消费主题语义变量，禁止写死亮色跨主题污染。 */
+.income-card { --kpi-bg: var(--kpi-income-bg); --kpi-border: var(--kpi-income-border); --kpi-text: var(--kpi-income-text); }
+.expense-card { --kpi-bg: var(--kpi-expense-bg); --kpi-border: var(--kpi-expense-border); --kpi-text: var(--kpi-expense-text); }
+.balance-card { --kpi-bg: var(--kpi-balance-bg); --kpi-border: var(--kpi-balance-border); --kpi-text: var(--kpi-balance-text); }
+.paid-card { --kpi-bg: var(--kpi-paid-bg); --kpi-border: var(--kpi-paid-border); --kpi-text: var(--kpi-paid-text); }
+.unpaid-card { --kpi-bg: var(--kpi-unpaid-bg); --kpi-border: var(--kpi-unpaid-border); --kpi-text: var(--kpi-unpaid-text); }
+.asset-card { --kpi-bg: var(--kpi-asset-bg); --kpi-border: var(--kpi-asset-border); --kpi-text: var(--kpi-asset-text); }
+.liability-card { --kpi-bg: var(--kpi-liability-bg); --kpi-border: var(--kpi-liability-border); --kpi-text: var(--kpi-liability-text); }
+.networth-card { --kpi-bg: var(--kpi-networth-bg); --kpi-border: var(--kpi-networth-border); --kpi-text: var(--kpi-networth-text); }
+.income-card,.expense-card,.balance-card,.paid-card,.unpaid-card,.asset-card,.liability-card,.networth-card {
+  background: var(--kpi-bg);
+  border-color: var(--kpi-border);
 }
-.income-card::before,
-.expense-card::before,
-.balance-card::before,
-.paid-card::before,
-.unpaid-card::before {
-  content: ''; position: absolute; right: -30px; top: -40px;
-  width: 120px; height: 120px; border-radius: 50%;
-  background: rgba(255,255,255,.28);
+.income-card .kpi-label,.income-card .kpi-value,
+.expense-card .kpi-label,.expense-card .kpi-value,
+.balance-card .kpi-label,.balance-card .kpi-value,
+.paid-card .kpi-label,.paid-card .kpi-value,
+.unpaid-card .kpi-label,.unpaid-card .kpi-value,
+.asset-card .kpi-label,.asset-card .kpi-value,
+.liability-card .kpi-label,.liability-card .kpi-value,
+.networth-card .kpi-label,.networth-card .kpi-value { color: var(--kpi-text); }
+.income-card::before,.expense-card::before,.balance-card::before,.paid-card::before,.unpaid-card::before,
+.asset-card::before,.liability-card::before,.networth-card::before {
+  content: ''; position: absolute; right: -30px; top: -40px; width: 120px; height: 120px; border-radius: 50%;
+  background: color-mix(in srgb, var(--kpi-text) 10%, transparent); pointer-events:none;
 }
-.income-card .kpi-label { color: #8a5a00; }
-.income-card .kpi-value { color: #6f4800; }
+.income-card .kpi-icon,.expense-card .kpi-icon,.balance-card .kpi-icon,.paid-card .kpi-icon,.unpaid-card .kpi-icon,
+.asset-card .kpi-icon,.liability-card .kpi-icon,.networth-card .kpi-icon {
+  background: color-mix(in srgb, var(--kpi-text) 10%, transparent);
+  border-color: color-mix(in srgb, var(--kpi-text) 22%, transparent);
+}
 
-.expense-card {
-  background: linear-gradient(135deg, #fff0f1 0%, #ffd9dc 58%, #ffc4ca 100%);
-  border-color: rgba(220, 38, 38, 0.24);
-}
-.expense-card .kpi-label { color: #a91d2d; }
-.expense-card .kpi-value { color: #8f1725; }
-
-.balance-card {
-  background: linear-gradient(135deg, #eefaff 0%, #d5f1ff 58%, #bce8fb 100%);
-  border-color: rgba(2, 132, 199, 0.24);
-}
-.balance-card .kpi-label { color: #03658f; }
-.balance-card .kpi-value { color: #075985; }
-
-.paid-card {
-  background: linear-gradient(135deg, #effcf4 0%, #d6f5e2 58%, #bceccb 100%);
-  border-color: rgba(22, 163, 74, 0.24);
-}
-.paid-card .kpi-label { color: #16713a; }
-.paid-card .kpi-value { color: #145c32; }
-
-.unpaid-card {
-  background: linear-gradient(135deg, #fff7ed 0%, #ffe5c2 58%, #ffd39a 100%);
-  border-color: rgba(234, 88, 12, 0.25);
-}
-.unpaid-card .kpi-label { color: #a8430a; }
-.unpaid-card .kpi-value { color: #8a3608; }
-
-/* 彩色卡片内图标也保持浅色，不再出现黑色块 */
-.income-card .kpi-icon,
-.expense-card .kpi-icon,
-.balance-card .kpi-icon,
-.paid-card .kpi-icon,
-.unpaid-card .kpi-icon {
+.kpi-icon {
   background: rgba(255,255,255,.55);
   border-color: rgba(255,255,255,.72);
   backdrop-filter: blur(4px);
@@ -791,8 +818,8 @@ select option {
 /* ============ Toast ============ */
 .toast {
   position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(80px);
-  background: #1e293b; color: var(--text);
-  border: 1px solid var(--border);
+  background: var(--surface-feedback); color: var(--text-on-feedback);
+  border: 1px solid var(--border-feedback);
   padding: 12px 24px; border-radius: 12px;
   font-size: 14px; z-index: 2000;
   opacity: 0; transition: var(--transition);
@@ -800,6 +827,9 @@ select option {
   pointer-events: none;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.success { background: var(--surface-feedback); color: var(--text-on-feedback); border-color: var(--border-feedback); }
+.toast.error { background: var(--surface-feedback-error); color: var(--text-on-feedback-error); border-color: var(--border-feedback-error); }
+.toast, .toast * { color: inherit; }
 
 /* ============ 凭证查看 ============ */
 .voucher-modal { max-width: 560px; }
@@ -3950,3 +3980,12 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 .ledger-undo-bar.show { transform:translate(-50%,0); opacity:1; pointer-events:auto; }
 .ledger-undo-bar button { border:0; border-radius:9px; padding:7px 11px; cursor:pointer; font-weight:700; background:var(--primary,#ffb020); color:#111827; }
 @media (max-width:640px){ .ledger-undo-bar{ width:calc(100% - 28px); justify-content:space-between; bottom:18px; } }
+
+/* ===== V210 brand seal + Local ID Photo Studio ===== */
+.logo-seal-wrap{width:48px;min-width:48px;display:flex;align-items:center;justify-content:center}
+.mingxi-seal{width:44px;height:44px;object-fit:contain;display:block;filter:drop-shadow(0 2px 5px rgba(183,18,18,.2))}
+.logo-text.brand-meta h1{margin:0;min-height:24px;display:flex;align-items:center}.logo-text.brand-meta p{margin-top:2px}
+.idp-shell{display:grid;gap:14px}.idp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.idp-privacy{padding:10px 14px;border:1px solid var(--border-color,#d8dee9);border-radius:12px;background:var(--surface-feedback,#f8fafc);color:var(--text-primary,#172033);font-weight:600}.idp-actions{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}.idp-file-btn{position:relative;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.idp-file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}.idp-preview-wrap{min-height:220px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border-color,#cbd5e1);border-radius:14px;background:var(--surface-card,#fff);overflow:hidden}.idp-preview-wrap img{display:block;max-width:100%;max-height:55vh;object-fit:contain}.idp-preview-wrap img:not([src]){display:none}.idp-quality{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--surface-feedback,#f8fafc);color:var(--text-primary,#172033);border:1px solid var(--border-color,#d8dee9)}.idp-quality.good{border-color:#16a34a}.idp-quality.warn{border-color:#d97706}.idp-quality.bad{border-color:#dc2626}.idp-quality ul{margin:8px 0 0 18px}.idp-stage-list{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.idp-stage-list span{padding:6px 10px;border-radius:999px;background:var(--surface-feedback,#eef2f7);color:var(--text-primary,#172033);border:1px solid var(--border-color,#d8dee9);font-size:12px}
+@media(max-width:760px){.idp-grid{grid-template-columns:1fr}.logo-seal-wrap{width:42px;min-width:42px}.mingxi-seal{width:39px;height:39px}}
+/* V211 ID Photo Studio */
+.idp-controls{display:grid;gap:10px;margin-top:12px}.idp-controls label{display:grid;gap:5px;color:var(--text-primary,#172033);font-weight:600}.idp-controls small{font-weight:400;color:var(--text-secondary,#64748b)}.idp-controls input[type=range]{width:100%}.idp-output-row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.idp-output-row label{display:grid;gap:4px}.idp-output-row select,.idp-output-row input{min-height:38px;border:1px solid var(--border-color,#cbd5e1);border-radius:10px;background:var(--surface-card,#fff);color:var(--text-primary,#172033);padding:6px 9px}.idp-preview-wrap canvas{display:block;max-width:100%;max-height:55vh;width:auto;height:auto;object-fit:contain}.idp-preview-wrap canvas:not([width]){display:none}

@@ -20,14 +20,14 @@
     // 只压缩“中文/阿拉伯数字金额 token 内部”的空格，绝不能删除整句空格。
     // 旧实现把 "two hundred fifty" 拼成 "twohundredfifty"，导致英/西语数字全部失效。
     let t = String(text || '').trim();
-    const numToken = '0-9零〇○一二两三四五六七八九十百千万亿完玩晚拜白仟拾';
+    const numToken = '0-9零〇○一二两三四五六七八九十百千万亿完玩晚腕旺网忘望往王弯湾丸顽拜白佰仟拾';
     for (let i = 0; i < 3; i++) {
       t = t.replace(new RegExp('([' + numToken + '])\\s+(?=[' + numToken + '])', 'g'), '$1');
     }
     const digit = '0-9零〇○一二两三四五六七八九十百千万亿';
     // 单位被 ASR 写成常见同音字时，仅当前后至少一侧为数字/数位单位才纠正。
     const fixes = [
-      [/[完玩晚]/g, '万'], [/[拜白]/g, '百'], [/[仟]/g, '千'], [/[拾]/g, '十']
+      [/[完玩晚腕旺网忘望往王弯湾丸顽]/g, '万'], [/[拜白佰]/g, '百'], [/[仟]/g, '千'], [/[拾]/g, '十']
     ];
     for (const [re, unit] of fixes) {
       t = t.replace(re, (m, off, whole) => {
@@ -38,6 +38,28 @@
     }
     return t;
   };
+
+  // V211：金额语境中的“万”丢失恢复。只修复中文金额里不可能自然成立的紧邻结构，
+  // 例如“一三千”=>“一万三千”、“2五千”=>“2万五千”。不在普通文本中猜单位。
+  VK.recoverDroppedWan = function (text) {
+    let s = VK.normalizeCnAmountSpeech(text);
+    const raw = String(s || '');
+    const moneyCue = /(?:收入|支出|金额|花了|花费|消费|付款|支付|收到|收款|转账|工资|进货|退款|报销|元|块|钱|￥|¥)/.test(raw);
+    const compact = raw.replace(/[，,。！!？?\s]/g, '');
+    if (!moneyCue && !/^[0-9零〇○一二两三四五六七八九十]{2,}千/.test(compact)) return { text:raw, changed:false, reason:'' };
+    let out = raw;
+    // 前段表示“万位”，后段明确以千位开始；原串没有万/亿时才允许恢复。
+    if (!/[万亿]/.test(out)) {
+      out = out.replace(/([0-9一二两三四五六七八九十]{1,3})([0-9一二两三四五六七八九])千/g, (m,a,b)=> {
+        // 诸如“十三千”不是标准中文金额；最合理的金额语法是“十万三千”。
+        // 但纯阿拉伯“13千”是合法 13000，不改。
+        if (/^\d+$/.test(a) && /^\d$/.test(b)) return m;
+        return a + '万' + b + '千';
+      });
+    }
+    return { text:out, changed:out!==raw, reason:out!==raw?'DROPPED_WAN_GRAMMAR_RECOVERY':'' };
+  };
+
   VK.parseCnNumber = function (s) {
     s = VK.normalizeCnAmountSpeech(s);
     const cnMap = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
@@ -177,8 +199,10 @@
     return sign < 0 ? -total : (Math.round(total * 100) / 100);
   };
   VK.parseAmount = function (text) {
-    const t = VK.normalizeCnAmountSpeech(text).trim();
+    let t = VK.normalizeCnAmountSpeech(text).trim();
     if (!t) return null;
+    const wr = VK.recoverDroppedWan ? VK.recoverDroppedWan(t) : {text:t};
+    t = wr.text || t;
     // 中文金额（万/零/块/毛/角/分/亿）
     if (/[零一两二三四五六七八九十百千万亿元块钱毛角分点]/.test(t)) {
       const cn = VK.parseCnMoney(t);
@@ -191,11 +215,35 @@
     return null;
   };
 
+  // V209 金额数量级安全门：识别器如果把“万”完全吞掉，后处理不能凭空猜数值，
+  // 但必须阻止可疑结果静默入账。返回 risk=true 时业务层应要求“只重说金额”。
+  VK.amountScaleRisk = function (text, amount) {
+    const raw = String(text || '').trim();
+    const recovered = VK.recoverDroppedWan ? VK.recoverDroppedWan(raw) : {text:VK.normalizeCnAmountSpeech(raw),changed:false};
+    const norm = recovered.text;
+    const a = Number(amount);
+    if (!raw || !(a > 0)) return { risk: false, reason: '' };
+    // 同音字仍残留在数字邻域，说明无法安全恢复单位。
+    if (/[0-9零〇○一二两三四五六七八九十百千万亿][完玩晚腕旺网忘望往王弯湾丸顽][0-9零〇○一二两三四五六七八九十百千万亿]/.test(raw) && !/[万亿]/.test(norm)) {
+      return { risk: true, reason: 'LARGE_UNIT_ALIAS_UNRESOLVED' };
+    }
+    // “一三千 / 2五千”这类非标准紧邻结构，常见于“一万三千 / 两万五千”中的“万”被吞掉。
+    // 不猜成万，只要求重说金额，避免 13000→3000 / 25000→5000 这类灾难级误记。
+    const compact = norm.replace(/[\s,，。！!？?]/g, '');
+    if (!/[万亿]/.test(compact) && /[一二两三四五六七八九0-9]{2,}千/.test(compact)) {
+      return { risk: true, reason: 'POSSIBLE_MISSING_WAN' };
+    }
+    if (recovered.changed) return { risk:false, reason:'DROPPED_WAN_RECOVERED', recoveredText:norm };
+    return { risk: false, reason: '' };
+  };
+
   // 金额置信度估算（V2 原则：低置信度不直接写库，先询问）
   // 保守策略：正常"单一金额"高置信；仅当原文存在 ≥2 个不同金额候选（可能把日期/其它数字误当金额）才低置信。
   VK.amountConfidence = function (amount, text) {
     const a = Number(amount);
     if (!(a > 0)) return 0.3;
+    const scaleRisk = VK.amountScaleRisk ? VK.amountScaleRisk(text, a) : { risk:false };
+    if (scaleRisk.risk) return 0.2;
     let t = VK.normalizeCnAmountSpeech(text).trim();
     if (!t) return 0.8;
     // 先剥离日期/时间短语与命令词，避免"8月15号"的15、"3点"的3被当成金额候选

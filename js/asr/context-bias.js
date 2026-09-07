@@ -61,7 +61,7 @@
     let s = String(text || '');
     if (localeBase(lang) !== 'zh' && !/[万亿千百十]/.test(s)) return s.trim();
     const chars = Array.from(s);
-    const map = { '完':'万', '玩':'万', '晚':'万', '腕':'万', '拜':'百', '白':'百', '佰':'百', '仟':'千' };
+    const map = { '完':'万', '玩':'万', '晚':'万', '腕':'万', '旺':'万', '网':'万', '忘':'万', '望':'万', '往':'万', '王':'万', '弯':'万', '湾':'万', '丸':'万', '顽':'万', '拜':'百', '白':'百', '佰':'百', '仟':'千' };
     for (let i = 0; i < chars.length; i++) {
       if (map[chars[i]] && surroundedByNumber(chars.join(''), i)) chars[i] = map[chars[i]];
     }
@@ -71,6 +71,20 @@
     return s.trim();
   }
 
+  function recoverDroppedWan(text, lang, mode) {
+    let s=String(text||'');
+    if(localeBase(lang)!=='zh' || !['ledger','quick','transfer'].includes(String(mode||'ledger'))) return {text:s,changed:false};
+    if(/[万亿]/.test(s)) return {text:s,changed:false};
+    const cue=/(?:收入|支出|金额|花了|消费|付款|支付|收到|收款|转账|工资|进货|退款|报销|元|块|钱|￥|¥)/.test(s);
+    const compact=s.replace(/[，,。！!？?\s]/g,'');
+    if(!cue && !/^[0-9零〇一二两三四五六七八九十]{2,}千/.test(compact)) return {text:s,changed:false};
+    const out=s.replace(/([0-9一二两三四五六七八九十]{1,3})([0-9一二两三四五六七八九])千/g,(m,a,b)=>{
+      if(/^\d+$/.test(a)&&/^\d$/.test(b)) return m;
+      return a+'万'+b+'千';
+    });
+    return {text:out,changed:out!==s};
+  }
+
   function normalizeTranscript(text, opts) {
     const o = opts || {};
     let s = String(text || '').trim();
@@ -78,9 +92,11 @@
     const before = s, reasons = [];
     const n = normalizeMoneyUnits(s, o.lang);
     if (n !== s) { s = n; reasons.push('MONEY_UNIT_CONTEXT_FIX'); }
+    const wr=recoverDroppedWan(s,o.lang,o.mode);
+    if(wr.changed){s=wr.text;reasons.push('DROPPED_WAN_GRAMMAR_RECOVERY');}
     return { text:s, changed:s !== before, original:before, reasons, hotwords:hotwords(o.lang, o.extraHotwords, o.mode) };
   }
 
   global.AsrKit = global.AsrKit || {};
-  global.AsrKit.contextBias = { hotwords, modeWords, normalizeTranscript, normalizeMoneyUnits, VERSION:2 };
+  global.AsrKit.contextBias = { hotwords, modeWords, normalizeTranscript, normalizeMoneyUnits, recoverDroppedWan, VERSION:3 };
 })(typeof window !== 'undefined' ? window : globalThis);

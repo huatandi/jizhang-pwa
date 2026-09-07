@@ -141,10 +141,9 @@ function openIncomeModal(prefillDate) {
   fillSelect('iProject', options.departments, true);
   fillAccountSelect ? fillAccountSelect('iAccount', true) : fillSelect('iAccount', options.accounts, true);
   fillSelect('iCardPending', options.discount_accounts, true);
-  const iCurSel = document.getElementById('iCurrency');
-  if (iCurSel) iCurSel.value = BASE_CURRENCY();
   // 功能补充 P5：填充快捷模板下拉
   fillQuickTemplates('income');
+  const iCur = document.getElementById('iCurrency'); if (iCur) iCur.value = BASE_CURRENCY();
   openModal('incomeModal');
 }
 
@@ -467,8 +466,7 @@ function openPurchaseModal(prefillDate) {
   document.getElementById('pRemark').value = '';
   fillSelect('pSupplier', options.suppliers, true);
   fillSelect('pStatus', purchaseStatusOptions(), true);
-  const pCurSel = document.getElementById('pCurrency');
-  if (pCurSel) pCurSel.value = BASE_CURRENCY();
+  const pCur = document.getElementById('pCurrency'); if (pCur) pCur.value = BASE_CURRENCY();
   openModal('purchaseModal');
 }
 
@@ -486,7 +484,8 @@ function editPurchase(id) {
     fillSelect('pStatus', purchaseStatusOptions(), true);
     document.getElementById('pSupplier').value = r.supplier;
     document.getElementById('pStatus').value = r.status || '';
-    // Persisted purchase totals/paid amounts are base-currency values.
+    // 数据库存储的 total_amount / paid_amount 已经是基准币金额。
+    // 编辑时币种必须切回基准币，避免按原始 currency 再折算一次。
     const curSel = document.getElementById('pCurrency');
     if (curSel) curSel.value = BASE_CURRENCY();
     openModal('purchaseModal');
@@ -550,6 +549,7 @@ async function addPurchasePayment(id) {
   const reference = prompt('参考号 / Folio（可留空）：','') || '';
   const remark = prompt('付款备注（可留空）：','') || '';
   try {
+    // remain/amount 均来自已持久化的基准币金额，因此这里必须按基准币提交。
     const out = await api('/purchase/' + id + '/payments','POST',{pay_date:date,amount,account,reference,remark,currency:BASE_CURRENCY()});
     showToast(out.remaining > 0 ? `已登记付款，剩余 ¥${fmtMoney(out.remaining)}` : '✅ 该笔货款已结清');
     renderPurchase(); refreshDashboards(); showPurchasePaymentHistory(id);
@@ -645,10 +645,9 @@ function openExpenseModal(prefillDate) {
   document.getElementById('eRemark').value = '';
   fillSelect('eCategory', expenseCatOptions(), true);
   fillAccountSelect ? fillAccountSelect('eAccount', true) : fillSelect('eAccount', options.accounts, true);
-  const eCurSel = document.getElementById('eCurrency');
-  if (eCurSel) eCurSel.value = BASE_CURRENCY();
   // 功能补充 P5：填充快捷模板下拉
   fillQuickTemplates('expense');
+  const eCur = document.getElementById('eCurrency'); if (eCur) eCur.value = BASE_CURRENCY();
   openModal('expenseModal');
 }
 
@@ -666,7 +665,7 @@ function editExpense(id) {
     fillAccountSelect ? fillAccountSelect('eAccount', true) : fillSelect('eAccount', options.accounts, true);
     document.getElementById('eCategory').value = r.category;
     document.getElementById('eAccount').value = r.account;
-    // Persisted expense amounts are base-currency values.
+    // 数据库存储的 amount 已经是基准币金额；编辑时固定为基准币避免二次换算。
     const curSel = document.getElementById('eCurrency');
     if (curSel) curSel.value = BASE_CURRENCY();
     openModal('expenseModal');
