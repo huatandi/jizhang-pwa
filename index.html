@@ -660,15 +660,15 @@
           </div>
           <div class="idp-grid">
             <div class="ai-panel idp-workbench">
-              <div class="chart-title">3. 原图与智能质量评判</div>
+              <div class="chart-title">3. 原图与质量诊断</div>
               <div class="idp-preview-wrap"><img id="idpPreview" alt="证件照原图预览"></div>
               <div id="idpQuality" class="idp-quality"><strong>等待照片</strong><div>系统不会用 AI 虚构缺失的头顶/肩部；太近造成的缺失区域不可恢复，太远造成的真实细节不足不以超分辨率伪装为合格。</div></div>
             </div>
             <div class="ai-panel idp-workbench">
-              <div class="chart-title">4. 本地制作预览</div>
+              <div class="chart-title">4. 智能修复与成片预览</div>
               <div class="idp-preview-wrap"><canvas id="idpProcessed"></canvas></div>
               <div class="idp-controls">
-                <label>光影修复 <input id="idpRelight" type="range" min="0" max="80" value="35"><small>只做低频照明均衡，不生成五官</small></label>
+                <label>光影修复 <input id="idpRelight" type="range" min="0" max="80" value="35"><small>分离处理阴影与高光；不生成五官，不伪造已丢失纹理</small></label>
                 <label>背景 <select id="idpBg"><option value="original">保持原背景</option><option value="#ffffff">白色</option><option value="#e9f2ff">浅蓝</option><option value="#d71920">红色</option><option value="#d9d9d9">灰色</option></select></label>
                 <label>背景容差 <input id="idpTolerance" type="range" min="20" max="80" value="44"></label>
               </div>
@@ -1531,7 +1531,7 @@
   <script src="js/intelligence/template-engine.js?v=949b8d08"></script>
   <script src="js/intelligence/correction-learner.js?v=839f00d3"></script>
   <!-- V7：Document Intelligence（字段候选/金额裁决/商户过滤/日期/错误归因） -->
-  <script src="js/intelligence/document-intelligence-v7.js?v=4f51615e"></script>
+  <script src="js/intelligence/document-intelligence-v7.js?v=440af1a2"></script>
   <script src="js/voice-engine.js?v=9cc4fddb"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
   <script src="js/ai/global-config.js?v=735f4bc8"></script>
@@ -1550,6 +1550,7 @@
   <script src="js/ocr/paddle-engine.js?v=1e167929"></script>
   <script src="js/ocr/model-benchmark-store.js?v=7812ccea"></script>
   <script src="js/ocr/region-rescue-planner.js?v=a1a88540"></script>
+  <script src="js/ocr/evidence-recovery-planner.js?v=8a371481"></script>
   <script src="js/ocr/ocr-manager.js?v=256a4109"></script>
   <!-- V5 P3：可中止 OCR 任务管理 -->
   <script src="js/ocr/ocr-job-manager.js?v=d4c33729"></script>
@@ -1608,9 +1609,10 @@
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
   <script src="js/voice/reminders.js?v=fieldcmd-01"></script>
   <script src="js/voice/correction-engine.js?v=75bd5319"></script>
-  <script src="js/voice/quick-voice.js?v=c32437dc"></script>
+  <script src="js/voice/action-planner.js?v=cc0185ba"></script>
+  <script src="js/voice/quick-voice.js?v=887ddb35"></script>
   <script src="js/ledger-crud.js?v=3a8e9cce"></script>
-  <script src="js/ai/ai-workbench.js?v=e7fbacb1"></script>
+  <script src="js/ai/ai-workbench.js?v=1e1cc6ba"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=ba1b2e2f"></script>
   <!-- ===== Weather Intelligence：天气预报（Open-Meteo Provider，可独立降级） ===== -->
@@ -1655,13 +1657,14 @@
   <script src="js/personalization/app-event-bus.js"></script>
   <script src="js/personalization/pet-engine.js"></script>
   <script src="js/personalization/pet-life-os.js"></script>
+  <script src="js/personalization/pet-motion-engine.js"></script>
   <script src="js/personalization/pet-director.js"></script>
   <script src="js/idphoto/output-profiles.js"></script>
   <script src="js/idphoto/camera-coach.js"></script>
   <script src="js/idphoto/spec-registry.js?v=3a408fc2"></script>
-  <script src="js/idphoto/capture-quality-gate.js?v=d4d37215"></script>
-  <script src="js/idphoto/image-processor.js?v=d1ccbaf6"></script>
-  <script src="js/idphoto/idphoto-studio.js?v=4df9dced"></script>
+  <script src="js/idphoto/capture-quality-gate.js?v=ef78ec45"></script>
+  <script src="js/idphoto/image-processor.js?v=d726a9e6"></script>
+  <script src="js/idphoto/idphoto-studio.js?v=c9d45d72"></script>
   <script src="js/boot.js?v=da9eaf1e"></script>
 
   <!-- V190-V193 智能识别中心 -->

@@ -1814,6 +1814,16 @@ async function wbLocalOcrV2(img) {
     }
   } catch (e) { /* 学习套用失败不影响 */ }
 
+  // V218 Evidence Recovery Planner：第二次识别必须有明确证据目标，禁止无目的整图重复。
+  try {
+    const ERP = window.OcrKit && window.OcrKit.EvidenceRecoveryPlanner;
+    if (ERP && typeof ERP.plan === 'function') {
+      const rp = ERP.plan(result, fields, v7audit, { docType, region: regionCode });
+      fields.__recoveryPlan = rp;
+      result._evidenceRecoveryPlan = rp;
+    }
+  } catch (e) { console.warn('[ocr-v218] Evidence Recovery Planner 跳过:', e); }
+
   // V5 §27-33 金额智能（约束引擎 + 字符混淆候选）：现金/财务闭环保守裁决。
   // 仅在"数学闭环成立 + 变体来自字符混淆"时采用变体（如 $→5：TOTAL 560.00 / EFECTIVO 70 / CAMBIO 10 → 60.00）；
   // 无数学证据时绝不改动金额（§91）；任何异常静默降级（§98）。
@@ -1832,7 +1842,9 @@ async function wbLocalOcrV2(img) {
   }
 
   // V7 Field Rescue：只救低置信金额；已知模板优先直接裁学习到的 ROI，禁止整图重跑。
-  if ((fields.amount == null || (fields.amountConfidence || 0) < 0.72) &&
+  const __amountRecoveryTask = fields.__recoveryPlan && Array.isArray(fields.__recoveryPlan.tasks)
+    ? fields.__recoveryPlan.tasks.find(t => t && t.field === 'amount') : null;
+  if ((fields.amount == null || (fields.amountConfidence || 0) < 0.72 || __amountRecoveryTask) &&
       window.OcrKit && window.OcrKit.regionRetry && result._canvas) {
     try {
       const mgr = await getOcrManager();
@@ -1844,6 +1856,15 @@ async function wbLocalOcrV2(img) {
       }
       if (!rr && result.lines && result.lines.length) {
         rr = await window.OcrKit.regionRetry.retry(result, result._canvas, mgr, 'amount', { currentConfidence: fields.amountConfidence || 0 });
+      }
+      if (rr && rr.value != null && rr.value !== '') {
+        const ERP = window.OcrKit && window.OcrKit.EvidenceRecoveryPlanner;
+        const gain = ERP && ERP.informationGain ? ERP.informationGain(
+          { value: fields.amount, confidence: fields.amountConfidence || 0 },
+          { value: rr.value, confidence: rr.confidence || 0, newEvidence: true }
+        ) : { useful:true, gain:1 };
+        fields.__amountRecoveryGain = gain;
+        if (!gain.useful) rr = null;
       }
       if (rr && rr.value != null && rr.value !== '') {
         const num = Number(String(rr.value).replace(/[^\d.-]/g, ''));

@@ -63,6 +63,16 @@
   function norm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
   function normKey(s) { return norm(s).toLowerCase().replace(/[^a-z0-9áéíóúñü&]+/gi, ''); }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  // V218: finance-label repair is context-only. Raw OCR evidence is never mutated.
+  // Only canonicalize a small set of high-value labels before semantic role classification.
+  function canonicalSemanticText(s) {
+    return norm(s)
+      .replace(/\bT[0O]TA[1IL]\b/ig, 'TOTAL')
+      .replace(/\bSUBT[0O]TA[1IL]\b/ig, 'SUBTOTAL')
+      .replace(/\bEFECTIV[0O]\b/ig, 'EFECTIVO')
+      .replace(/\bCAMBI[0O]\b/ig, 'CAMBIO')
+      .replace(/\bIV[4A]\b/ig, 'IVA');
+  }
 
   function parseMoney(s) {
     if (s == null) return null;
@@ -100,8 +110,10 @@
 
   function linesOf(result) {
     if (result && Array.isArray(result.lines) && result.lines.length) return result.lines.map((l,i)=>({ ...l, _i:i, text:norm(l.text) }));
-    const text = norm(result && (result.fullText || result.text));
-    return text ? text.split(/\n+/).map((t,i)=>({ text:norm(t), _i:i })) : [];
+    // V218: preserve line boundaries. Calling norm() before split erased newlines and
+    // caused SUBTOTAL/IVA/TOTAL/EFECTIVO/CAMBIO to collapse into one semantic role.
+    const raw = String(result && (result.fullText || result.text) || '');
+    return raw ? raw.split(/\r?\n+/).map((t,i)=>({ text:norm(t), _i:i })).filter(x=>x.text) : [];
   }
 
   function amountsIn(text, allowInteger) {
@@ -119,7 +131,7 @@
   }
 
   function detectAmountRole(text) {
-    const t=norm(text);
+    const t=canonicalSemanticText(text);
     if (SUBTOTAL_RE.test(t)) return { role:'subtotal', bonus:-0.55 };
     if (TAX_RE.test(t)) return { role:'tax', bonus:-0.65 };
     if (DISCOUNT_RE.test(t)) return { role:'discount', bonus:-0.55 };
@@ -132,7 +144,7 @@
 
   function findRoleAmount(lines, re) {
     for (const line of lines) {
-      if (!re.test(line.text)) continue;
+      if (!re.test(canonicalSemanticText(line.text))) continue;
       const vals=amountsIn(line.text, true);
       if (vals.length) return vals[vals.length-1].value;
     }
@@ -386,6 +398,6 @@
   global.OcrKit=global.OcrKit||{};
   global.OcrKit.documentIntelligenceV7={
     resolve, classify, resolveAmount, resolveMerchant, resolveDate, parseMoney,
-    attributeCorrection, MERCHANT_BLOCK, TOTAL_LABELS, relBox, lineBox, version:'7.0'
+    attributeCorrection, canonicalSemanticText, MERCHANT_BLOCK, TOTAL_LABELS, relBox, lineBox, version:'7.1-v218'
   };
 })(typeof window!=='undefined'?window:globalThis);

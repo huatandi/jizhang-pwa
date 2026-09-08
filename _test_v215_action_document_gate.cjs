@@ -7,7 +7,7 @@ function ok(name, cond){ console.log((cond?'PASS ':'FAIL ')+name); cond?pass++:f
 const q=fs.readFileSync('js/voice/quick-voice.js','utf8');
 ok('voice single writer exists', /function atomicVoiceWrite\(field, value\)/.test(q));
 ok('voice action dedupe ledger exists', /__voiceActionLedger/.test(q) && /voiceActionSeen/.test(q));
-ok('numeric transcript authoritative for 13500', /Numeric transcript is authoritative/.test(q) && /Number\(tail\.replace\(\/,\/g, ''\)\)/.test(q));
+ok('numeric transcript authoritative for 13500', /standalone money utterances/.test(q) && /Number\(body\.replace\(\/,\/g, ''\)\)/.test(q));
 ok('read-after-write mismatch blocks success', /read-after-write-mismatch/.test(q) && /金额写入校验失败/.test(q));
 ok('navigation verified against quickType + active class', /quickType === target && active/.test(q));
 ok('account goes through atomic writer', /atomicVoiceWrite\('account', acc\)/.test(q));

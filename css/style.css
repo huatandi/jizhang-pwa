@@ -4157,3 +4157,23 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 #personalizationSettings .personalization-grid>div{padding:12px}
 @media(max-width:760px){#page-idphoto .idp-mobile-primary{background:color-mix(in srgb,var(--surface2) 94%,transparent)}}
+
+/* ===== V219 ID Photo diagnostics + Pet Free Roam ===== */
+#page-idphoto .idp-preview-wrap{
+  background:color-mix(in srgb,var(--surface2) 82%,var(--primary-soft) 18%);
+  border-color:color-mix(in srgb,var(--border) 82%,var(--primary) 18%);
+}
+#page-idphoto .idp-preview-wrap img,#page-idphoto .idp-preview-wrap canvas{border-radius:10px;box-shadow:0 5px 18px color-mix(in srgb,var(--text) 10%,transparent)}
+.idp-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:7px;margin-top:9px}.idp-metric{padding:7px 9px;border-radius:10px;background:var(--surface);border:1px solid var(--border);font-size:11px}.idp-metric b{display:block;font-size:13px;margin-top:2px}
+.sm-pet-v2[data-motion="run"] .sm-pet-img{animation:petRun .28s ease-in-out infinite}
+.sm-pet-v2[data-motion="stroll"] .sm-pet-img{animation:petStroll .82s ease-in-out infinite}
+.sm-pet-v2[data-motion="jump"] .sm-pet-img{animation:petJump .72s cubic-bezier(.2,.8,.2,1) 1}
+.sm-pet-v2[data-motion="flip"] .sm-pet-img{animation:petFlip .78s cubic-bezier(.3,.7,.2,1) 1}
+.sm-pet-v2[data-motion="look"] .sm-pet-img{animation:petLook 1.35s ease-in-out 1}
+.sm-pet-v2.pet-facing-left .sm-pet-img{--pet-face:-1}.sm-pet-v2.pet-facing-right .sm-pet-img{--pet-face:1}
+@keyframes petRun{0%,100%{transform:scaleX(var(--pet-face,1)) translateY(0) rotate(-3deg)}50%{transform:scaleX(var(--pet-face,1)) translateY(-7px) rotate(4deg)}}
+@keyframes petStroll{0%,100%{transform:scaleX(var(--pet-face,1)) translateY(0) rotate(-1deg)}50%{transform:scaleX(var(--pet-face,1)) translateY(-3px) rotate(2deg)}}
+@keyframes petJump{0%,100%{transform:scaleX(var(--pet-face,1)) translateY(0) rotate(0)}45%{transform:scaleX(var(--pet-face,1)) translateY(-24px) rotate(4deg)}}
+@keyframes petFlip{0%{transform:scaleX(var(--pet-face,1)) rotate(0)}50%{transform:scaleX(var(--pet-face,1)) translateY(-22px) rotate(180deg)}100%{transform:scaleX(var(--pet-face,1)) rotate(360deg)}}
+@keyframes petLook{0%,100%{transform:scaleX(var(--pet-face,1)) rotate(0)}35%{transform:scaleX(var(--pet-face,1)) rotate(-5deg)}70%{transform:scaleX(var(--pet-face,1)) rotate(5deg)}}
+@media(prefers-reduced-motion:reduce){.sm-pet-v2[data-motion] .sm-pet-img{animation:none!important}}

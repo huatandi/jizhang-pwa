@@ -117,8 +117,8 @@ function setQuickType(t, btn, manual, opts) {
   renderQuickCatSelect();
   closeQuickAddCat();
   renderVoicePreview();
-  // 语音会话中切换收支类型：按新分类列表重新解析当前已识别文本
-  if (voiceSessionActive && voiceBuffer.trim() && !(opts && opts.skipVoiceReparse)) applyVoiceText(voiceBuffer);
+  // V218：切换收支类型绝不重放历史 voiceBuffer。
+  // 历史草稿可能同时含旧金额/旧账户/旧备注，重放会把刚刚确认的动作再次覆盖。
 }
 
 // 语音按钮状态
@@ -345,12 +345,44 @@ function voiceActionSeen(kind, raw, ttlMs) {
   return prev && now - prev < (ttlMs || 2200);
 }
 function voiceActionFeedback(text, type, key) {
+  // V216: voice recognition/action feedback stays inside the voice panel.
+  // Recognition popups were noisy and could stack when engines emitted duplicate finals.
   const now = Date.now();
   const k = key || String(text || '');
   if (__voiceFeedbackLast.key === k && now - __voiceFeedbackLast.at < 1400) return;
   __voiceFeedbackLast = { key: k, at: now };
-  showToast(text, type);
+  const tip = document.getElementById('voiceTip');
+  if (tip) {
+    tip.textContent = String(text || '');
+    tip.dataset.state = type === 'error' ? 'error' : 'ok';
+  }
 }
+
+function parseDirectAmountUtterance(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  // Explicit amount synonyms. "今儿" is accepted ONLY as an amount-field homophone
+  // when it is immediately followed by a valid amount expression; it is never globally normalized.
+  const cue = '(?:金额|数额|费用|花费|消费|消费金额|支出金额|今儿)';
+  const verb = '(?:(?:更改为|修改为|调整为|设置为|设为|改成|改为|改到|是|为)\\s*)?';
+  let body = null;
+  let m = text.match(new RegExp('^(?:请|帮我|麻烦|给我)?\\s*(?:把\\s*)?' + cue + '\\s*' + verb + '[:：]?\\s*(.+?)\\s*$', 'i'));
+  if (m) body = String(m[1] || '').trim();
+  // Natural expense verbs: 花了13500 / 花13500 / 支付13500 / 付款13500.
+  if (!body) {
+    m = text.match(/^(?:请|帮我|麻烦|给我)?\s*(?:花了|花|支付|付款|付了)\s*[:：]?\s*(.+?)\s*$/i);
+    if (m) body = String(m[1] || '').trim();
+  }
+  // A standalone amount while the quick-entry voice panel is active is unambiguous enough
+  // to mean the amount field; reject prose/date/time by requiring the whole utterance to be money syntax.
+  if (!body && /^(?:[¥￥$]\s*)?(?:[+]?\d[\d,]*(?:\.\d+)?|[零〇一二两三四五六七八九十百千万亿点]+)(?:\s*(?:元|圆|块|块钱|人民币|比索|peso|pesos|mxn))?(?:\s*(?:多(?:一点|一些)?|左右|上下|大约|约莫|约))?$/i.test(text)) body = text;
+  if (!body) return null;
+  const parser = (window.VoiceKit && window.VoiceKit.parseAmount) || (window.VoiceParser && window.VoiceParser.parseAmount);
+  let n = parser ? Number(parser(body)) : Number(body.replace(/,/g, ''));
+  if (/^[+]?\d[\d,]*(?:\.\d+)?$/.test(body)) n = Number(body.replace(/,/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function setNativeControlValue(el, value) {
   if (!el) return false;
   try {
@@ -395,16 +427,71 @@ function atomicVoiceWrite(field, value) {
   const ok = field === 'amount' ? Number(actual) === Number(target) : String(actual) === String(target);
   return { ok, actual, target:String(target), reason:ok ? null : 'read-after-write-mismatch' };
 }
+// V217 ContextLexicon: closed-vocabulary semantic repair for the quick-entry page.
+// This is intentionally NOT a global homophone replacement.  It is only consulted while
+// the user is operating known controls whose legal values are finite (type/account/amount cue).
+const VOICE_CONTEXT_ALIASES = Object.freeze({
+  accountCue: ['账户','账号','帐户','张虎','赞胡','张护','涨户','账护'],
+  amountCue: ['金额','数额','费用','花费','消费','今儿','菲佣','飞永','费佣','飞用'],
+  cash: ['现金','现钱','陷阱','先进','详尽','橡筋','线金','现今','咸金'],
+  other: ['其他','其它','别的','另外','other','otro','otros'],
+  income: ['收入','收入页面','收入栏目','收入界面','收录','收如','收益','入账','收钱'],
+  expense: ['支出','支出页面','支出栏目','支出界面','指出','之处','支初','花销','花钱']
+});
+function voiceCompact(v) { return String(v || '').trim().replace(/[，。！？!?,、:：;；\s]/g, '').toLowerCase(); }
+function voiceAliasHit(v, group) {
+  const x = voiceCompact(v);
+  return (VOICE_CONTEXT_ALIASES[group] || []).some(a => voiceCompact(a) === x);
+}
+function resolveContextualVoiceCommand(raw) {
+  const x = voiceCompact(raw);
+  if (!x) return null;
+  // Page navigation: exact/closed vocabulary only.  Never fuzzy-map arbitrary prose.
+  for (const [kind, target] of [['income','income'],['expense','expense']]) {
+    for (const a of VOICE_CONTEXT_ALIASES[kind]) {
+      const z = voiceCompact(a);
+      if (x === z || ['切换到','切换','进入','打开','选择','选','转到'].some(v => x === voiceCompact(v)+z))
+        return { kind:'navigate', target, confidence:0.99, source:'closed-vocabulary' };
+    }
+  }
+  // Account values are a closed set.  Common ASR homophones for 现金 are safe here.
+  const accountPrefixes = VOICE_CONTEXT_ALIASES.accountCue.concat(['选择账户','账户选择','选择','选','用','使用']);
+  for (const p of accountPrefixes) {
+    const pc = voiceCompact(p);
+    if (x.startsWith(pc) && x.length > pc.length) {
+      const tail = x.slice(pc.length);
+      if (voiceAliasHit(tail,'cash')) return { kind:'account', value:'现金', confidence:0.98, source:'context-homophone' };
+      if (voiceAliasHit(tail,'other')) return { kind:'account', value:'其他', confidence:0.98, source:'context-homophone' };
+    }
+  }
+  if (voiceAliasHit(x,'cash')) return { kind:'account', value:'现金', confidence:0.96, source:'quick-page-closed-value' };
+  if (voiceAliasHit(x,'other')) return { kind:'account', value:'其他', confidence:0.96, source:'quick-page-closed-value' };
+  return null;
+}
+function looksLikeQuickControlUtterance(raw) {
+  const x = voiceCompact(raw);
+  if (!x || x.length > 14) return false;
+  const groups = ['accountCue','amountCue','cash','other','income','expense'];
+  if (groups.some(g => (VOICE_CONTEXT_ALIASES[g] || []).some(a => x.includes(voiceCompact(a))))) return true;
+  return /^(切换|进入|打开|选择|选|改|设置|设为|用|使用)/.test(x);
+}
+
 function atomicVoiceSwitchType(target) {
   const seg = document.querySelector(`#page-quick .seg-btn[data-type="${target}"]`);
   if (!seg) return { ok:false, reason:'missing-segment' };
   try {
-    // Explicit voice navigation is authoritative for the current session; stale draft inference must not flip it back.
-    setQuickType(target, seg, true, { skipVoiceReparse:true });
+    // Use the same UI path as a real user click first; this preserves any listeners attached by the page.
     if (typeof gotoPage === 'function') gotoPage('quick');
+    if (typeof seg.click === 'function') seg.click();
+    // Fallback/authority: stale draft inference is not allowed to override an explicit navigation utterance.
+    if (quickType !== target || !(seg.classList && seg.classList.contains('active'))) {
+      setQuickType(target, seg, true, { skipVoiceReparse:true });
+    }
   } catch (e) { return { ok:false, reason:'switch-exception:' + (e && e.message || e) }; }
-  const active = seg.classList && seg.classList.contains('active');
-  return { ok:quickType === target && active, actual:quickType, active };
+  const active = !!(seg.classList && seg.classList.contains('active'));
+  const page = document.getElementById('page-quick');
+  const visible = !page || page.classList.contains('active') || page.style.display !== 'none';
+  return { ok:quickType === target && active && visible, actual:quickType, active, visible };
 }
 // V214: final utterance semantic commit lane.
 // ASR text is evidence; explicit UI commands must be executed atomically from THIS utterance only.
@@ -419,6 +506,71 @@ function executeFinalVoiceCommand(finalText) {
   if (!raw) return false;
   const compact = raw.replace(/[。，！!？?、\s]/g, '');
 
+  // V218 ActionPlan：当前 utterance 先生成确定性动作计划，再由 Single Writer 顺序执行。
+  // 识别器/Parser 只提供证据；命令型 utterance 不允许掉进备注。
+  try {
+    const AP = window.VoiceActionPlanner;
+    if (AP && typeof AP.plan === 'function') {
+      const parser = (window.VoiceKit && window.VoiceKit.parseAmount) || (window.VoiceParser && window.VoiceParser.parseAmount);
+      const plan = AP.plan(raw, { parseAmount: parser });
+      if (plan && plan.actions && plan.actions.length) {
+        if (voiceActionSeen('ACTION_PLAN:' + plan.id, raw, 5000)) return true;
+        for (const action of plan.actions) {
+          if (action.type === 'NAVIGATE') {
+            const r = atomicVoiceSwitchType(action.value);
+            if (!r.ok) { voiceActionFeedback('⚠️ 页面切换未完成', 'error', 'plan-nav-fail'); return true; }
+          } else if (action.type === 'SET_AMOUNT') {
+            const wr = atomicVoiceWrite('amount', action.value);
+            if (!wr.ok) { voiceActionFeedback('⚠️ 金额写入校验失败，未采用错误值', 'error', 'plan-amount-fail'); return true; }
+            voiceFieldConfirmed.amount = true; voiceAmountPending = null; voiceFieldFailCount.amount = 0;
+          } else if (action.type === 'SET_ACCOUNT') {
+            const sel = document.getElementById('qAccount');
+            let target = action.value;
+            if (sel && ![...sel.options].some(o => String(o.value) === target || String(o.textContent).trim() === target)) {
+              const re = target === '现金' ? /^(现金|现钱|cash|efectivo)$/i : /^(其他|其它|other|otro)$/i;
+              const hit = [...sel.options].find(o => re.test(String(o.textContent).trim()));
+              if (hit) target = hit.value;
+            }
+            const wr = atomicVoiceWrite('account', target);
+            if (!wr.ok) { voiceActionFeedback('⚠️ 账户未能匹配当前列表', 'error', 'plan-account-fail'); return true; }
+            voiceFieldConfirmed.account = true;
+          }
+        }
+        renderVoicePreview();
+        voiceActionFeedback('✔ 已按语音完成操作', null, 'plan-ok:' + plan.id);
+        return true;
+      }
+      if (plan && plan.commandLike && !plan.allowRemark) {
+        voiceActionFeedback('未能确定要操作的项目，请再说一次', 'error', 'plan-unresolved:' + plan.id);
+        return true;
+      }
+    }
+  } catch (e) { /* planner fail-safe: fall through to mature V217 lane */ }
+
+  // V217: closed-vocabulary repair runs BEFORE generic parsing/draft accumulation.
+  const ctx = resolveContextualVoiceCommand(raw);
+  if (ctx && ctx.kind === 'navigate') {
+    if (voiceActionSeen('NAVIGATE_' + ctx.target, raw)) return true;
+    const r = atomicVoiceSwitchType(ctx.target);
+    renderVoicePreview();
+    voiceActionFeedback(r.ok ? ('✔ 已切换到' + (ctx.target === 'income' ? '收入' : '支出')) : '⚠️ 页面切换未完成', r.ok ? null : 'error', 'ctx-nav:'+ctx.target);
+    return true;
+  }
+  if (ctx && ctx.kind === 'account') {
+    if (voiceActionSeen('SET_ACCOUNT', raw)) return true;
+    const sel = document.getElementById('qAccount');
+    let target = ctx.value;
+    if (sel && ![...sel.options].some(o => String(o.value) === target || String(o.textContent).trim() === target)) {
+      // tolerate localized/legacy "其他/其它" label, but never invent an account.
+      if (target === '其他') { const hit=[...sel.options].find(o => /^(其他|其它)$/i.test(String(o.textContent).trim())); if (hit) target=hit.value; }
+      if (target === '现金') { const hit=[...sel.options].find(o => /^(现金|现钱|cash|efectivo)$/i.test(String(o.textContent).trim())); if (hit) target=hit.value; }
+    }
+    const wr = atomicVoiceWrite('account', target);
+    if (wr.ok) { voiceFieldConfirmed.account=true; renderVoicePreview(); voiceActionFeedback('✔ 账户已设为 '+String(sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : target).trim(), null, 'ctx-account:'+target); }
+    else voiceActionFeedback('⚠️ 账户未能匹配当前列表', 'error', 'ctx-account-fail');
+    return true;
+  }
+
   // 1) Income/expense navigation. One utterance -> one verified action.
   let target = null;
   if (/^(?:请|帮我|麻烦|给我)?(?:切换到|切换|进入|打开|选|选择|转到|转)?(?:收入|收入页面|收入栏目|收入界面|收钱|入账)$/i.test(compact)) target = 'income';
@@ -432,16 +584,12 @@ function executeFinalVoiceCommand(finalText) {
     return true;
   }
 
-  // 2) Explicit amount overwrite. Parse ONLY the tail after the command.
-  const am = raw.match(/(?:把\s*)?(?:金额|数额|多少钱)\s*(?:更改为|修改为|调整为|设置为|设为|改成|改为|改到|是|为)\s*[:：]?\s*(.+?)\s*$/i);
-  if (am) {
+  // 2) Deterministic amount write. Amount synonyms + standalone money utterances all use
+  // the same Single Writer and are consumed before draft/candidate arbitration.
+  const n = parseDirectAmountUtterance(raw);
+  if (n != null) {
     if (voiceActionSeen('SET_AMOUNT', raw)) return true;
-    const tail = String(am[1] || '').trim();
-    const parser = (window.VoiceKit && window.VoiceKit.parseAmount) || (window.VoiceParser && window.VoiceParser.parseAmount);
-    let n = parser ? Number(parser(tail)) : Number(tail.replace(/,/g, ''));
-    // Numeric transcript is authoritative. Never let a fuzzy parser turn "13500" into "500".
-    if (/^[+]?\d[\d,]*(?:\.\d+)?$/.test(tail)) n = Number(tail.replace(/,/g, ''));
-    if (Number.isFinite(n) && n > 0) {
+    {
       const wr = atomicVoiceWrite('amount', n);
       if (wr.ok) {
         voiceFieldConfirmed.amount = true;
@@ -454,8 +602,6 @@ function executeFinalVoiceCommand(finalText) {
       }
       return true;
     }
-    voiceActionFeedback('金额未识别，请只重说金额', 'error', 'amount-parse-fail');
-    return true;
   }
 
   // 3) Explicit account selection. Resolve against the actual select, then verify.
@@ -496,7 +642,7 @@ function handleVoiceDraftFinal(finalText, resultMeta) {
       if (seg && quickType !== tgt) setQuickType(tgt, seg, false, { skipVoiceReparse: true });
       renderVoicePreview();
       const L = effectiveVoiceLang();
-      showToast(L === 'es-MX' ? ('✔ ' + (tgt === 'income' ? 'Ingresos' : 'Gastos')) : /^en/.test(L) ? ('✔ ' + (tgt === 'income' ? 'Income' : 'Expense')) : ('✔ 已切换到' + (tgt === 'income' ? '收入' : '支出')));
+      voiceActionFeedback(L === 'es-MX' ? ('✔ ' + (tgt === 'income' ? 'Ingresos' : 'Gastos')) : /^en/.test(L) ? ('✔ ' + (tgt === 'income' ? 'Income' : 'Expense')) : ('✔ 已切换到' + (tgt === 'income' ? '收入' : '支出')), null, 'legacy-nav:'+tgt);
       return true; // 作为切换指令消费，不进草稿
     }
   } catch (e) { /* 忽略，走后续 */ }
@@ -514,7 +660,7 @@ function handleVoiceDraftFinal(finalText, resultMeta) {
       renderVoicePreview();
       // 纯切换句直接消费；若同一句还有金额/账户等内容，则切换后继续让草稿解析剩余内容。
       if (!String(one.text || '').trim()) {
-        showToast('✔ 已切换到' + (tgt === 'income' ? '收入' : '支出'));
+        voiceActionFeedback('✔ 已切换到' + (tgt === 'income' ? '收入' : '支出'), null, 'semantic-nav:'+tgt);
         return true;
       }
     }
@@ -526,7 +672,7 @@ function handleVoiceDraftFinal(finalText, resultMeta) {
         writeVoiceField('account', acc);
         voiceFieldConfirmed.account = true;
         renderVoicePreview();
-        showToast('✔ 账户已设为 ' + acc);
+        voiceActionFeedback('✔ 账户已设为 ' + acc, null, 'semantic-account:'+acc);
         return true;
       }
     }
@@ -541,6 +687,13 @@ function handleVoiceDraftFinal(finalText, resultMeta) {
       return true;
     }
   } catch (e) { /* fallback to draft interpreter */ }
+
+  // V217 fail-closed: a short utterance that looks like a control command must never fall through
+  // into the free-form remark draft.  Keep listening and let the user retry; do not pollute qRemark.
+  if (looksLikeQuickControlUtterance(finalText)) {
+    voiceActionFeedback('未能确定要操作的项目，请再说一次', 'error', 'control-unresolved');
+    return true;
+  }
 
   const before = captureQuickVoiceState();
   const ev = draft.acceptUtterance(finalText, resultMeta || { lang: voiceLang });
@@ -1645,13 +1798,13 @@ function applyVoiceText(buffer) {
   // 只在会话结束（说保存/终结词后）才给出"识别成功/草稿完成"确认，避免半路打断用户说话。
   if (!voiceSessionActive) {
     if (effectiveVoiceLang() === 'es-MX') {
-      showToast(filled ? '✔ Reconocido. Revisa y guarda' : 'Texto reconocido, di el monto');
+      voiceActionFeedback(filled ? '✔ Reconocido. Revisa y guarda' : 'Texto reconocido, di el monto', null, 'recognized-es');
       if (filled) speak('Reconocido');
     } else if (effectiveVoiceLang() === 'en-US') {
-      showToast(filled ? '✔ Recognized. Review and save' : 'Text recognized, say the amount');
+      voiceActionFeedback(filled ? '✔ Recognized. Review and save' : 'Text recognized, say the amount', null, 'recognized-en');
       if (filled) speak('Recognized');
     } else {
-      showToast(filled ? '✔ 已识别，请核对后保存' : '已识别文本，请补充金额');
+      voiceActionFeedback(filled ? '✔ 已识别，请核对后保存' : '已识别文本，请补充金额', null, 'recognized-zh');
       if (filled) speak('识别成功');
     }
   }
@@ -1934,6 +2087,7 @@ async function saveQuick() {
     getIncomeVoiceActive: () => incomeVoiceActive,
     speak, startAlarm, stopAlarm, scheduleAlarmRetries, getAlarmSettings, previewAlarm, renderVoicePreview, applyVoiceText,
     confirmVoiceAmount, applyVoiceFieldOverride,
+    resolveContextualVoiceCommand, looksLikeQuickControlUtterance,
     removeVoiceEntry, saveQuick,
     ALARM_TONES, saveCustomTone, removeCustomTone, loadCustomTone,
   });
