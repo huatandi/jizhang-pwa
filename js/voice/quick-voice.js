@@ -750,7 +750,9 @@ function handleVoiceDraftFinal(finalText, resultMeta) {
     }
     if (ev.segment && !voiceDraftSnapshots.has(ev.segment.id)) voiceDraftSnapshots.set(ev.segment.id, before);
     voiceBuffer = state.draftText || '';
-    if (voiceBuffer.trim()) applyVoiceText(voiceBuffer); // Shadow Parser：实时预览，但不保存账目
+    // V223: display may accumulate, business fields may not. Only the current immutable utterance
+    // is routed, preventing stale earlier content from overwriting a verified SET_AMOUNT/SET_ACCOUNT.
+    if (String(finalText || '').trim()) applyVoiceText(String(finalText || '').trim());
     showVoiceDraft(voiceBuffer);
     return true;
   }
@@ -849,8 +851,11 @@ function voiceHandleResult(r) {
     // V6：优先进入 VoiceDraftSession。只有显式“完成/好了/listo/done”等才结束会话；
     // 普通 VAD utterance 只代表一句结束，不代表整个录音结束。
     if (!handleVoiceDraftFinal(r.final, { lang: voiceLang, engine: r.engine, model: r.model, backend: r.backend })) {
+      // V223 hard invariant: a final utterance may update the display transcript, but business parsing
+      // receives ONLY this final utterance. Replaying the accumulated buffer can overwrite an amount
+      // that was already written correctly and can resurrect legacy multi-entry interpretation.
       voiceBuffer = (window.VoiceSR && VoiceSR.mergeTranscript) ? VoiceSR.mergeTranscript(voiceBuffer, r.final) : (voiceBuffer + (voiceBuffer ? ' ' : '') + r.final);
-      applyVoiceText(voiceBuffer);
+      applyVoiceText(String(r.final || '').trim());
     }
   } else if (r.error) {
     // 区分可自动恢复错误（no-speech）与需人工介入错误（权限/模型/网络）

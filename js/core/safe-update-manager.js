@@ -1,5 +1,5 @@
 'use strict';
-/** SafeUpdateManager V1 — staged PWA updates that never force-reload during active work. */
+/** SafeUpdateManager V2 — staged PWA updates; automatically applies only when no active/dirty work exists. */
 (function(global){
   const STATUS_KEY='jz_safe_update_v1';
   const locks=new Map();
@@ -21,7 +21,7 @@
   function release(name){const key=String(name||'work'),n=(locks.get(key)||0)-1;if(n>0)locks.set(key,n);else locks.delete(key);if(!locks.size) maybeApplyDeferred()}
   function status(){return {supported:'serviceWorker'in navigator,registered:!!registration,waiting:!!(registration&&registration.waiting),installing:!!(registration&&registration.installing),active:!!(registration&&registration.active),safe:isSafe(),locks:Array.from(locks.keys()),stored:readStatus()}}
   function toast(msg,type){try{if(typeof global.showToast==='function')global.showToast(msg,type)}catch(_){}}
-  function notifyWaiting(){writeStatus({waiting:true,deferred:!isSafe(),foundAt:now(),reason:isSafe()?'READY_TO_APPLY':'ACTIVE_WORK'});toast(isSafe()?'发现新版本，可在「系统自检」中安全更新。':'发现新版本；正在编辑/识别，已自动延后更新。')}
+  function notifyWaiting(){const safe=isSafe();writeStatus({waiting:true,deferred:!safe,foundAt:now(),reason:safe?'AUTO_APPLY_READY':'ACTIVE_WORK'});if(safe){toast('发现新版本，正在安全更新…');setTimeout(()=>apply().catch(()=>{}),0)}else{toast('发现新版本；正在编辑/识别，已自动延后更新。')}}
   async function register(url){
     if(!('serviceWorker'in navigator))return null;
     try{
@@ -57,8 +57,8 @@
     if(!isSafe()){writeStatus({waiting:true,deferred:true,reason:'ACTIVE_WORK'});startDeferredPoll();return {ok:false,deferred:true,reason:'ACTIVE_WORK'}};
     applyRequested=true;writeStatus({deferred:false,reason:'APPLYING'});registration.waiting.postMessage({type:'SKIP_WAITING'});return {ok:true,applying:true};
   }
-  function startDeferredPoll(){if(pollTimer)return;pollTimer=setInterval(()=>{if(!registration||!registration.waiting){clearInterval(pollTimer);pollTimer=null;return}if(isSafe()){clearInterval(pollTimer);pollTimer=null;toast('新版本已准备好，可以安全更新。')}},1500)}
-  function maybeApplyDeferred(){const s=readStatus();if(s&&s.deferred&&registration&&registration.waiting&&isSafe()){writeStatus({deferred:false,reason:'READY_TO_APPLY'});toast('新版本已准备好，可以安全更新。')}}
+  function startDeferredPoll(){if(pollTimer)return;pollTimer=setInterval(()=>{if(!registration||!registration.waiting){clearInterval(pollTimer);pollTimer=null;return}if(isSafe()){clearInterval(pollTimer);pollTimer=null;apply().catch(()=>{})}},1500)}
+  function maybeApplyDeferred(){const s=readStatus();if(s&&s.deferred&&registration&&registration.waiting&&isSafe()){writeStatus({deferred:false,reason:'AUTO_APPLY_READY'});apply().catch(()=>{})}}
   global.AppCore=global.AppCore||{};
-  global.AppCore.SafeUpdateManager={VERSION:1,STATUS_KEY,register,check,apply,status,acquire,release,isSafe,readStatus,bindAppEvents};
+  global.AppCore.SafeUpdateManager={VERSION:2,STATUS_KEY,register,check,apply,status,acquire,release,isSafe,readStatus,bindAppEvents};
 })(typeof window!=='undefined'?window:globalThis);

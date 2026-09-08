@@ -1,6 +1,6 @@
 {
-  "buildId": "76fe45c4",
-  "generatedAt": "2026-09-08T15:10:04.325Z",
+  "buildId": "9bd113b2",
+  "generatedAt": "2026-09-08T15:47:46.794Z",
   "assets": {
     "js/ai/ai-cache.js": "a1d968ff",
     "js/ai/ai-manager.js": "d56d329b",
@@ -42,7 +42,7 @@
     "js/core/model-source-router.js": "478632cc",
     "js/core/ocr-offline-readiness.js": "983852a6",
     "js/core/runtime-asset-manager.js": "c5a7794d",
-    "js/core/safe-update-manager.js": "07072761",
+    "js/core/safe-update-manager.js": "defa8713",
     "js/core/startup-recovery.js": "b5bb5146",
     "js/core/system-diagnostics.js": "161568b7",
     "js/core/work-session-guardian.js": "c0c65567",
@@ -129,8 +129,8 @@
     "js/voice/action-planner.js": "b02eb357",
     "js/voice/correction-engine.js": "75bd5319",
     "js/voice/personal-voice-memory.js": "80723396",
-    "js/voice/quick-voice.js": "590a4fdb",
-    "js/voice/reminder-dialogue-engine.js": "c2594374",
+    "js/voice/quick-voice.js": "a2e58d4b",
+    "js/voice/reminder-dialogue-engine.js": "b233aedb",
     "js/voice/voice-parser.js": "39e8dd0b",
     "js/voice/voice-qa.js": "26fdabba",
     "js/voice/voice-sr.js": "643e0c70",

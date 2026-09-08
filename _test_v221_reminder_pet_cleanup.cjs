@@ -7,7 +7,7 @@ ctx.ReminderParser={
  parse:(t)=>({datetime:/明天/.test(t)?'2026-09-09T'+(/三点|3点/.test(t)?'15:00':/十点|10点/.test(t)?'10:00':'09:00'):'',advance_minutes:/一小时|1小时/.test(t)?60:0})
 };
 vm.createContext(ctx);vm.runInContext(fs.readFileSync('js/voice/reminder-dialogue-engine.js','utf8'),ctx);
-const E=ctx.ReminderDialogueEngine;ok(E&&E.VERSION===2,'Reminder Dialogue Engine V2 loaded');
+const E=ctx.ReminderDialogueEngine;ok(E&&E.VERSION>=3,'Reminder Dialogue Engine V3+ loaded');
 E.reset();let p=E.plan('事项 移民局');ok(p.actions.some(a=>a.slot==='content'&&a.value==='移民局'),'explicit item owns only item value');
 p=E.plan('提醒时间 明天');ok(p.actions.some(a=>a.slot==='time'&&a.value==='2026-09-09T09:00'),'next slot label canonicalizes time without leaking into prior item');
 p=E.plan('地点 移民局');ok(p.actions.some(a=>a.slot==='location'&&a.value==='移民局'),'location is independently owned');

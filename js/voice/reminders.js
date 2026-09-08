@@ -929,7 +929,7 @@ function applyReminderVoiceUtterance(utterance) {
   const raw = String(utterance || '').trim();
   if (!raw) return;
   const de = window.ReminderDialogueEngine;
-  if (!de || typeof de.plan !== 'function') { applyReminderVoiceText(raw); return; }
+  if (!de || typeof de.plan !== 'function') { showToast('提醒语义引擎未就绪，已停止写入以避免串字段', 'error'); return; }
   const plan = de.plan(raw);
   if (plan.command === 'save') { setTimeout(() => autoSaveReminderByVoice(), 0); return; }
   if (plan.command === 'close') { setReminderVoiceBtnState('done'); renderReminderVoicePreview(); return; }
@@ -938,8 +938,14 @@ function applyReminderVoiceUtterance(utterance) {
     return;
   }
   const filled=[];
+  const forbiddenLabel = /(?:提醒时间|提醒日期|日期时间|提醒方式|提醒方法|提醒方|提醒办事|地点|位置|备注|附注|事项|内容|提前提醒|提醒节点|重复提醒)/;
   for (const a of plan.actions) {
     const v=String(a.value == null ? '' : a.value).trim(); if(!v) continue;
+    // V223 pre-write guard: contamination is rejected BEFORE touching DOM, not cleaned afterwards.
+    if ((a.slot === 'content' || a.slot === 'location' || a.slot === 'note') && forbiddenLabel.test(v)) {
+      showToast('检测到项目边界混入内容，已拒绝本次错误写入', 'error');
+      continue;
+    }
     if (a.slot === 'content') { writeReminderField('rContent', v); reminderFieldConfirmed.content = !!a.explicit; filled.push('事项'); }
     else if (a.slot === 'time') { writeReminderField('rAt', v); reminderFieldConfirmed.time = !!a.explicit; filled.push('时间'); }
     else if (a.slot === 'location') { writeReminderField('rLocation', v); reminderFieldConfirmed.location = !!a.explicit; filled.push('地点'); }
