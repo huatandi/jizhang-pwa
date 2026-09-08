@@ -1377,7 +1377,7 @@ async function wbLocalOcr() {
       if (sel && [...sel.options].some(o => o.value === f.category)) sel.value = f.category;
     }
     // 标记：识别到哪些字段
-    const found = ['date', 'amount', 'merchant', 'company', 'bank_payer', 'bank_receiver', 'account_tail', 'tax', 'category'].filter(k => f[k] != null && f[k] !== '');
+    const found = ['date', 'amount', 'merchant', 'company', 'bank_payer', 'bank_receiver', 'account_tail', 'tax', 'reference', 'tracking_number', 'category'].filter(k => f[k] != null && f[k] !== '');
     showToast('✅ 本地识别完成，已填入 ' + found.length + ' 个字段（可修改后保存）');
   } catch (e) {
     console.error('[ocr] 本地识别失败:', e);
@@ -1693,7 +1693,9 @@ async function wbLocalOcrV2(img) {
   // 3. 通用兜底提取（任何地区都执行；MexicoParser 结构化字段缺失时补位）
   const V = window.ValidateKit || {};
   const common = extractCommonFields(fullText, words);
-  const D = structured && structured.total != null ? structured : {};
+  // V215: keep non-receipt structured documents too. SPEI has `amount` (not `total`);
+  // discarding it here made a correctly parsed $20,000 transfer arrive at the UI with an empty amount.
+  const D = (structured && typeof structured === 'object') ? structured : {};
   const dateVal = D.date || (D.fecha ? String(D.fecha) : null) || common.date || null;
   const amountVal = D.total != null ? D.total : D.amount != null ? D.amount : common.amount != null ? common.amount : null;
   // RFC 是墨西哥税号：仅墨西哥地区提取
@@ -1701,23 +1703,25 @@ async function wbLocalOcrV2(img) {
   if (isMx) {
     rfcVal = D.rfc || (D.emisor && D.emisor.rfc) || (D.receptor && D.receptor.rfc) || (fullText.match(/[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}/) || [''])[0] || null;
   }
-  const merchantVal = (D.merchant || (D.emisor && D.emisor.name) || D.emisorName) || common.merchant || null;
-  const companyVal = (D.company || (D.receptor && D.receptor.name) || D.receptorName) || common.company || null;
+  const merchantVal = (D.merchant || D.beneficiary || (D.emisor && D.emisor.name) || D.emisorName) || common.merchant || null;
+  const companyVal = (D.company || D.beneficiary || (D.receptor && D.receptor.name) || D.receptorName) || common.company || null;
   const fields = {
     date: dateVal && String(dateVal),
     amount: amountVal != null ? String(amountVal) : (V.parseMoney && V.parseMoney((fullText.split(/\b(?:EFECTIVO|CAMBIO|VUELTO|CASH|CHANGE)\b/i)[0].match(/(?:total|importe|amount)[^0-9]*\$?\s*[\d,]+\.?\d*/i) || [''])[0])) || null,
     merchant: merchantVal,
     company: companyVal,
-    bank_payer: D.payerBank || (D.emisor && D.emisor.bank) || common.bank_payer || null,
-    bank_receiver: D.receiverBank || (D.receptor && D.receptor.bank) || common.bank_receiver || null,
-    account_tail: D.accountTail || common.account_tail || null,
-    tax: rfcVal,
+    bank_payer: D.payerBank || D.bankOrder || D.bank || (D.emisor && D.emisor.bank) || common.bank_payer || null,
+    bank_receiver: D.receiverBank || D.bankBeneficiary || (D.receptor && D.receptor.bank) || common.bank_receiver || null,
+    account_tail: D.accountTail || (D.beneficiaryAccount ? String(D.beneficiaryAccount).replace(/\D/g,'').slice(-4) : null) || common.account_tail || null,
+    tax: D.beneficiaryRfc || rfcVal,
+    reference: D.reference || null,
+    tracking_number: D.trackingKey || null,
     remark: docType ? `票据类型：${docType}` + (fullText ? ' · ' + fullText.slice(0, 120) : '') : (fullText || null),
     transaction_type: (docType === 'CFDI' && amountVal != null && amountVal < 0) ? 'expense' : (docType ? 'expense' : null),
     category: null,
     // 金额置信度/来源（§二十六）：结构化 total 视为标签高置信；否则用 common 分层(0.90/0.80/0.45)
-    amountConfidence: structured && structured.total != null ? 0.90 : (common.amountConfidence || (common.amountSource === 'importe' ? 0.80 : 0)),
-    amountSource: structured && structured.total != null ? 'label' : (common.amountSource || null),
+    amountConfidence: structured && (structured.total != null || structured.amount != null) ? (docType === 'SPEI' ? 0.97 : 0.90) : (common.amountConfidence || (common.amountSource === 'importe' ? 0.80 : 0)),
+    amountSource: structured && structured.amount != null ? 'structured-transfer' : (structured && structured.total != null ? 'label' : (common.amountSource || null)),
   };
   // 用 ValidateKit 规范化金额
   if (V.parseMoney && fields.amount != null) fields.amount = String(V.parseMoney(fields.amount));
@@ -2033,13 +2037,15 @@ async function wbSmartRecognize() {
     set('wbBankReceiver', fields.bank_receiver);
     set('wbTail', fields.account_tail ? '*' + fields.account_tail : '');
     set('wbTax', fields.tax);
+    set('wbReference', fields.reference || fields.folio);
+    set('wbTracking', fields.tracking_number || fields.tracking_key);
     set('wbRemark', fields.remark);
     if (fields.transaction_type === 'income') { const t = document.getElementById('wbType'); if (t) t.value = 'income'; }
     if (fields.category) {
       const sel = document.getElementById('wbCategory');
       if (sel && [...sel.options].some(o => o.value === fields.category)) sel.value = fields.category;
     }
-    const found = ['date', 'amount', 'merchant', 'company', 'bank_payer', 'bank_receiver', 'account_tail', 'tax', 'category'].filter(k => fields[k] != null && fields[k] !== '');
+    const found = ['date', 'amount', 'merchant', 'company', 'bank_payer', 'bank_receiver', 'account_tail', 'tax', 'reference', 'tracking_number', 'category'].filter(k => fields[k] != null && fields[k] !== '');
     const docTag = res.documentType ? ` · ${res.documentType}` : '';
     const confTag = res.confidence != null ? ` · 置信 ${res.confidence}%` : '';
     showToast(`✅ 智能识别完成：OCR 填入 ${found.length} 个字段${docTag}${confTag}（可修改后保存）`);
