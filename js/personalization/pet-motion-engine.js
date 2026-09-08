@@ -1,11 +1,11 @@
 (function(g){'use strict';
 const BLOCK='input,textarea,select,button,a,[contenteditable="true"],.modal,.camera-view,.ocr-camera,#idphotoCameraView,.idp-live-panel,.voice-preview,.reminder-float-bar';
 const PERSONALITY={rat:['stroll','run','look'],ox:['stroll','look'],tiger:['run','jump','stroll'],rabbit:['jump','run','stroll'],dragon:['jump','run','look'],snake:['stroll','look'],horse:['run','stroll','jump'],goat:['stroll','jump','look'],monkey:['run','jump','flip','look'],rooster:['stroll','run','jump'],dog:['run','jump','stroll'],pig:['stroll','look','jump']};
-let timer=0,busy=false,last={x:null,y:null};
+let timer=0,busy=false;
 const pet=()=>document.getElementById('smDesktopPet');
 function cfg(){return g.SmPetEngine&&g.SmPetEngine.state||{enabled:false,activity:'normal',pet:'dragon'}}
 function vv(){const v=g.visualViewport;return {x:v&&v.offsetLeft||0,y:v&&v.offsetTop||0,w:v&&v.width||innerWidth,h:v&&v.height||innerHeight}}
-function rects(){return [...document.querySelectorAll(BLOCK)].filter(e=>{const r=e.getBoundingClientRect();return r.width>24&&r.height>20&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth}).map(e=>e.getBoundingClientRect())}
+function rects(){return [...document.querySelectorAll(BLOCK)].filter(e=>e.id!=='smDesktopPet').filter(e=>{const r=e.getBoundingClientRect();return r.width>24&&r.height>20&&r.bottom>0&&r.right>0&&r.top<innerHeight&&r.left<innerWidth}).map(e=>e.getBoundingClientRect())}
 function overlap(a,b,p=10){return !(a.right+p<b.left||a.left-p>b.right||a.bottom+p<b.top||a.top-p>b.bottom)}
 function valid(x,y,s,blocks){const a={left:x,top:y,right:x+s,bottom:y+s};return !blocks.some(b=>overlap(a,b,12))}
 function target(){const p=pet();if(!p)return null;const v=vv(),s=p.getBoundingClientRect().width||94,blocks=rects(),margin=10,bottom=76;for(let i=0;i<28;i++){const x=v.x+margin+Math.random()*Math.max(1,v.w-s-margin*2),y=v.y+margin+Math.random()*Math.max(1,v.h-s-bottom-margin);if(valid(x,y,s,blocks))return{x,y}}return null}

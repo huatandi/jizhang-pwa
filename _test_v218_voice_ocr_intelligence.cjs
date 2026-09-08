@@ -14,7 +14,7 @@ ok(r.actions[0]&&r.actions[0].type==='SET_AMOUNT'&&r.actions[0].value===13500,'�
 r=v.VoiceActionPlanner.plan('菲佣一万',{parseAmount:v.VoiceParser.parseAmount});
 ok(r.actions[0]&&r.actions[0].value===10000,'金额谐音菲佣一万 → 10000');
 r=v.VoiceActionPlanner.plan('切换到收入页面',{parseAmount:v.VoiceParser.parseAmount});
-ok(r.actions[0]&&r.actions[0].type==='NAVIGATE'&&r.actions[0].value==='income','页面切换 → NAVIGATE action');
+ok(r.actions[0]&&r.actions[0].type==='NAVIGATE_PAGE'&&r.actions[0].value==='income','页面切换 → NAVIGATE_PAGE action');
 r=v.VoiceActionPlanner.plan('选择一个完全不存在的账户',{parseAmount:v.VoiceParser.parseAmount});
 ok(r.commandLike===true&&r.allowRemark===false,'未解析控制句 fail-closed，不落备注');
 const q=fs.readFileSync(path.join(ROOT,'js/voice/quick-voice.js'),'utf8');

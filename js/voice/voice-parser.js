@@ -774,68 +774,6 @@
     return out;
   };
 
-  /* ================== 多条目切分（快记多条） ================== */
-  VK.splitEntries = function (text, kind) {
-    const t = String(text || '').trim();
-    if (!t) return { entries: [], save: false };
-    let body = t;
-    let save = false;
-    const saveRe = /(?:帮我|请|麻烦|麻烦你)?\s*(?:保存|记好|记好了|guardar|save|done|listo)\s*(?:吧|啦|了|好)?\s*$/i;
-    const saveM = body.match(saveRe);
-    if (saveM) { save = true; body = body.replace(saveRe, '').trim(); }
-    const date = VK.parseDate(body);
-    body = body
-      .replace(/大前天|前天|昨天|昨日|今天|今日|明天|明日|后天|大后天/g, ' ')
-      .replace(/(20\d{2})\s*[年\/\-.]\s*\d{1,2}\s*[月\/\-.]\s*\d{1,2}\s*[日号]?/g, ' ')
-      .replace(/[一二三四五六七八九十]{1,2}\s*月\s*\d{1,2}\s*[日号]/g, ' ')
-      .replace(/\d{1,2}\s*月\s*\d{1,2}\s*[日号]/g, ' ')
-      .replace(/[一二三四五六七八九十]+月[一二三四五六七八九十]+[日号]?/g, ' ')
-      .replace(/\s+/g, ' ').trim();
-    let parts = body.split(/[，,。;；\n]+|然后|接着|还有|另外|以及|再|随后|之后|最后|还有/).map(s => s.trim()).filter(Boolean);
-    if (parts.length <= 1) {
-      const matches = [...body.matchAll(AMOUNT_RE)];
-      if (matches.length >= 2) {
-        const newParts = [];
-        for (let i = 0; i < matches.length; i++) {
-          const start = matches[i].index;
-          const end = i + 1 < matches.length ? matches[i + 1].index : body.length;
-          const seg = body.slice(start, end).trim();
-          if (i === 0) {
-            const prefix = body.slice(0, start).trim();
-            newParts.push((prefix ? prefix + ' ' : '') + seg);
-          } else {
-            newParts.push(seg);
-          }
-        }
-        parts = newParts;
-      }
-    }
-    if (parts.length <= 1) return { entries: [], save };
-    const entries = [];
-    for (let part of parts) {
-      if (!part) continue;
-      const segKind = /^(收入|收|入账|income|ingreso|ingresos|earnings)/i.test(part) ? 'income'
-        : /^(支出|花|消费|买了|花了|expense|gasto|gastos|compra|paid)/i.test(part) ? 'expense' : kind;
-      const amount = VK.parseAmount(part);
-      const account = VK.parseAccount(part, _getOptions().accounts);
-      const category = VK.matchCategory(part, segKind);
-      if (amount != null) {
-        let rem0 = part;
-        if (account) rem0 = rem0.split(account).join(' ').replace(/\s+/g, ' ').trim();
-        entries.push({ date, kind: segKind, amount, category, account, remark: rem0 });
-      } else if (entries.length) {
-        const last = entries[entries.length - 1];
-        if (account && !last.account) last.account = account;
-        if (category && !last.category) last.category = category;
-        let rem = part;
-        if (account) rem = rem.split(account).join(' ').replace(/\s+/g, ' ').trim();
-        if (rem && !last.remark.includes(rem)) last.remark += ' ' + rem;
-      }
-    }
-    for (const e of entries) e.remark = VK.cleanRemark(e.remark, e.date);
-    return { entries, save };
-  };
-
   // 兼容：解析后统一走 ValidateKit 归一化金额（若已加载）
   VK.normalizeMoney = function (raw) {
     if (global.ValidateKit && global.ValidateKit.parseMoney) return global.ValidateKit.parseMoney(raw);

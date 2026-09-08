@@ -89,7 +89,6 @@ function openQuickModal(autoVoice) {
   voiceBuffer = '';
   voiceDraftSession = null;
   voiceDraftSnapshots.clear();
-  voiceMultiEntries = [];
   if (voiceRestartTimer) { clearTimeout(voiceRestartTimer); voiceRestartTimer = null; }
   if (VoiceSR.isListening()) VoiceSR.stop();
   setVoiceBtnState('idle');
@@ -210,7 +209,6 @@ let voiceBuffer = '';
 let voiceDraftSession = null;
 const voiceDraftSnapshots = new Map(); // segmentId -> 该句应用前的表单快照，用于删除/替换安全回滚
 let voiceRestartTimer = null;
-let voiceMultiEntries = []; // 语音多笔记账识别结果
 let voiceAmountPending = null; // 低置信度金额待用户确认（V2：AI 不直接写库）
 let voiceFieldFailCount = {};  // 字段连续识别失败计数（V2：两次失败→清空该项，等第三次精准识别）
 const QUICK_MEM_KEY = 'sm_quick_mem_v1'; // 记忆上次账户/分类
@@ -435,8 +433,8 @@ const VOICE_CONTEXT_ALIASES = Object.freeze({
   amountCue: ['金额','数额','费用','花费','消费','今儿','菲佣','飞永','费佣','飞用'],
   cash: ['现金','现钱','陷阱','先进','详尽','橡筋','线金','现今','咸金'],
   other: ['其他','其它','别的','另外','other','otro','otros'],
-  income: ['收入','收入页面','收入栏目','收入界面','收录','收如','收益','入账','收钱'],
-  expense: ['支出','支出页面','支出栏目','支出界面','指出','之处','支初','花销','花钱']
+  income: ['收入','收录','收如','收益','入账','收钱'],
+  expense: ['支出','指出','之处','支初','花销','花钱']
 });
 function voiceCompact(v) { return String(v || '').trim().replace(/[，。！？!?,、:：;；\s]/g, '').toLowerCase(); }
 function voiceAliasHit(v, group) {
@@ -450,7 +448,9 @@ function resolveContextualVoiceCommand(raw) {
   for (const [kind, target] of [['income','income'],['expense','expense']]) {
     for (const a of VOICE_CONTEXT_ALIASES[kind]) {
       const z = voiceCompact(a);
-      if (x === z || ['切换到','切换','进入','打开','选择','选','转到'].some(v => x === voiceCompact(v)+z))
+      const navHeads=['切换到','切换','进入','打开','选择','选','转到'];
+      const navTails=['','页面','页','记账页面','记账页'];
+      if (x === z || navHeads.some(v => navTails.some(t => x === voiceCompact(v)+z+voiceCompact(t))))
         return { kind:'navigate', target, confidence:0.99, source:'closed-vocabulary' };
     }
   }
@@ -516,9 +516,19 @@ function executeFinalVoiceCommand(finalText) {
       if (plan && plan.actions && plan.actions.length) {
         if (voiceActionSeen('ACTION_PLAN:' + plan.id, raw, 5000)) return true;
         for (const action of plan.actions) {
-          if (action.type === 'NAVIGATE') {
+          if (action.type === 'NAVIGATE_PAGE') {
+            const pageId = 'page-' + action.value;
+            if (typeof gotoPage !== 'function' || !document.getElementById(pageId)) {
+              voiceActionFeedback('⚠️ 页面切换未完成', 'error', 'plan-page-nav-missing'); return true;
+            }
+            gotoPage(action.value);
+            const page = document.getElementById(pageId);
+            if (!page || !page.classList.contains('active')) {
+              voiceActionFeedback('⚠️ 页面切换未完成', 'error', 'plan-page-nav-fail'); return true;
+            }
+          } else if (action.type === 'SET_ENTRY_TYPE') {
             const r = atomicVoiceSwitchType(action.value);
-            if (!r.ok) { voiceActionFeedback('⚠️ 页面切换未完成', 'error', 'plan-nav-fail'); return true; }
+            if (!r.ok) { voiceActionFeedback('⚠️ 收支类型切换未完成', 'error', 'plan-type-fail'); return true; }
           } else if (action.type === 'SET_AMOUNT') {
             const wr = atomicVoiceWrite('amount', action.value);
             if (!wr.ok) { voiceActionFeedback('⚠️ 金额写入校验失败，未采用错误值', 'error', 'plan-amount-fail'); return true; }
@@ -751,11 +761,9 @@ function startVoiceSession() {
   // 先停掉语音提醒会话，避免两个识别器冲突
   if (window.isReminderVoiceActive && window.isReminderVoiceActive()) stopReminderVoice();
   window.__voiceRetryCount = 0;
-  window.__voiceMultiHintShown = false;
   voiceAmountPending = null;
   voiceFieldFailCount = {};
   voiceBuffer = '';
-  voiceMultiEntries = [];
   voiceDraftSession = window.VoiceDraftSession ? new VoiceDraftSession({ lang: voiceLang }) : null;
   voiceDraftSnapshots.clear();
   voiceDraftSnapshots.set('__sessionStart', captureQuickVoiceState());
@@ -1276,49 +1284,8 @@ function scheduleAlarmRetries(vibrate) {
 function renderVoicePreview() {
   const box = document.getElementById('voicePreview');
   if (!box) return;
-  // 多笔模式：显示可编辑清单（PWA 修复：每笔可改金额/分类、可删除，确认后保存）
-  if (voiceMultiEntries && voiceMultiEntries.length >= 2) {
-    const L = effectiveVoiceLang();
-    const title = L === 'es-MX'
-      ? `📋 Detectadas ${voiceMultiEntries.length} operaciones`
-      : L === 'en-US'
-        ? `📋 Detected ${voiceMultiEntries.length} entries`
-        : `📋 识别到 ${voiceMultiEntries.length} 笔（可编辑/删除）`;
-    const items = voiceMultiEntries.map((e, i) => {
-      const kindTag = e.kind === 'income' ? '<span class="vp-kind vp-inc">收</span>' : '<span class="vp-kind vp-exp">支</span>';
-      const catOpts = (e.kind === 'income' ? (options.departments || []) : (typeof expenseCatOptions === 'function' ? expenseCatOptions() : (options.expense_categories || []))).map(c =>
-        `<option value="${escapeHtml(c)}" ${c === e.category ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
-      return `<div class="vp-multi-item vp-multi-edit">
-        ${kindTag}<span class="vp-idx">${i + 1}</span>
-        <select class="vp-edit-cat" data-idx="${i}" title="分类">${catOpts}</select>
-        <input type="number" class="vp-edit-amt" data-idx="${i}" value="${e.amount != null ? e.amount : ''}" step="0.01" min="0" placeholder="金额">
-        <button type="button" class="vp-del-btn" onclick="removeVoiceEntry(${i})" title="删除这笔">✕</button>
-      </div>`;
-    }).join('');
-    const foot = L === 'es-MX'
-      ? `✔ Revisa antes de guardar`
-      : L === 'en-US'
-        ? `✔ Review before saving`
-        : `✔ 检查无误后点「保存全部」入账`;
-    const saveBtn = `<button type="button" class="btn-primary btn-sm vp-save-btn" onclick="saveQuick()">💾 ${L === 'es-MX' ? 'Guardar todo' : L === 'en-US' ? 'Save all' : '保存全部'}</button>`;
-    box.innerHTML = `<div class="vp-multi">${title}<div class="vp-multi-list">${items}</div><div class="vp-miss" style="margin-top:6px">${foot}</div><div style="margin-top:8px;text-align:center">${saveBtn}</div></div>`;
-    // 监听编辑：修改时同步回 voiceMultiEntries
-    setTimeout(() => {
-      box.querySelectorAll('.vp-edit-amt').forEach(inp => {
-        inp.addEventListener('change', () => {
-          const idx = Number(inp.dataset.idx);
-          if (voiceMultiEntries[idx]) voiceMultiEntries[idx].amount = Number(inp.value) || null;
-        });
-      });
-      box.querySelectorAll('.vp-edit-cat').forEach(sel => {
-        sel.addEventListener('change', () => {
-          const idx = Number(sel.dataset.idx);
-          if (voiceMultiEntries[idx]) voiceMultiEntries[idx].category = sel.value;
-        });
-      });
-    }, 0);
-    return;
-  }
+  // V220: no automatic multi-entry preview. Recognition remains a single editable draft.
+  // Accuracy comes before quantity; uncertain text must never spawn a batch-recognition prompt.
   const date = document.getElementById('qDate').value;
   const amount = document.getElementById('qAmount').value;
   const cat = quickCategory || document.getElementById('qCategory').value || '';
@@ -1345,7 +1312,7 @@ function renderVoicePreview() {
         ? `<div class="vp-miss">${L === 'es-MX' ? 'Falta: ' : L === 'en-US' ? 'Missing: ' : '缺少：'}${missing.join(L === 'zh-CN' ? '、' : ', ')}${L === 'es-MX' ? ' (di más o escribe)' : L === 'en-US' ? ' (keep talking or type)' : '（继续说或手动填写）'}</div>`
         // PWA 修复：单笔识别完成后提供显式保存按钮（手机端易见）
         : `<div class="vp-miss">${L === 'es-MX' ? '✔ Listo, di "guardar"' : L === 'en-US' ? '✔ Ready, say "save"' : '✔ 已齐，可保存'}</div><div style="margin-top:8px;text-align:center"><button type="button" class="btn-primary btn-sm vp-save-btn" onclick="saveQuick()">💾 ${L === 'es-MX' ? 'Guardar' : L === 'en-US' ? 'Save' : '保存'}</button></div>`)
-    : `<div class="vp-empty">${L === 'es-MX' ? '🎙️ Di "gasto/ingreso + monto + categoría", ej: gasto cincuenta almuerzo' : L === 'en-US' ? '🎙️ Say "expense/income + amount + category", e.g. expense fifty lunch' : '🎙️ 说“支出/收入 + 金额 + 分类”，例如：支出 五十 买午饭。分类可直接说名称或“第X项”。也可以一次说多笔：8月15号 超市100，交通50，手机费30，帮我保存'}</div>`;
+    : `<div class="vp-empty">${L === 'es-MX' ? '🎙️ Di "gasto/ingreso + monto + categoría", ej: gasto cincuenta almuerzo' : L === 'en-US' ? '🎙️ Say "expense/income + amount + category", e.g. expense fifty lunch' : '🎙️ 说“支出/收入 + 金额 + 分类”，例如：支出 五十 买午饭。分类可直接说名称或“第X项”'}</div>`;
   box.innerHTML = pendingHtml + html;
 }
 
@@ -1618,30 +1585,6 @@ function applyVoiceText(buffer) {
   }
 
   const kind = quickType;
-  const multi = VoiceParser.splitEntries(buffer, kind);
-
-  // 0) 多笔模式：一句话含多笔记录 → 显示可编辑清单，用户确认后才入账。保持聆听，
-  //    避免在用户还没说完/没说结束词时过早停止并提示"检查是否正确"。
-  if (multi.entries.length >= 2) {
-    voiceMultiEntries = multi.entries;
-    renderVoicePreview();
-    if (voiceSessionActive) setVoiceBtnState('listening');
-    const L = effectiveVoiceLang();
-    if (!window.__voiceMultiHintShown) {
-      window.__voiceMultiHintShown = true;
-      const msg = L === 'es-MX'
-        ? `✔ ${multi.entries.length} operaciones. Sigue hablando o di «listo»`
-        : L === 'en-US'
-          ? `✔ ${multi.entries.length} entries. Keep talking or say "done"`
-          : `✔ 已识别 ${multi.entries.length} 笔（可说更多，说完说「完成」）`;
-      showToast(msg);
-      speak(L === 'es-MX' ? 'Continúa o di listo' : L === 'en-US' ? 'Keep talking or say done' : '可说更多，说完说完成');
-    }
-    return;
-  }
-  // 多笔不成立时清空清单（回到单笔模式）
-  if (voiceMultiEntries.length) { voiceMultiEntries = []; }
-
   const parsed = VoiceParser.parse(buffer, kind);
   let filled = false;
 
@@ -1815,32 +1758,6 @@ function applyVoiceText(buffer) {
   }, 1100);
 }
 
-// PWA 修复：删除多笔清单中的某一笔（识别错误时移除）
-function removeVoiceEntry(idx) {
-  if (!Array.isArray(voiceMultiEntries)) return;
-  voiceMultiEntries.splice(idx, 1);
-  if (voiceMultiEntries.length <= 1) {
-    // 只剩一笔 → 回到单笔模式：填入表单
-    if (voiceMultiEntries.length === 1) {
-      const e = voiceMultiEntries[0];
-      if (e.kind === 'income' && quickType !== 'income') {
-        const seg = document.querySelector('#page-quick .seg-btn[data-type="income"]');
-        if (seg) setQuickType('income', seg);
-      }
-      if (e.amount != null) document.getElementById('qAmount').value = e.amount;
-      if (e.category) {
-        const sel = document.getElementById('qCategory');
-        if (sel && [...sel.options].some(o => o.value === e.category)) sel.value = e.category;
-      }
-      if (e.date) document.getElementById('qDate').value = e.date;
-      if (e.remark) document.getElementById('qRemark').value = e.remark;
-    }
-    voiceMultiEntries = [];
-  }
-  renderVoicePreview();
-  showToast('已删除该笔');
-}
-
 function prepareQuickTransaction(type, body, confidenceValue) {
   const core = window.JizhangIntelligence && window.JizhangIntelligence.TransactionCore;
   if (!core || typeof core.prepare !== 'function') return { ok: true, legacy: body, decision: 'ACCEPT', errors: [] };
@@ -1849,45 +1766,6 @@ function prepareQuickTransaction(type, body, confidenceValue) {
 }
 
 async function saveQuick() {
-  // 多笔模式：批量入账全部识别条目
-  if (voiceMultiEntries && voiceMultiEntries.length >= 2) {
-    const valid = voiceMultiEntries.filter(e => e.amount != null && Number(e.amount) > 0);
-    if (!valid.length) return showToast('未识别到有效金额', 'error');
-    let saved = 0, errors = 0;
-    for (const e of valid) {
-      const k = e.kind || quickType;
-      const cat = e.category || (k === 'expense'
-        ? (options.expense_categories[0] || '其他')
-        : (options.departments[0] || '其他'));
-      const acc = e.account || document.getElementById('qAccount').value || '';
-      const d = e.date || document.getElementById('qDate').value || todayLocal();
-      const rem = e.remark || '';
-      try {
-        const rawBody = k === 'expense'
-          ? { date: d, category: cat, amount: e.amount, account: acc, handler: '', remark: rem }
-          : { date: d, project: cat, pay_method: '', account: acc, amount: e.amount, handler: '', remark: rem, discount: 0, card_pending_account: '' };
-        const prepared = prepareQuickTransaction(k, rawBody, e.confidence);
-        if (!prepared.ok || prepared.decision === 'RETRY') {
-          errors++;
-          continue;
-        }
-        await api(k === 'expense' ? '/expense' : '/income', 'POST', prepared.legacy);
-        saved++;
-      } catch (err) { errors++; }
-    }
-    if (voiceSessionActive) stopVoiceSession();
-    voiceMultiEntries = [];
-    voiceBuffer = '';
-    gotoPage('dashboard');
-    const L = effectiveVoiceLang();
-    const okMsg = L === 'es-MX' ? `✔ ${saved} operaciones registradas` : L === 'en-US' ? `✔ ${saved} entries saved` : `✔ 已记录 ${saved} 笔`;
-    showToast(errors ? okMsg + `，${errors} 笔失败` : okMsg);
-    speak(okMsg);
-    renderIncome();
-    renderExpense();
-    refreshDashboards();
-    return;
-  }
   const date = document.getElementById('qDate').value;
   const amount = document.getElementById('qAmount').value;
   // V2：存在低置信度待确认金额且用户已点"保存" → 视为确认并写入，避免"提示可保存却存不了"
@@ -2088,7 +1966,7 @@ async function saveQuick() {
     speak, startAlarm, stopAlarm, scheduleAlarmRetries, getAlarmSettings, previewAlarm, renderVoicePreview, applyVoiceText,
     confirmVoiceAmount, applyVoiceFieldOverride,
     resolveContextualVoiceCommand, looksLikeQuickControlUtterance,
-    removeVoiceEntry, saveQuick,
+    saveQuick,
     ALARM_TONES, saveCustomTone, removeCustomTone, loadCustomTone,
   });
 })(typeof window !== 'undefined' ? window : globalThis);

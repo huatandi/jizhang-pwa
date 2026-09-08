@@ -1081,61 +1081,6 @@
     };
   }
 
-  // ================================================================
-  // 十一、多笔切分（一句话多笔：按分隔符/多金额位置）
-  // ================================================================
-
-  function splitEntries(text, kind) {
-    const t = String(text || '').trim();
-    if (!t) return { entries: [], save: false };
-    let body = t;
-    let save = false;
-    const saveRe = /(?:帮我|请|麻烦|麻烦你)?\s*(?:保存|记好|记好了|guardar|save|done|listo)\s*(?:吧|啦|了|好)?\s*$/i;
-    const saveM = body.match(saveRe);
-    if (saveM) { save = true; body = body.replace(saveRe, '').trim(); }
-    const date = parseDate(body);
-    body = body
-      .replace(/大前天|前天|昨天|昨日|今天|今日|明天|明日|后天|大后天/g, ' ')
-      .replace(/(20\d{2})\s*[年\/\-.]\s*\d{1,2}\s*[月\/\-.]\s*\d{1,2}\s*[日号]?/g, ' ')
-      .replace(/[一二三四五六七八九十]{1,2}\s*月\s*\d{1,2}\s*[日号]/g, ' ')
-      .replace(/\d{1,2}\s*月\s*\d{1,2}\s*[日号]/g, ' ')
-      .replace(/[一二三四五六七八九十]+月[一二三四五六七八九十]+[日号]?/g, ' ')
-      .replace(/\s+/g, ' ').trim();
-    let parts = body.split(/[，,。;；\n]+|然后|接着|还有|另外|以及|再|随后|之后|最后/).map(s => s.trim()).filter(Boolean);
-    if (parts.length <= 1) {
-      const amtReG = /(?:¥|￥|\$|MX\$)?\s*(?:[0-9]{3,}(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?\s*(?:块|元|圆|块钱|pesos?|比索|刀|dólares?|dolares?|usd)|[零一两二三四五六七八九十百千万]{2,}(?:万|千|百|十)?|[零一二两三四五六七八九十](?:块|元|圆|块钱|万|千|百|十))\s*(?:块|元|圆|块钱|pesos?|比索|刀|dólares?|dolares?|usd)?/gi;
-      const matches = [...body.matchAll(amtReG)];
-      if (matches.length >= 2) {
-        const newParts = [];
-        for (let i = 0; i < matches.length; i++) {
-          const start = matches[i].index;
-          const end = i + 1 < matches.length ? matches[i + 1].index : body.length;
-          const seg = body.slice(start, end).trim();
-          if (i === 0) {
-            const prefix = body.slice(0, start).trim();
-            newParts.push((prefix ? prefix + ' ' : '') + seg);
-          } else {
-            newParts.push(seg);
-          }
-        }
-        parts = newParts;
-      }
-    }
-    if (parts.length <= 1) return { entries: [], save };
-    const entries = parts.map(seg => {
-      const ex = extract(seg, { mode: 'quick', kind, cats: optsCats(), accounts: optsAccounts() });
-      return {
-        date: ex.date || date || '',
-        kind: ex.kind || kind,
-        amount: ex.amount != null ? Number(ex.amount) : null,
-        category: ex.category || '',
-        account: ex.account || '',
-        remark: ex.remark || '',
-      };
-    });
-    return { entries, save };
-  }
-
   // 选项访问（由 app.js 注入）
   function optsCats() { return (__opts && __opts.expense_categories) || null; }
   function optsAccounts() { return (__opts && __opts.accounts) || null; }
@@ -1157,7 +1102,6 @@
     parseCommand,
     extract,
     parseReminder,
-    splitEntries,
     // 供 app.js 注入当前选项（分类/账户列表）
     setOptions: (o) => { __opts = o || null; },
     getOptions: () => __opts,

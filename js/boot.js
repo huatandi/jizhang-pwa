@@ -66,7 +66,7 @@
     }
     // 4. 加载主应用
     const s = document.createElement('script');
-    s.src = 'js/app.js?v=59cce080';
+    s.src = 'js/app.js?v=1d47ffa4';
     s.onload = () => { hideSplash(); try { if (window.AppCore && window.AppCore.SystemDiagnostics) window.AppCore.SystemDiagnostics.markReady(); } catch (_) {} try { const r=window.AppCore&&window.AppCore.StartupRecovery&&window.AppCore.StartupRecovery.read?window.AppCore.StartupRecovery.read():null; if(r&&r.action==='RESUME_UNFINISHED_WORK'&&typeof window.showToast==='function') window.showToast('检测到未保存的记账内容，可在「系统自检」中恢复继续填写。'); } catch(_) {} };
     s.onerror = () => { hideSplash(); console.error('[boot] app.js 加载失败'); };
     document.body.appendChild(s);

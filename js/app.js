@@ -2672,75 +2672,7 @@ const VoiceParser = (window.VoiceKit && Object.keys(window.VoiceKit).length) ? O
     return r.replace(/\s+/g, ' ').trim();
   },
 
-  // 一句话拆成多笔条目：{ date, kind, amount, category, account, remark }
-  // 支持逗号/连接词切分，也支持无逗号时按多个金额位置切分；无金额片段（如"现金支付"）补充到上一笔
-  splitEntries(text, kind) {
-    const t = String(text || '').trim();
-    if (!t) return { entries: [], save: false };
-    let body = t;
-    let save = false;
-    // 1) 保存指令：末尾"帮我保存 / 请保存 / 记好 / guardar / save"等
-    const saveRe = /(?:帮我|请|麻烦|麻烦你)?\s*(?:保存|记好|记好了|guardar|save|done|listo)\s*(?:吧|啦|了|好)?\s*$/i;
-    const saveM = body.match(saveRe);
-    if (saveM) { save = true; body = body.replace(saveRe, '').trim(); }
-    // 2) 公共日期 + 从正文中移除日期表达（防止"八月15号"被当成一笔记录）
-    const date = VoiceParser.parseDate(body);
-    body = body
-      .replace(/大前天|前天|昨天|昨日|今天|今日|明天|明日|后天|大后天/g, ' ')
-      .replace(/(20\d{2})\s*[年\/\-.]\s*\d{1,2}\s*[月\/\-.]\s*\d{1,2}\s*[日号]?/g, ' ')
-      .replace(/[一二三四五六七八九十]{1,2}\s*月\s*\d{1,2}\s*[日号]/g, ' ')
-      .replace(/\d{1,2}\s*月\s*\d{1,2}\s*[日号]/g, ' ')
-      .replace(/[一二三四五六七八九十]+月[一二三四五六七八九十]+[日号]?/g, ' ')
-      .replace(/\s+/g, ' ').trim();
-    // 3) 按分隔符拆分
-    let parts = body.split(/[，,。;；\n]+|然后|接着|还有|另外|以及|再|随后|之后|最后|还有/).map(s => s.trim()).filter(Boolean);
-    if (parts.length <= 1) {
-      // 无分隔符：尝试按多个金额位置切分（如"超市购物102.56银行卡BBVA手机费230"）
-      const amtReG = /(?:¥|￥|\$|MX\$)?\s*(?:[0-9]{3,}(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?\s*(?:块|元|圆|块钱|pesos?|比索|刀|dólares?|dolares?|usd)|[零一两二三四五六七八九十百千万]{2,}(?:万|千|百|十)?|[零一二两三四五六七八九十](?:块|元|圆|块钱|万|千|百|十))\s*(?:块|元|圆|块钱|pesos?|比索|刀|dólares?|dolares?|usd)?/gi;
-      const matches = [...body.matchAll(amtReG)];
-      if (matches.length >= 2) {
-        const newParts = [];
-        for (let i = 0; i < matches.length; i++) {
-          const start = matches[i].index;
-          const end = i + 1 < matches.length ? matches[i + 1].index : body.length;
-          const seg = body.slice(start, end).trim();
-          if (i === 0) {
-            const prefix = body.slice(0, start).trim();
-            newParts.push((prefix ? prefix + ' ' : '') + seg);
-          } else {
-            newParts.push(seg);
-          }
-        }
-        parts = newParts;
-      }
-    }
-    if (parts.length <= 1) return { entries: [], save };
-    // 4) 逐段解析：含金额 → 新笔；无金额 → 补充账户/分类/备注到上一笔
-    const entries = [];
-    for (let part of parts) {
-      if (!part) continue;
-      const segKind = /^(收入|收|入账|income|ingreso|ingresos|earnings)/i.test(part) ? 'income'
-        : /^(支出|花|消费|买了|花了|expense|gasto|gastos|compra|paid)/i.test(part) ? 'expense' : kind;
-      const amount = VoiceParser.parseAmount(part);
-      const account = VoiceParser.parseAccount(part, options.accounts);
-      const category = VoiceParser.matchCategory(part, segKind);
-      if (amount != null) {
-        let rem0 = part;
-        if (account) rem0 = rem0.split(account).join(' ').replace(/\s+/g, ' ').trim();
-        entries.push({ date, kind: segKind, amount, category, account, remark: rem0 });
-      } else if (entries.length) {
-        const last = entries[entries.length - 1];
-        if (account && !last.account) last.account = account;
-        if (category && !last.category) last.category = category;
-        let rem = part;
-        if (account) rem = rem.split(account).join(' ').replace(/\s+/g, ' ').trim();
-        if (rem && !last.remark.includes(rem)) last.remark += ' ' + rem;
-      }
-    }
-    // 5) 清理每笔备注
-    for (const e of entries) e.remark = VoiceParser.cleanRemark(e.remark, e.date);
-    return { entries, save };
-  }
+
 };
 
 /* ================== 语音快速记账 ==================
@@ -2754,7 +2686,7 @@ const VoiceParser = (window.VoiceKit && Object.keys(window.VoiceKit).length) ? O
 
 // ===== VoiceEngine V2 兼容层：用统一智能引擎覆盖旧解析器核心方法 =====
 // 旧 VoiceParser/ReminderParser 保留（含分类词库等被引用的结构），但解析逻辑委托给新引擎，
-// 使所有调用点（applyVoiceText / applyReminderVoiceText / 多笔 / 终结词）自动获得：
+// 使所有调用点（applyVoiceText / applyReminderVoiceText / 终结词）自动获得：
 //   字段消耗式对号入座 + 标签词 + 相对时间 + 中英西统一 + 更强消歧
 // ReminderParser 由 js/voice/reminders.js 定义（静态脚本先于 app.js 加载，全局词法可用）
 if (window.VoiceEngine) {
@@ -2785,7 +2717,6 @@ if (window.VoiceEngine) {
         category: ex.category, remark: ex.remark || '',
       };
     },
-    splitEntries: VE.splitEntries,
   });
   // 覆盖 ReminderParser 的解析（保留旧返回结构）
   Object.assign(ReminderParser, {

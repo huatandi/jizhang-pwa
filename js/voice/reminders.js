@@ -410,6 +410,7 @@ function openReminderModal(mode) {
   syncRepeatDayUI();
   document.getElementById('btnSaveReminder').textContent = '保存提醒';
   renderReminderVoicePreview();
+  if (window.ReminderDialogueEngine) window.ReminderDialogueEngine.reset();
   openModal('reminderModal');
   if (mode === 'voice') {
     // 不自动开始监听：聚焦"点击说话"按钮，等用户按下才开始（避免一进卡片就播"请说"）
@@ -442,6 +443,7 @@ function editReminder(id) {
   document.getElementById('rLinkType').value = r.link_type || '';
   document.getElementById('btnSaveReminder').textContent = '更新提醒';
   renderReminderVoicePreview();
+  if (window.ReminderDialogueEngine) window.ReminderDialogueEngine.reset();
   openModal('reminderModal');
 }
 
@@ -687,9 +689,9 @@ function reminderVoiceHandleResult(r) {
   }
   if (r.final) {
     resetReminderIdleTimer(); // 有识别内容 → 重置超时
-    // V4：mergeTranscript 去重合并（iOS 单次识别每轮重开可能重复返回同一句 final）
+    // V221：final utterance 是不可重放的独立证据。历史 transcript 仅用于预览，不再整段重新解析写字段。
     reminderVoiceBuffer = (window.VoiceSR && VoiceSR.mergeTranscript) ? VoiceSR.mergeTranscript(reminderVoiceBuffer, r.final) : (reminderVoiceBuffer + ' ' + r.final).trim();
-    applyReminderVoiceText(reminderVoiceBuffer);
+    applyReminderVoiceUtterance(r.final);
     // 语音命令：只有"刚刚说完的那一句"是【独立结束词/保存词】才算收尾，防止内容里
     // 含"完成/好了/结束/保存"等词（或 ASR 截断的片段）时过早结束并提示"检查是否正确"。
     const stripFillers = (s) => String(s || '').toLowerCase().trim()
@@ -714,7 +716,9 @@ function reminderVoiceHandleResult(r) {
       reminderAutoSaveTimer = setTimeout(() => { reminderAutoSaveTimer = null; autoSaveReminderByVoice(); }, 1000);
     }
   } else if (r.interim) {
-    applyReminderVoiceText(reminderVoiceBuffer + ' ' + r.interim);
+    // Interim 只用于视觉预览，绝不写表单，避免半句跨字段污染。
+    const pv = document.getElementById('reminderVoicePreview');
+    if (pv) pv.dataset.interim = String(r.interim || '').slice(0, 120);
   }
   if (r.end && reminderVoiceSessionActive) {
     // 浏览器中断后自动续听（静默重启，不重播"请说"——避免连续识别时提示音吞话）
@@ -920,6 +924,49 @@ function tryRemindModeByVoice(text) {
   setTimeout(() => { if (reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); }, 1100);
   return true; // 命中方式关键词 → 当作命令消费，不落入内容解析
 }
+// V221 Reminder Dialogue Engine V2：单句语义片段 -> 字段 Single Writer。
+function applyReminderVoiceUtterance(utterance) {
+  const raw = String(utterance || '').trim();
+  if (!raw) return;
+  const de = window.ReminderDialogueEngine;
+  if (!de || typeof de.plan !== 'function') { applyReminderVoiceText(raw); return; }
+  const plan = de.plan(raw);
+  if (plan.command === 'save') { setTimeout(() => autoSaveReminderByVoice(), 0); return; }
+  if (plan.command === 'close') { setReminderVoiceBtnState('done'); renderReminderVoicePreview(); return; }
+  if (!plan.actions || !plan.actions.length) {
+    showToast('这句话还不能确定应填到哪个项目，请补充“事项/时间/地点”等关键词', 'error');
+    return;
+  }
+  const filled=[];
+  for (const a of plan.actions) {
+    const v=String(a.value == null ? '' : a.value).trim(); if(!v) continue;
+    if (a.slot === 'content') { writeReminderField('rContent', v); reminderFieldConfirmed.content = !!a.explicit; filled.push('事项'); }
+    else if (a.slot === 'time') { writeReminderField('rAt', v); reminderFieldConfirmed.time = !!a.explicit; filled.push('时间'); }
+    else if (a.slot === 'location') { writeReminderField('rLocation', v); reminderFieldConfirmed.location = !!a.explicit; filled.push('地点'); }
+    else if (a.slot === 'advance') { writeReminderField('rAdvance', v); reminderFieldConfirmed.advance = !!a.explicit; filled.push('提前'); }
+    else if (a.slot === 'note') { writeReminderField('rNote', v); reminderFieldConfirmed.note = !!a.explicit; filled.push('备注'); }
+    else if (a.slot === 'repeat') { const el=document.getElementById('rRepeat'); if(el){el.value=v; syncRepeatDayUI(); filled.push('重复');} }
+    else if (a.slot === 'method') {
+      if (v === 'manual') setRemindModeUI('manual');
+      else { const parts=new Set(v.split(',')); const set=(id,on)=>{const e=document.getElementById(id);if(e)e.checked=on}; set('rModeSpeak',parts.has('speak')); set('rModeRing',parts.has('ring')); set('rModeVibrate',parts.has('vibrate')); }
+      filled.push('提醒方式');
+    }
+  }
+  // 保存前的跨字段污染守门：字段标签不允许残留在值中。
+  const values={content:readReminderField('rContent'),location:readReminderField('rLocation'),note:readReminderField('rNote')};
+  const issues=de.inspectCrossSlot ? de.inspectCrossSlot(values) : [];
+  if (issues.length) {
+    for (const it of issues) {
+      const id=it.slot==='content'?'rContent':it.slot==='location'?'rLocation':'rNote';
+      const clean=String(readReminderField(id)||'').split(/提醒时间|提醒方式|地点|位置|备注|附注|事项|内容|提前提醒|重复提醒/)[0].trim();
+      if(clean!==readReminderField(id)) writeReminderField(id,clean);
+    }
+  }
+  renderReminderVoicePreview(); setReminderVoiceBtnState('done');
+  if (filled.length) showToast('✔ 已归类：' + [...new Set(filled)].join('、'));
+  setTimeout(()=>{ if(reminderVoiceSessionActive) setReminderVoiceBtnState('listening'); },900);
+}
+
 // 应用语音解析结果到提醒表单
 function applyReminderVoiceText(buffer) {
   // 0.4) 字段操作命令（清空/删除/去掉/更改/改为 + 项目；含"同时"多字段）：
@@ -1311,7 +1358,7 @@ function startReminderChecker() {
     renderReminders, syncRepeatDayUI, openReminderModal, editReminder, saveReminder, deleteReminder,
     markReminderDone, snoozeReminder, dismissReminderNotify, switchReminderVoiceLang, syncReminderVoiceLangUI, getReminderVoiceLangMeta,
     toggleReminderVoice, startReminderVoice, stopReminderVoice, setReminderVoiceBtnState, reminderVoiceHandleResult,
-    applyReminderVoiceText, autoSaveReminderByVoice, renderReminderVoicePreview, checkRemindersDue, startReminderChecker,
+    applyReminderVoiceText, applyReminderVoiceUtterance, autoSaveReminderByVoice, renderReminderVoicePreview, checkRemindersDue, startReminderChecker,
     pvmList, pvmLog, pvmRemove, pvmClear, pvmExport, pvmImport,
     // 只读状态访问器（quick-voice 需判断提醒语音会话是否活跃，避免双识别器冲突）
     isReminderVoiceActive: () => reminderVoiceSessionActive,

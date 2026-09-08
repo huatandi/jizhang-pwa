@@ -3,7 +3,7 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-c9bdb0df';
+const CACHE_NAME = 'jizhang-pwa-6bef8d79';
 const APP_SHELL = [
   './',
   './index.html',
@@ -14,6 +14,7 @@ const APP_SHELL = [
   './js/personalization/app-event-bus.js',
   './js/personalization/pet-engine.js',
   './js/personalization/pet-life-os.js',
+  './js/personalization/pet-action-stage.js',
   './js/personalization/pet-motion-engine.js',
   './js/personalization/pet-director.js',
   './assets/pets/zodiac/rat.png',
@@ -68,6 +69,7 @@ const APP_SHELL = [
   './js/weather/weather-service.js',
   './js/weather/weather-card.js',
   './js/voice-engine.js',
+  './js/voice/reminder-dialogue-engine.js',
   './js/validation/validators.js',
   './js/validation/confidence.js',
   './js/validation/transaction.js',

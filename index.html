@@ -1532,7 +1532,7 @@
   <script src="js/intelligence/correction-learner.js?v=839f00d3"></script>
   <!-- V7：Document Intelligence（字段候选/金额裁决/商户过滤/日期/错误归因） -->
   <script src="js/intelligence/document-intelligence-v7.js?v=440af1a2"></script>
-  <script src="js/voice-engine.js?v=9cc4fddb"></script>
+  <script src="js/voice-engine.js?v=8e7ed4f1"></script>
   <!-- AI 全球化配置（语言/地区/货币单一来源，必须先于 OCR/ASR/voice 引擎加载） -->
   <script src="js/ai/global-config.js?v=735f4bc8"></script>
   <script src="js/offline-ocr.js?v=92958796"></script>
@@ -1590,7 +1590,7 @@
   <script src="js/asr/webspeech-engine.js?v=1e2e58f2"></script>
   <script src="js/asr/model-manager.js?v=9d53ed9d"></script>
   <script src="js/asr/asr-manager.js?v=97141584"></script>
-  <script src="js/voice/voice-parser.js?v=0b91c3f1"></script>
+  <script src="js/voice/voice-parser.js?v=39e8dd0b"></script>
   <script src="js/voice/voice-sr.js?v=643e0c70"></script>
   <script src="js/voice/voice-qa.js?v=26fdabba"></script>
   <script src="js/ai/engine-manager.js?v=9fa65a8e"></script>
@@ -1608,9 +1608,10 @@
        reminders.js 定义 ReminderParser（app.js 兼容层会覆盖它），须先加载；
        quick-voice / ledger-crud / ai-workbench 均在函数体内引用 app.js 全局，运行时安全。 -->
   <script src="js/voice/reminders.js?v=fieldcmd-01"></script>
+  <script src="js/voice/reminder-dialogue-engine.js?v=c2594374"></script>
   <script src="js/voice/correction-engine.js?v=75bd5319"></script>
-  <script src="js/voice/action-planner.js?v=cc0185ba"></script>
-  <script src="js/voice/quick-voice.js?v=887ddb35"></script>
+  <script src="js/voice/action-planner.js?v=b02eb357"></script>
+  <script src="js/voice/quick-voice.js?v=590a4fdb"></script>
   <script src="js/ledger-crud.js?v=3a8e9cce"></script>
   <script src="js/ai/ai-workbench.js?v=1e1cc6ba"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
@@ -1657,6 +1658,7 @@
   <script src="js/personalization/app-event-bus.js"></script>
   <script src="js/personalization/pet-engine.js"></script>
   <script src="js/personalization/pet-life-os.js"></script>
+  <script src="js/personalization/pet-action-stage.js?v=0bc6cc56"></script>
   <script src="js/personalization/pet-motion-engine.js"></script>
   <script src="js/personalization/pet-director.js"></script>
   <script src="js/idphoto/output-profiles.js"></script>
@@ -1665,7 +1667,7 @@
   <script src="js/idphoto/capture-quality-gate.js?v=ef78ec45"></script>
   <script src="js/idphoto/image-processor.js?v=d726a9e6"></script>
   <script src="js/idphoto/idphoto-studio.js?v=c9d45d72"></script>
-  <script src="js/boot.js?v=da9eaf1e"></script>
+  <script src="js/boot.js?v=5b511c89"></script>
 
   <!-- V190-V193 智能识别中心 -->
   <div class="modal-overlay" id="intelligenceCenterModal">
