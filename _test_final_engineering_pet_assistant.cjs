@@ -1,11 +1,14 @@
-const fs=require('fs'),assert=require('assert'),path=require('path');const R=__dirname;
-const read=p=>fs.readFileSync(path.join(R,p),'utf8');let n=0;function ok(v,m){assert(v,m);console.log('PASS',m);n++}
-const bus=read('js/personalization/app-event-bus.js'),dir=read('js/personalization/pet-director.js'),pet=read('js/personalization/pet-engine.js'),idx=read('index.html'),app=read('js/app.js');
-ok(/SAFE_TYPES/.test(bus)&&/delete safe\.amount/.test(bus)&&/delete safe\.photo/.test(bus),'事件总线过滤敏感字段');
-ok(/ledger:saved/.test(dir)&&/reminder:due/.test(dir)&&/recognition:start/.test(dir),'宠物导演订阅抽象业务事件');
-ok(!/sm:ledger-saved/.test(pet)&&!/sm:reminder/.test(pet),'Pet Engine 不直接拥有业务事件');
-ok(/quiet\(ms\)/.test(dir)&&/sm_pet_quiet_until/.test(dir),'免打扰有持久时限');
-ok(/action:center/.test(app),'Action Center 向表现层发布计数');
-ok(/安静1小时/.test(idx)&&/恢复互动/.test(idx),'设置提供临时安静');
-ok(/VERSION:[34]/.test(pet),'Pet Engine V3+');
-console.log('Final Engineering Pet Assistant:',n+'/'+n,'PASS');
+'use strict';
+const fs=require('fs'),assert=require('assert'),path=require('path'),R=__dirname;
+const read=p=>fs.readFileSync(path.join(R,p),'utf8');let n=0;const ok=(x,m)=>{assert(x,m);console.log('PASS',m);n++};
+const html=read('index.html'),pet=read('js/personalization/pet-engine.js'),sw=read('sw.js'),css=read('css/style.css');
+ok(/VERSION:4/.test(pet),'Pet Engine 保留十二生肖选择/拖动基础');
+ok(!html.includes('pet-life-os.js')&&!html.includes('pet-action-stage.js')&&!html.includes('pet-motion-engine.js')&&!html.includes('pet-director.js'),'生活动作/自由游走/业务提示运行时全部退出页面');
+ok(!sw.includes('pet-life-os.js')&&!sw.includes('pet-action-stage.js')&&!sw.includes('pet-motion-engine.js')&&!sw.includes('pet-director.js'),'退役萌宠运行时退出离线 App Shell');
+ok(!pet.includes('sm-pet-bubble')&&!pet.includes('sm-pet-life-badge')&&!pet.includes('sm-pet-action-stage'),'宠物 DOM 不再创建气泡/生活标签/动作舞台');
+ok(/function react\(\)\{\/\* V222 quiet companion/.test(pet),'业务反应接口兼容但静默');
+ok(/function scheduleWander\(\)\{clearTimeout\(walkTimer\);\/\* V222: stay put by default/.test(pet),'自动游走关闭，默认原地陪伴');
+ok(css.includes('V222 Quiet Companion')&&/animation:none!important/.test(css),'CSS 强制关闭历史动作动画');
+ok(html.includes('开启安静陪伴')&&html.includes('不冒文字提示'),'设置页明确安静陪伴语义');
+for(const x of ['rat','ox','tiger','rabbit','dragon','snake','horse','goat','monkey','rooster','dog','pig']) ok(fs.existsSync(path.join(R,'assets/pets/zodiac',x+'.png')),x+' 生肖资源保留');
+console.log(`V222 Quiet Companion: ${n}/${n} PASS`);

@@ -1,12 +1,14 @@
-const fs=require('fs'),assert=require('assert'),path=require('path');
-const root=__dirname,idx=fs.readFileSync(path.join(root,'index.html'),'utf8'),pet=fs.readFileSync(path.join(root,'js/personalization/pet-engine.js'),'utf8'),css=fs.readFileSync(path.join(root,'css/style.css'),'utf8');
-const names=['rat','ox','tiger','rabbit','dragon','snake','horse','goat','monkey','rooster','dog','pig'];
-let n=0; function ok(x,m){assert(x,m);console.log('PASS',m);n++}
-ok(/VERSION:[234]/.test(pet),'Pet Engine V2+');
-const director=fs.readFileSync(path.join(root,'js/personalization/pet-director.js'),'utf8');
-ok(/ledger:saved/.test(director)&&/reminder:due/.test(director)&&/recognition:start/.test(director),'业务事件由 Pet Director 订阅');
-ok(/visibilitychange/.test(pet),'后台暂停/恢复');
-ok(/prefers-reduced-motion/.test(css),'减少动画可访问性');
-ok(/petBreathe/.test(css)&&/petHappy/.test(css)&&/petRemind/.test(css)&&/petWander/.test(css),'睡眠/开心/提醒/走动状态');
-for(const x of names){ok(fs.existsSync(path.join(root,'assets/pets/zodiac',x+'.png')),x+' 透明资源存在');ok(idx.includes('assets/pets/zodiac/'+x+'.png'),x+' 选择器使用正式资源')}
-console.log('V213 Pet Pack:',n+'/'+n,'PASS');
+'use strict';
+const fs=require('fs'),assert=require('assert'),path=require('path'),R=__dirname;
+const read=p=>fs.readFileSync(path.join(R,p),'utf8');let n=0;const ok=(x,m)=>{assert(x,m);console.log('PASS',m);n++};
+const html=read('index.html'),pet=read('js/personalization/pet-engine.js'),sw=read('sw.js'),css=read('css/style.css');
+ok(/VERSION:4/.test(pet),'Pet Engine 保留十二生肖选择/拖动基础');
+ok(!html.includes('pet-life-os.js')&&!html.includes('pet-action-stage.js')&&!html.includes('pet-motion-engine.js')&&!html.includes('pet-director.js'),'生活动作/自由游走/业务提示运行时全部退出页面');
+ok(!sw.includes('pet-life-os.js')&&!sw.includes('pet-action-stage.js')&&!sw.includes('pet-motion-engine.js')&&!sw.includes('pet-director.js'),'退役萌宠运行时退出离线 App Shell');
+ok(!pet.includes('sm-pet-bubble')&&!pet.includes('sm-pet-life-badge')&&!pet.includes('sm-pet-action-stage'),'宠物 DOM 不再创建气泡/生活标签/动作舞台');
+ok(/function react\(\)\{\/\* V222 quiet companion/.test(pet),'业务反应接口兼容但静默');
+ok(/function scheduleWander\(\)\{clearTimeout\(walkTimer\);\/\* V222: stay put by default/.test(pet),'自动游走关闭，默认原地陪伴');
+ok(css.includes('V222 Quiet Companion')&&/animation:none!important/.test(css),'CSS 强制关闭历史动作动画');
+ok(html.includes('开启安静陪伴')&&html.includes('不冒文字提示'),'设置页明确安静陪伴语义');
+for(const x of ['rat','ox','tiger','rabbit','dragon','snake','horse','goat','monkey','rooster','dog','pig']) ok(fs.existsSync(path.join(R,'assets/pets/zodiac',x+'.png')),x+' 生肖资源保留');
+console.log(`V222 Quiet Companion: ${n}/${n} PASS`);

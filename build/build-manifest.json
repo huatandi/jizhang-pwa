@@ -1,6 +1,6 @@
 {
-  "buildId": "6bef8d79",
-  "generatedAt": "2026-09-08T14:51:25.134Z",
+  "buildId": "76fe45c4",
+  "generatedAt": "2026-09-08T15:10:04.325Z",
   "assets": {
     "js/ai/ai-cache.js": "a1d968ff",
     "js/ai/ai-manager.js": "d56d329b",
@@ -108,11 +108,7 @@
     "js/offline-ocr.js": "92958796",
     "js/personalization/app-event-bus.js": "20474b92",
     "js/personalization/icon-packs.js": "075368df",
-    "js/personalization/pet-action-stage.js": "0bc6cc56",
-    "js/personalization/pet-director.js": "de2fe1a0",
-    "js/personalization/pet-engine.js": "8c6e0307",
-    "js/personalization/pet-life-os.js": "b9ff766e",
-    "js/personalization/pet-motion-engine.js": "f554c162",
+    "js/personalization/pet-engine.js": "0bc88800",
     "js/pull-refresh.js": "ba1b2e2f",
     "js/recognition/bank-dictionary.js": "e0e192e0",
     "js/recognition/bank-resolver.js": "d02823bd",

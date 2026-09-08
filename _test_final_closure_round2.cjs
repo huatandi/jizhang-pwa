@@ -8,7 +8,7 @@ ok((ledger.match(/emit\('ledger:saved'/g)||[]).length>=2,'收入/支出成功保
 ok(/emit\('reminder:due'/.test(rem),'到期提醒生产 reminder:due');
 ok(/emit\('recognition:start'.*ocr/.test(ocr)&&/emit\('recognition:end'.*ocr/.test(ocr),'OCR 生产开始/结束事件');
 ok(/emit\('recognition:start'.*voice/.test(asr)&&/emit\('recognition:end'.*voice/.test(asr),'Voice 生产开始/结束事件');
-ok(/recognition:end/.test(dir)&&/system:online/.test(dir),'Pet Director 消费结束/恢复联网事件');
+ok(!/pet-director\.js/.test(read('index.html')),'安静陪伴不再加载业务提示导演');
 for(const x of ['rat','ox','tiger','rabbit','dragon','snake','horse','goat','monkey','rooster','dog','pig']) ok(sw.includes(`./assets/pets/zodiac/${x}.png`),`${x} 离线预缓存`);
-ok(sw.includes('./js/personalization/app-event-bus.js')&&sw.includes('./js/personalization/pet-director.js'),'宠物助手核心离线预缓存');
+ok(sw.includes('./js/personalization/app-event-bus.js')&&!sw.includes('./js/personalization/pet-director.js'),'事件总线保留且宠物提示导演退出 App Shell');
 console.log(`Final Closure Round2: ${n}/${n} PASS`);
