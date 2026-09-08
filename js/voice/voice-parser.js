@@ -20,14 +20,14 @@
     // 只压缩“中文/阿拉伯数字金额 token 内部”的空格，绝不能删除整句空格。
     // 旧实现把 "two hundred fifty" 拼成 "twohundredfifty"，导致英/西语数字全部失效。
     let t = String(text || '').trim();
-    const numToken = '0-9零〇○一二两三四五六七八九十百千万亿完玩晚腕旺网忘望往王弯湾丸顽拜白佰仟拾';
+    const numToken = '0-9零〇○一二两三四五六七八九十百千万亿完玩晚碗腕旺网忘望往王弯湾丸顽wW拜白佰仟拾';
     for (let i = 0; i < 3; i++) {
       t = t.replace(new RegExp('([' + numToken + '])\\s+(?=[' + numToken + '])', 'g'), '$1');
     }
     const digit = '0-9零〇○一二两三四五六七八九十百千万亿';
     // 单位被 ASR 写成常见同音字时，仅当前后至少一侧为数字/数位单位才纠正。
     const fixes = [
-      [/[完玩晚腕旺网忘望往王弯湾丸顽]/g, '万'], [/[拜白佰]/g, '百'], [/[仟]/g, '千'], [/[拾]/g, '十']
+      [/[完玩晚碗腕旺网忘望往王弯湾丸顽wW]/g, '万'], [/[拜白佰]/g, '百'], [/[仟]/g, '千'], [/[拾]/g, '十']
     ];
     for (const [re, unit] of fixes) {
       t = t.replace(re, (m, off, whole) => {
@@ -154,7 +154,7 @@
   };
   // 中文金额（万 零 块/元 毛/角/分 点 + 数字）→ 数字，如 "10万零78.36"→100078.36、"1万零3百二十六块7毛三"→10326.73
   VK.parseCnMoney = function (text) {
-    const t = VK.normalizeCnAmountSpeech(text).trim().replace(/[，,\s]/g, '');
+    const t = VK.normalizeCnAmountSpeech(text).trim().replace(/[，,\s]/g, '').replace(/(?:多(?:一点|一些)?|左右|上下|大约|约莫|约)$/,'');
     if (!t) return null;
     let s = t.replace(/^(?:人民币|￥|¥|CNY|元|块)?/i, '');
     let sign = 1;
@@ -692,18 +692,34 @@
   VK.parseAccount = function (text, accounts) {
     const t = String(text || '');
     const low = t.toLowerCase();
+    const list = (accounts || []).map(a => String(a || '').trim()).filter(Boolean);
     const tokens = (low.match(/[a-záéíóúñü0-9]{2,}/g) || []).join(' ');
-    for (const acc of accounts || []) {
-      const name = String(acc || '').trim();
+    // 高频账户口语先归一化；只有目标真实存在于用户账户列表时才返回，绝不凭空创建账户。
+    const aliases = {
+      '现金':['现金','现钱','cash','efectivo'],
+      '其他':['其他','其它','别的','other','otros','otro']
+    };
+    for (const [canonical, words] of Object.entries(aliases)) {
+      const target = list.find(a => a.toLowerCase() === canonical.toLowerCase());
+      if (target && words.some(w => low.includes(w))) return target;
+    }
+    for (const name of list) {
       if (!name || name === '未填' || name === '未填写') continue;
       if (low.includes(name.toLowerCase())) return name;
       const nameWords = name.toLowerCase().match(/[a-záéíóúñü0-9]{3,}/g);
-      if (nameWords) {
-        for (const w of nameWords) {
-          if (tokens.includes(w)) return name;
+      if (nameWords && nameWords.some(w => tokens.includes(w))) return name;
+    }
+    // 银行普通话/ASR 别名解析必须映射回“用户实际存在”的账户名，避免 resolver 命中但下拉无响应。
+    try {
+      const br = global.BankResolver;
+      if (br && typeof br.resolve === 'function') {
+        const r = br.resolve(t, { transcript:t, context:'account' });
+        if (r && r.confidence >= 0.75) {
+          const hit = list.find(a => a.toLowerCase() === String(r.canonical || '').toLowerCase());
+          if (hit) return hit;
         }
       }
-    }
+    } catch (_) {}
     return null;
   };
 
@@ -711,8 +727,8 @@
   const AMOUNT_RE = /(?:¥|￥|\$|MX\$)?\s*[0-9零一二两三四五六七八九十百千万亿][0-9,，零一二两三四五六七八九十百千万亿点.]*(?:\s*(?:块钱|元|圆|块))?(?:\s*(?:[0-9零一二两三四五六七八九]{1,2})?\s*(?:毛|角)\s*(?:[0-9一二两三四五六七八九])?\s*(?:分|厘)?)?/gi;
 
   VK.cleanRemark = function (remark, date) {
-    let r = String(remark || '');
-    r = r.replace(AMOUNT_RE, ' ');
+    let r = VK.normalizeCnAmountSpeech(String(remark || ''));
+    r = r.replace(AMOUNT_RE, ' ').replace(/(?:多(?:一点|一些)?|左右|上下|大约|约莫|约)(?=$|[，,。！!？?\s])/g, ' ');
     if (date) {
       r = r
         .replace(/大前天|前天|昨天|昨日|今天|今日|明天|明日|后天|大后天/g, ' ')
@@ -741,7 +757,7 @@
     out.date = VK.parseDate(body);
     out.account = VK.parseAccount(body, _getOptions().accounts);
     out.amount = VK.parseAmount(stripped);
-    let remainder = stripped.replace(AMOUNT_RE, ' ').trim();
+    let remainder = VK.normalizeCnAmountSpeech(stripped).replace(AMOUNT_RE, ' ').replace(/(?:多(?:一点|一些)?|左右|上下|大约|约莫|约)(?=$|[，,。！!？?\s])/g, ' ').trim();
     remainder = remainder.replace(/\s+/g, ' ');
     if (out.date) {
       remainder = remainder

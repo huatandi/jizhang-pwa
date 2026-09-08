@@ -5,14 +5,38 @@
   function canvasFromImage(img){const c=document.createElement('canvas');c.width=img.naturalWidth||img.videoWidth||img.width;c.height=img.naturalHeight||img.videoHeight||img.height;c.getContext('2d',{willReadFrequently:true}).drawImage(img,0,0,c.width,c.height);return c;}
   function faceWeight(x,y,face,w,h){if(!face)return 1;const cx=face.x+face.width*.5,cy=face.y+face.height*.52;const rx=Math.max(1,face.width*.72),ry=Math.max(1,face.height*.82);const dx=(x-cx)/rx,dy=(y-cy)/ry;const r=dx*dx+dy*dy;return r>=1?0:Math.pow(1-r,1.8);}
   function relight(canvas,strength=.45,face=null){
+    // Identity-safe low-frequency illumination equalization only: no synthesis,
+    // sharpening, geometry changes, skin smoothing or background replacement.
     strength=clamp(Number(strength)||0,0,.9);if(!strength)return cloneCanvas(canvas);
     const c=cloneCanvas(canvas),x=c.getContext('2d',{willReadFrequently:true}),im=x.getImageData(0,0,c.width,c.height),d=im.data;
-    const region=face?{x:Math.max(0,Math.floor(face.x)),y:Math.max(0,Math.floor(face.y)),w:Math.min(c.width,Math.ceil(face.width)),h:Math.min(c.height,Math.ceil(face.height))}:{x:0,y:0,w:c.width,h:c.height};
-    let left=0,right=0,ln=0,rn=0;const sx=Math.max(1,Math.floor(region.w/70)),sy=Math.max(1,Math.floor(region.h/70));
-    for(let yy=region.y;yy<region.y+region.h;yy+=sy)for(let xx=region.x;xx<region.x+region.w;xx+=sx){const i=(yy*c.width+xx)*4,lum=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2],fw=faceWeight(xx,yy,face,c.width,c.height)||.15;if(xx<(region.x+region.w*.5)){left+=lum*fw;ln+=fw;}else{right+=lum*fw;rn+=fw;}}
-    left/=ln||1;right/=rn||1;const target=Math.min(182,Math.max(92,(left+right)/2+8*strength));
-    for(let yy=0;yy<c.height;yy++)for(let xx=0;xx<c.width;xx++){const i=(yy*c.width+xx)*4;const fw=faceWeight(xx,yy,face,c.width,c.height);if(face&&fw<=0)continue;const pos=clamp((xx-region.x)/Math.max(1,region.w),0,1),base=left*(1-pos)+right*pos;const lum=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];const shadow=Math.max(0,(target-Math.min(base,lum))/Math.max(55,target));const gain=clamp(1+shadow*strength*.62,1,1.42);const mix=face?fw:1;
-      for(let k=0;k<3;k++){let v=d[i+k]*(1+(gain-1)*mix);if(v>218)v=218+(v-218)*.32;d[i+k]=clamp(Math.round(v),0,255);}}
+    const gw=18,gh=18,sum=new Float64Array(gw*gh),cnt=new Uint32Array(gw*gh);
+    let global=0,gn=0;
+    const step=Math.max(1,Math.floor(Math.min(c.width,c.height)/360));
+    for(let yy=0;yy<c.height;yy+=step)for(let xx=0;xx<c.width;xx+=step){
+      const i=(yy*c.width+xx)*4,lum=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];
+      const gx=Math.min(gw-1,Math.floor(xx/c.width*gw)),gy=Math.min(gh-1,Math.floor(yy/c.height*gh)),q=gy*gw+gx;
+      sum[q]+=lum;cnt[q]++;global+=lum;gn++;
+    }
+    global=global/(gn||1);const field=new Float64Array(gw*gh);
+    for(let gy=0;gy<gh;gy++)for(let gx=0;gx<gw;gx++){
+      let acc=0,n=0;
+      for(let oy=-2;oy<=2;oy++)for(let ox=-2;ox<=2;ox++){
+        const xx=clamp(gx+ox,0,gw-1),yy=clamp(gy+oy,0,gh-1),q=yy*gw+xx;
+        if(cnt[q]){acc+=sum[q]/cnt[q];n++;}
+      }
+      field[gy*gw+gx]=n?acc/n:global;
+    }
+    // Pull only low-frequency illumination toward the global level. The bounded
+    // gain makes the effect visible while preserving facial identity and colors.
+    const target=clamp(global,92,188);
+    for(let yy=0;yy<c.height;yy++)for(let xx=0;xx<c.width;xx++){
+      const i=(yy*c.width+xx)*4;
+      const fx=xx/Math.max(1,c.width-1)*(gw-1),fy=yy/Math.max(1,c.height-1)*(gh-1),x0=Math.floor(fx),y0=Math.floor(fy),x1=Math.min(gw-1,x0+1),y1=Math.min(gh-1,y0+1),tx=fx-x0,ty=fy-y0;
+      const a=field[y0*gw+x0]*(1-tx)+field[y0*gw+x1]*tx,b=field[y1*gw+x0]*(1-tx)+field[y1*gw+x1]*tx,local=a*(1-ty)+b*ty;
+      let mask=1;if(face){const fw=faceWeight(xx,yy,face,c.width,c.height);mask=fw<=0?0:fw;}if(!mask)continue;
+      const delta=clamp((target-local)/110,-.42,.55),gain=clamp(1+delta*strength*1.35,.72,1.38),mix=mask*strength;
+      for(let k=0;k<3;k++){const corrected=d[i+k]*gain;d[i+k]=clamp(Math.round(d[i+k]*(1-mix)+corrected*mix),0,255);}
+    }
     x.putImageData(im,0,0);return c;
   }
   function backgroundMatte(canvas,color='#ffffff',tolerance=44,softness=28){

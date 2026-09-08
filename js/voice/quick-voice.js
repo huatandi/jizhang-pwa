@@ -349,6 +349,37 @@ function handleVoiceDraftFinal(finalText, resultMeta) {
     }
   } catch (e) { /* 忽略，走后续 */ }
 
+  // V213 runtime semantic routing：命令按“当前这一句”执行，不能等整段草稿合并后再解析。
+  // 否则第二句说“切换到收入 / 账户现金”时，命令位于草稿中部，会被当备注而 UI 无动作。
+  try {
+    const utterance = String(finalText || '').trim();
+    const vp = window.VoiceParser || window.VoiceKit;
+    const one = vp && typeof vp.parse === 'function' ? vp.parse(utterance, quickType) : null;
+    if (one && (one.cmd === 'income' || one.cmd === 'expense')) {
+      const tgt = one.cmd;
+      const seg = document.querySelector(`#page-quick .seg-btn[data-type="${tgt}"]`);
+      if (seg && quickType !== tgt) setQuickType(tgt, seg);
+      renderVoicePreview();
+      // 纯切换句直接消费；若同一句还有金额/账户等内容，则切换后继续让草稿解析剩余内容。
+      if (!String(one.text || '').trim()) {
+        showToast('✔ 已切换到' + (tgt === 'income' ? '收入' : '支出'));
+        return true;
+      }
+    }
+    const accountIntent = one && (one.cmd === 'account' || /^(?:账户|账号|选择账户|账户选择|改账户|用|使用)?\s*(?:现金|现钱|其他|其它|cash|efectivo|other|otro|otros)\s*$/i.test(utterance));
+    if (accountIntent && vp && typeof vp.parseAccount === 'function') {
+      const acc = vp.parseAccount(one && one.cmd === 'account' ? one.text : utterance, options.accounts);
+      const sel = document.getElementById('qAccount');
+      if (acc && sel && [...sel.options].some(o => o.value === acc)) {
+        writeVoiceField('account', acc);
+        voiceFieldConfirmed.account = true;
+        renderVoicePreview();
+        showToast('✔ 账户已设为 ' + acc);
+        return true;
+      }
+    }
+  } catch (e) { /* 失败则继续原草稿链，不破坏记账 */ }
+
   // 字段级明确改口继续复用成熟 CorrectionEngine；它是操作，不应污染内容草稿。
   try {
     const c = window.CorrectionEngine && CorrectionEngine.parse(finalText);

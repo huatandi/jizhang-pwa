@@ -4122,3 +4122,38 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 :root[data-icon-pack="tech"] .sm-ui-svg{stroke-width:1.55;filter:drop-shadow(0 0 4px rgba(31,133,141,.22))}:root[data-icon-pack="tech"] .nav-item .nav-icon{color:#317f85}:root[data-icon-pack="tech"] .nav-item.active .nav-icon{color:#23666d}
 :root[data-theme="light"] .fn-card,:root[data-theme="spring-summer"] .fn-card{box-shadow:0 5px 18px rgba(45,67,78,.07)}
 @media(prefers-reduced-motion:reduce){.nav-icon .sm-ui-svg{transition:none!important}}
+
+/* Round7 UI closure: ID-photo + pet controls use the active system surface tokens. */
+#page-idphoto .ai-panel,
+#personalizationSettings .personalization-grid>div{
+  border:1px solid var(--border);
+  border-radius:16px;
+  background:var(--surface2);
+  color:var(--text);
+  box-shadow:0 1px 2px color-mix(in srgb,var(--text) 7%,transparent);
+}
+#page-idphoto .ai-panel{padding:14px}
+#page-idphoto .idp-mobile-primary{justify-content:flex-start;margin-top:10px}
+#page-idphoto .idp-mobile-primary>button,
+#page-idphoto .idp-more-panel>button{
+  min-height:42px;border-radius:12px;
+}
+#page-idphoto .idp-controls{
+  padding:12px;border:1px solid var(--border);border-radius:14px;background:var(--surface);
+}
+#page-idphoto .idp-controls select,
+#page-idphoto .idp-controls input[type=range]{accent-color:var(--primary)}
+#page-idphoto .idp-controls select{
+  min-height:40px;border:1px solid var(--border);border-radius:11px;background:var(--surface2);color:var(--text);padding:7px 10px;
+}
+.pet-mode-controls{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:9px 0 10px}
+.pet-enable-control,.pet-activity-control{
+  display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:7px 11px;
+  border:1px solid var(--border);border-radius:12px;background:var(--surface2);color:var(--text);
+}
+.pet-enable-control input{accent-color:var(--primary);width:18px;height:18px}
+.pet-activity-control select{
+  min-height:32px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);padding:4px 28px 4px 9px;
+}
+#personalizationSettings .personalization-grid>div{padding:12px}
+@media(max-width:760px){#page-idphoto .idp-mobile-primary{background:color-mix(in srgb,var(--surface2) 94%,transparent)}}
