@@ -18,6 +18,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const skipEnv = process.env.SKIP === '1';
+const NETWORK_ONLY = new Set(['_test_fx']);
 
 // 环境类/需浏览器/需 Desktop 专有模块（V3.0 §四：Browser Runtime 测试后续用 Playwright 覆盖）
 const ENV_ONLY = [
@@ -47,6 +48,7 @@ function main() {
   const failures = [];
   for (const t of tests) {
     const base = path.basename(t).replace(/\.(cjs|js)$/, '');
+    if (NETWORK_ONLY.has(base)) { skipped++; console.log('SKIP ' + path.relative(ROOT, t) + ' (网络类；请用 npm run test:network 单独执行)'); continue; }
     if (skipEnv && ENV_ONLY.includes(base)) { skipped++; console.log('SKIP ' + path.relative(ROOT, t) + ' (环境类)'); continue; }
     const r = spawnSync(process.execPath, [t], { stdio: 'inherit', cwd: ROOT });
     if (r.status === 0) { pass++; console.log('PASS ' + path.relative(ROOT, t)); }
@@ -55,15 +57,15 @@ function main() {
   console.log('\n=== 测试汇总: ' + pass + ' 通过, ' + fail + ' 失败, ' + skipped + ' 跳过 ===');
   if (failures.length) console.log('失败列表: ' + failures.join(', '));
 
-  // Golden benchmark（有 results 出真值 KPI；无 results 用 --demo 验证计算器本身）
+  // Golden dataset 门禁：默认只校验 manifest。真实设备 results 必须显式捕获后再运行 benchmark；禁止用 demo 数据冒充真实 KPI
   const runBench = (label, script, args) => {
     console.log('\n══════ ' + label + ' ══════');
     const r = spawnSync(process.execPath, [script].concat(args || []), { stdio: 'inherit', cwd: ROOT });
     if (r.status !== 0) fail++;
   };
   if (fail === 0) {
-    runBench('OCR Golden Benchmark', path.join(ROOT, 'tests', 'ocr', 'benchmark.cjs'), ['--demo']);
-    runBench('Voice Golden Benchmark', path.join(ROOT, 'tests', 'voice', 'benchmark.cjs'), ['--demo']);
+    runBench('OCR Golden Dataset Manifest', path.join(ROOT, 'tests', 'ocr', 'benchmark.cjs'), ['--check-manifest']);
+    runBench('Voice Golden Dataset Manifest', path.join(ROOT, 'tests', 'voice', 'benchmark.cjs'), ['--check-manifest']);
   } else {
     console.log('\n（单元测试有失败，跳过 benchmark）');
   }

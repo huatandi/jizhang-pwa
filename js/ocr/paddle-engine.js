@@ -104,7 +104,8 @@
 
     /** 创建 OCR 实例（按 backend/wasmPaths/threads） */
     async _create(P, wasm, backend, numThreads, workerMode) {
-      return P.create({
+      const installed = global.OcrKit && global.OcrKit.ocrModelStore && global.OcrKit.ocrModelStore.runtimeConfig ? global.OcrKit.ocrModelStore.runtimeConfig() : null;
+      return P.create(Object.assign({
         lang: this._resolveLang(),
         ocrVersion: this.config.ocrVersion,
         textDetectionBatchSize: 2,
@@ -116,7 +117,7 @@
           numThreads: numThreads,
           simd: this.config.simd,
         },
-      });
+      }, installed || {}));
     }
 
     _workerPreferred() {

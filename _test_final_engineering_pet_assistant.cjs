@@ -7,5 +7,5 @@ ok(!/sm:ledger-saved/.test(pet)&&!/sm:reminder/.test(pet),'Pet Engine 不直接�
 ok(/quiet\(ms\)/.test(dir)&&/sm_pet_quiet_until/.test(dir),'免打扰有持久时限');
 ok(/action:center/.test(app),'Action Center 向表现层发布计数');
 ok(/安静1小时/.test(idx)&&/恢复互动/.test(idx),'设置提供临时安静');
-ok(/VERSION:3/.test(pet),'Pet Engine V3');
+ok(/VERSION:[34]/.test(pet),'Pet Engine V3+');
 console.log('Final Engineering Pet Assistant:',n+'/'+n,'PASS');

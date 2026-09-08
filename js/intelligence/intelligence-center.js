@@ -101,10 +101,22 @@
       deviceProfile(),modelHealth(),selfTest(),learnedRules(),voiceMemories(),
       mm&&mm.status?mm.status():Promise.resolve(null),
       mm&&mm.runtimeReadiness?mm.runtimeReadiness():Promise.resolve({sherpaProvider:false,neuralVad:false}),
-      global.RecognitionFinalizer&&global.RecognitionFinalizer.report?global.RecognitionFinalizer.report():Promise.resolve(null)
+      global.RecognitionFinalizer&&global.RecognitionFinalizer.report?global.RecognitionFinalizer.report():Promise.resolve(null),
+      global.AppCore&&global.AppCore.SystemDiagnostics?global.AppCore.SystemDiagnostics.snapshot():Promise.resolve(null)
     ];
-    const [p,h,checks,rules,voiceRules,modelStatus,runtimeReady,finalReport]=await Promise.all(jobs);
+    const [p,h,checks,rules,voiceRules,modelStatus,runtimeReady,finalReport,systemDiag]=await Promise.all(jobs);
     const asr=summarize('asr'),ocr=summarize('ocr');
+    const sysState=systemDiag&&global.AppCore&&global.AppCore.SystemDiagnostics?global.AppCore.SystemDiagnostics.statusOf(systemDiag):null;
+    const sysHtml=systemDiag?`<div class="intel-card" style="margin-top:8px"><b>🩺 系统运行自检</b>
+      <p>总体：${sysState&&sysState.ok?'🟢 正常':'🟡 需要留意'}　网络：${systemDiag.online?'🟢 在线':'⚪ 离线'}　安全上下文：${systemDiag.secureContext?'🟢':'🟡'}</p>
+      <p>数据库：${systemDiag.database&&systemDiag.database.ready?'🟢 READY':'🟡 '+esc(systemDiag.database&&systemDiag.database.status||'未知')}　离线缓存：${systemDiag.serviceWorker&&systemDiag.serviceWorker.registered?'🟢 已注册':'🟡 未注册'}　页面受控：${systemDiag.serviceWorker&&systemDiag.serviceWorker.controlled?'🟢':'⚪'}</p>
+      <p>安全更新：${systemDiag.safeUpdate&&systemDiag.safeUpdate.waiting?(systemDiag.safeUpdate.safe?'🟡 新版本待安装':'🟡 已延后（当前有操作）'):'🟢 当前版本稳定'}${systemDiag.safeUpdate&&systemDiag.safeUpdate.waiting?'　<button class="btn-mini" onclick="IntelligenceCenter.applySafeUpdate()">安全更新</button>':''}</p>
+      <p>未完成工作：${systemDiag.unfinishedWork&&systemDiag.unfinishedWork.count?'🟡 '+systemDiag.unfinishedWork.count+' 个本机草稿　<button class="btn-mini" onclick="IntelligenceCenter.resumeUnfinishedWork()">恢复继续填写</button>':'🟢 无待恢复草稿'}</p>
+      <p>存储：${fmtBytes(systemDiag.storage&&systemDiag.storage.usage)} / ${fmtBytes(systemDiag.storage&&systemDiag.storage.quota)}　持久存储：${systemDiag.storage&&systemDiag.storage.persisted===true?'🟢 已授予':systemDiag.storage&&systemDiag.storage.persisted===false?'🟡 未授予':'⚪ 未知'}</p>
+      <p>麦克风：${esc(systemDiag.media&&systemDiag.media.microphonePermission||'unknown')} (${systemDiag.media&&systemDiag.media.microphones||0})　相机：${esc(systemDiag.media&&systemDiag.media.cameraPermission||'unknown')} (${systemDiag.media&&systemDiag.media.cameras||0})　FaceDetector：${systemDiag.faceDetector?'🟢':'⚪ 浏览器未提供'}</p>
+      <p>WASM：${systemDiag.capabilities&&systemDiag.capabilities.wasm?'🟢':'🟡'}　WebGPU：${systemDiag.capabilities&&systemDiag.capabilities.webgpu?'🟢':'⚪'}　Worker：${systemDiag.capabilities&&systemDiag.capabilities.worker!==false?'🟢':'⚪'}　通知：${esc(systemDiag.notificationPermission||'unsupported')}</p>
+      ${sysState&&sysState.warnings.length?`<div class="recur-hint">${sysState.warnings.map(x=>'• '+esc(x)).join('<br>')}</div>`:'<div class="recur-hint">当前没有发现需要立即处理的运行环境异常。</div>'}
+      <p class="recur-hint">权限状态只读取，不会在自检时主动弹出麦克风、相机或定位授权。</p></div>`:'';
     const checkHtml=checks.map(x=>`<div class="intel-row"><span>${x.ok?'🟢':'🟡'} ${esc(x.name)}</span><small>${esc(x.detail||'')}</small></div>`).join('');
     const ruleHtml=rules.length?rules.slice(0,30).map(r=>`<div class="intel-row"><span>🧠 ${esc(r.from||r.source||r.pattern||r.key||'学习规则')}</span><button class="btn-mini" onclick="IntelligenceCenter.deleteRule('${String(r.key||'').replace(/'/g,"\\'")}')">删除</button></div>`).join(''):'<div class="empty">暂无已晋级 OCR 学习规则</div>';
     const voiceRuleHtml=voiceRules.length?voiceRules.slice(0,30).map(r=>`<div class="intel-row"><span>🎙️ ${esc(r.phrase||'')} → ${esc(r.target||'')} <small>${esc(r.status||'')}</small></span><button class="btn-mini" onclick="IntelligenceCenter.deleteVoiceRule('${String(r.id||'').replace(/'/g,"\\'")}')">删除</button></div>`).join(''):'<div class="empty">暂无已晋级语音学习规则</div>';
@@ -116,6 +128,8 @@
       const advice=modelStatus.advice||{};
       const manifest=modelStatus.manifest||'';
       const tenVad=modelStatus.tenVad||{installed:false,ready:false};
+      const paddlePkg=modelStatus.paddleOcr||{installed:false};
+      const ocrManifest=modelStatus.ocrManifest||'';
       modelHtml=`
         <div class="intel-card" style="margin-top:8px">
           <b>📦 本地增强模型</b>
@@ -134,10 +148,12 @@
           <div style="padding:10px 0;border-bottom:1px solid var(--border,#ddd);margin:8px 0">
             <b>👁️ OCR 本地识别</b>
             <p>OCR 管理器：${ocrRuntimeStatus().ready?'🟢 READY':'🟡 '+esc(ocrRuntimeStatus().status)}　引擎：${esc(ocrRuntimeStatus().engines.join(' / ')||'未加载')}</p>
-            <p class="recur-hint">首次“安装/预加载 OCR”可能下载本地运行模型；完成后由浏览器缓存。失败时仍保留现有 OCR 回退链。</p>
+            <p>完整性模型包：${paddlePkg.installed?'🟢 已安装 '+esc(paddlePkg.activeId||''):'⚪ 尚未安装'}　${ocrManifest?'发布清单已配置':'发布清单未配置'}</p>
+            <p class="recur-hint">普通预加载仍可能使用上游模型源；只有同源 manifest + size/SHA‑256 校验通过的模型包，才计入“完整离线模型”状态。</p>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn-primary" onclick="IntelligenceCenter.preloadOcrModels()">安装 / 预加载 OCR</button>
               <button class="btn-secondary" onclick="IntelligenceCenter.checkOcr()">检查 OCR</button>
+              ${ocrManifest?`<input id="ocrManifestInput" type="hidden" value="${esc(ocrManifest)}"><button class="btn-secondary" onclick="IntelligenceCenter.inspectOcrPackage()">检查离线模型包</button><button class="btn-primary" onclick="IntelligenceCenter.installOcrPackage()">安装离线模型包</button><button class="btn-danger" onclick="IntelligenceCenter.removeOcrPackage()">删除离线模型包</button>`:`<details><summary>开发者 OCR 模型部署</summary><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><input id="ocrManifestInput" style="min-width:280px;flex:1" placeholder="同源 OCR manifest.json 地址"><button class="btn-secondary" onclick="IntelligenceCenter.inspectOcrPackage()">检查</button><button class="btn-primary" onclick="IntelligenceCenter.installOcrPackage()">测试安装</button></div></details>`}
             </div>
           </div>
           <p>Sherpa 模型文件：${installed?'🟢 已缓存 '+fmtBytes(installed.bytes):'⚪ 尚未安装'}</p>
@@ -181,7 +197,7 @@
         <p class="recur-hint">正式阶段完成必须经过真实手机麦克风与真实票据样本验收；静态/单元测试不能冒充真机准确率。</p>
       </div>`:'';
 
-    box.innerHTML=`
+    box.innerHTML=sysHtml+`
       <div class="intel-grid">
        <div class="intel-card"><b>💻 设备能力</b><p>内存：${p.deviceMemory||'未知'} GB　CPU线程：${p.hardwareConcurrency||'未知'}</p><p>WebGPU：${p.webgpu?'✓':'—'}　Worker：${p.worker?'✓':'—'}　WASM：${typeof WebAssembly!=='undefined'?'✓':'—'}</p><p>存储：${fmtBytes(p.storageUsage)} / ${fmtBytes(p.storageQuota)}</p></div>
        <div class="intel-card"><b>🎙️ 语音识别</b><p>Sherpa：${h.sherpa.ready?'🟢 READY':'⚪ '+esc(h.sherpa.status)}</p><p>最近样本：${asr.n}　成功率：${asr.successRate}%　金额：${asr.amountRate}%</p><p>平均耗时：${asr.avgMs||'—'} ms</p></div>
@@ -192,6 +208,25 @@
       <h4>🩺 一键自检</h4>${checkHtml}
       <h4>🧠 OCR 学习规则</h4>${ruleHtml}
       <h4>🎙️ 语音学习规则</h4>${voiceRuleHtml}`;
+  }
+
+
+  function resumeUnfinishedWork(){
+    const g=global.AppCore&&global.AppCore.WorkSessionGuardian;
+    if(!g||!g.resumeFirst){if(typeof global.showToast==='function')global.showToast('草稿恢复管理器未加载','error');return;}
+    const r=g.resumeFirst();
+    if(!r||!r.ok){if(typeof global.showToast==='function')global.showToast('当前没有可恢复的记账草稿。');}
+  }
+
+  async function applySafeUpdate(){
+    const u=global.AppCore&&global.AppCore.SafeUpdateManager;
+    if(!u||!u.apply){if(typeof global.showToast==='function')global.showToast('安全更新管理器未加载','error');return;}
+    try{
+      const r=await u.apply();
+      if(r&&r.deferred){if(typeof global.showToast==='function')global.showToast('正在编辑或识别，新版本已延后，不会强制刷新。');return;}
+      if(r&&r.ok){if(typeof global.showToast==='function')global.showToast('正在安全切换到新版本…');return;}
+      if(typeof global.showToast==='function')global.showToast('当前没有待安装的新版本。');
+    }catch(e){if(typeof global.showToast==='function')global.showToast('安全更新失败：'+String(e&&e.message||e),'error');}
   }
 
   function progress(msg){
@@ -250,6 +285,11 @@
       await render(); return ok!==false;
     }catch(e){progress('OCR 预加载失败：'+String(e&&e.message||e)+'；现有回退链保持可用。');return false;}
   }
+
+  function ocrManifestInput(){const el=document.getElementById('ocrManifestInput');return el?String(el.value||'').trim():'';}
+  async function inspectOcrPackage(){const mm=global.RecognitionModelManager,url=ocrManifestInput();if(!mm||!url){progress('请先填写同源 OCR manifest.json 地址。');return;}progress('正在检查 OCR 模型清单、哈希契约与本机空间…');try{const x=await mm.inspectOcr(url);mm.setManifest('paddle_ocr',url);progress(`OCR 模型包：${x.manifest.id}；大小：${fmtBytes(x.preflight.total)}；空间检查：${x.preflight.ok?'通过':'不足'}。`);}catch(e){progress('OCR 模型包检查失败：'+String(e&&e.message||e));}}
+  async function installOcrPackage(){const mm=global.RecognitionModelManager,url=ocrManifestInput();if(!mm||!url){progress('请先配置同源 OCR manifest.json。');return;}progress('正在分阶段下载并校验 OCR 模型包…');try{const r=await mm.installOcr(url,x=>progress(`OCR 模型：${x.phase||'处理中'} ${x.done||0}/${x.count||2}　${fmtBytes(x.bytes||0)}`));progress(`OCR 离线模型包安装完成：${fmtBytes(r.bytes)}；已通过安装后完整性检查。`);await render();}catch(e){progress((e&&e.name==='AbortError')?'OCR 模型安装已取消。':'OCR 模型安装失败，已回滚本轮变更：'+String(e&&e.message||e));}}
+  async function removeOcrPackage(){const mm=global.RecognitionModelManager;if(!mm)return;try{await mm.removeOcr();progress('OCR 离线模型包已删除；现有 Tesseract/Paddle 回退链保持可用。');await render();}catch(e){progress('OCR 模型删除失败：'+String(e&&e.message||e));}}
   async function inspectSherpaModel(){
     const mm=global.RecognitionModelManager, url=manifestInput();
     if(!mm||!url){progress('请先填写同源 manifest.json 地址。');return;}
@@ -299,7 +339,7 @@
   }
   async function deleteRule(key){if(await removeRule(key))await render();}
   async function deleteVoiceRule(id){if(await removeVoiceMemory(id))await render();}
-  global.IntelligenceCenter={VERSION:4,record,summarize,deviceProfile,modelHealth,ocrRuntimeStatus,selfTest,learnedRules,voiceMemories,removeRule,removeVoiceMemory,
-    render,deleteRule,deleteVoiceRule,installTenVad,checkTenVad,removeTenVad,checkOcr,preloadOcrModels,inspectSherpaModel,installSherpaModel,cancelModelInstall,removeSherpaModel,exportBenchmark,resetBenchmark};
+  global.IntelligenceCenter={VERSION:6,record,summarize,deviceProfile,modelHealth,ocrRuntimeStatus,selfTest,learnedRules,voiceMemories,removeRule,removeVoiceMemory,
+    render,deleteRule,deleteVoiceRule,installTenVad,checkTenVad,removeTenVad,checkOcr,preloadOcrModels,inspectOcrPackage,installOcrPackage,removeOcrPackage,inspectSherpaModel,installSherpaModel,cancelModelInstall,removeSherpaModel,exportBenchmark,resetBenchmark,applySafeUpdate,resumeUnfinishedWork};
 
 })(typeof window!=='undefined'?window:globalThis);

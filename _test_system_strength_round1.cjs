@@ -1,0 +1,27 @@
+'use strict';
+const fs=require('fs'),path=require('path'); const root=__dirname;
+let ok=0,fail=0;function ck(cond,msg){if(cond){ok++;console.log('✓',msg)}else{fail++;console.error('✗',msg)}}
+const idx=fs.readFileSync(path.join(root,'index.html'),'utf8');
+const css=fs.readFileSync(path.join(root,'css/style.css'),'utf8');
+const icons=fs.readFileSync(path.join(root,'js/ui/icon-system.js'),'utf8');
+const packs=fs.readFileSync(path.join(root,'js/personalization/icon-packs.js'),'utf8');
+const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8');
+const vq=fs.readFileSync(path.join(root,'_test_voice_qa.cjs'),'utf8');
+const runner=fs.readFileSync(path.join(root,'tests/run-all.cjs'),'utf8');
+const gate=fs.readFileSync(path.join(root,'tests/regression-gate.cjs'),'utf8');
+const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')); 
+ck(idx.includes('js/ui/icon-system.js'),'refined icon system is loaded');
+ck(sw.includes('./js/ui/icon-system.js'),'refined icon system is offline-cached');
+ck((idx.match(/class="fn-card fn-/g)||[]).length===10,'10 quick-action cards use semantic icon classes');
+ck(!/fn-icon" style="background:/.test(idx),'quick-action icons no longer use inline hardcoded gradients');
+ck(icons.includes('class="sm-ui-svg"')&&icons.includes("dashboard:")&&icons.includes("idphoto:"),'SVG icon registry contains core navigation shapes');
+ck(packs.includes('VERSION:3')&&packs.includes('SmIconSystem.renderPageIcons'),'icon packs skin SVGs without replacing them with glyph text');
+ck(css.includes('System Strength Round 1')&&css.includes('.fn-purchase .fn-icon'),'refined dimensional quick-action icon styling exists');
+ck(idx.includes('切换主题（深色 / 浅色 / 秋色 / 春夏）'),'theme toggle tooltip describes all four themes');
+ck(vq.includes('finalEligible')&&vq.includes('仅明确记账意图'),'VoiceQA final-accounting denominator is intent-scoped');
+ck(!idx.includes('linear-gradient(135deg,#3b82f6,#2563eb)'), 'stale royal-blue inline purchase icon removed');
+ck(runner.includes("NETWORK_ONLY = new Set(['_test_fx'])"),'default test runner explicitly excludes network-only FX test');
+ck(pkg.scripts['test:network']==='node _test_fx.cjs','network test remains available explicitly');
+ck(!runner.includes("['--demo']")&&runner.includes('--check-manifest'),'default npm test no longer prints intentional demo failures as if they were real KPI');
+ck(gate.includes('不会使用 demo 冒充')&&gate.includes('captured real results'),'regression gate distinguishes real captured benchmark data from demo data');
+console.log(`System Strength Round1: ${ok}/${ok+fail} PASS`);process.exit(fail?1:0);

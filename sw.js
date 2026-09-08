@@ -3,15 +3,17 @@
  * Service Worker —— PWA 离线缓存
  * 缓存策略：App 壳（HTML/CSS/JS/vendor/图标）安装时预缓存；运行时网络优先 + 缓存回退。
  */
-const CACHE_NAME = 'jizhang-pwa-d9b93cc6';
+const CACHE_NAME = 'jizhang-pwa-25eb92ea';
 const APP_SHELL = [
   './',
   './index.html',
   './css/style.css',
   './js/theme.js',
+  './js/ui/icon-system.js',
   './js/personalization/icon-packs.js',
   './js/personalization/app-event-bus.js',
   './js/personalization/pet-engine.js',
+  './js/personalization/pet-life-os.js',
   './js/personalization/pet-director.js',
   './assets/pets/zodiac/rat.png',
   './assets/pets/zodiac/ox.png',
@@ -33,6 +35,13 @@ const APP_SHELL = [
   './js/core/feature-flags.js',
   './js/core/capability.js',
   './js/core/diagnostics.js',
+  './js/core/work-session-guardian.js',
+  './js/core/system-diagnostics.js',
+  './js/core/ocr-offline-readiness.js',
+  './js/ocr/ocr-model-store.js',
+  './js/core/startup-recovery.js',
+  './js/core/safe-update-manager.js',
+  './js/core/backup-envelope.js',
   './js/core/runtime-asset-manager.js',
   './js/core/model-source-router.js',
   './js/config/recognition-models.js',
@@ -75,6 +84,7 @@ const APP_SHELL = [
   './js/ocr/preprocess-worker.js',
   './js/ocr/region-retry.js',
   './js/ocr/ocr-candidate-pool.js',
+  './js/ocr/critical-field-gate.js',
   './js/mexico/money.js',
   './js/mexico/field-normalizer.js',
   './js/mexico/currency-evidence.js',
@@ -197,13 +207,20 @@ const APP_SHELL = [
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
+});
+
+
+self.addEventListener('message', (e) => {
+  if (e && e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== 'jizhang-sherpa-models-v1' && !k.startsWith('jizhang-sherpa-models-v2') && k !== 'jizhang-ten-vad-v1').map((k) => caches.delete(k)))).then(() => self.clients.claim())
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME && k !== 'jizhang-sherpa-models-v1' && !k.startsWith('jizhang-sherpa-models-v2') && k !== 'jizhang-ten-vad-v1' && !k.startsWith('jizhang-ocr-models-v1')).map((k) => caches.delete(k)))).then(() => self.clients.claim())
   );
 });
 
@@ -229,7 +246,7 @@ self.addEventListener('fetch', (e) => {
 
   // 已安装的本地识别模型：跨 CacheStorage 查找，命中即直接使用。
   // 这避免数百 MB 的模型在每次打开时重新走网络。
-  if (url.pathname.includes('/vendor/sherpa/') || url.pathname.includes('/vendor/models/')) {
+  if (url.pathname.includes('/vendor/sherpa/') || url.pathname.includes('/vendor/models/') || url.pathname.includes('/runtime-models/ocr/')) {
     e.respondWith(
       caches.match(cacheRequest).then((c) => c || caches.match(e.request).then((c2) => c2 || fetch(e.request)))
     );

@@ -55,7 +55,7 @@ async function renderIncome() {
   const countEl = document.getElementById('incomeSearchCount');
   if (countEl) {
     const sum = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    countEl.textContent = (q ? `匹配 ${rows.length} 条 · ` : '') + `总计金额 ¥${fmtMoney(sum)}`;
+    countEl.textContent = (q ? `匹配 ${rows.length} 条 · ` : '') + `总计金额 ${fmtBaseMoney(sum)}`;
   }
   // 按日期分组，同一天的多笔收入合并日期单元格
   const groups = {};
@@ -82,7 +82,7 @@ async function renderIncome() {
         <span class="tag tag-blue"><a class="query-link" onclick="openQuery('income_category','${escJs(r.project || '')}')">${escapeHtml(r.project || '未填')}</a></span>
         ${r.semantic_type === 'refund' ? '<span class="tag tag-blue">↩️ 退款冲减</span>' : r.semantic_type === 'reimbursement' ? '<span class="tag tag-blue">📋 报销冲减</span>' : ''}
         <span class="tag tag-green"><a class="query-link" onclick="openQuery('account','${escJs(r.account || '')}')">${escapeHtml(r.account || '未填')}</a></span>
-        <b class="amount positive">¥${fmtMoney(r.amount)}</b>
+        <b class="amount positive">${fmtBaseMoney(r.amount)}</b>
         ${r.created_by ? `<span class="pair-created-by" title="记账人">👤${escapeHtml(r.created_by)}</span>` : ''}
         <span class="pair-actions">
           ${r.voucher ? `<button class="action-btn" onclick="showVoucher('${escJs(r.voucher)}')" title="查看凭证">🖼️</button>` : ''}
@@ -103,7 +103,7 @@ async function renderIncome() {
       <td class="account-details">${accountDetails}</td>
       <td>${escapeHtml(projects)}</td>
       <td>${escapeHtml(payMethods)}</td>
-      <td class="amount positive">¥${fmtMoney(total)}</td>
+      <td class="amount positive">${fmtBaseMoney(total)}</td>
     </tr>`;
   }).join('');
   tbody.innerHTML = visible.length
@@ -144,6 +144,7 @@ function openIncomeModal(prefillDate) {
   // 功能补充 P5：填充快捷模板下拉
   fillQuickTemplates('income');
   const iCur = document.getElementById('iCurrency'); if (iCur) iCur.value = BASE_CURRENCY();
+  try { const g=global.AppCore&&global.AppCore.WorkSessionGuardian; if(g&&g.start) g.start('incomeModal','new'); } catch(_) {}
   openModal('incomeModal');
 }
 
@@ -168,6 +169,7 @@ function editIncome(id) {
     // 功能补充 P4：编辑时金额已是基准币种，币种固定为基准（避免二次换算误导）
     const curSel = document.getElementById('iCurrency');
     if (curSel) curSel.value = BASE_CURRENCY();
+    try { const g=global.AppCore&&global.AppCore.WorkSessionGuardian; if(g&&g.start) g.start('incomeModal','edit:'+id); } catch(_) {}
     openModal('incomeModal');
   });
 }
@@ -199,7 +201,7 @@ async function maybeDup(type, d) {
     });
     if (r && r.dup) {
       const first = r.matches && r.matches[0];
-      const hint = first ? `\n（例：${first.date}｜¥${first.amount}｜${first.category || '-'}｜${first.account || '-'}，命中 ${first.hit} 项）` : '';
+      const hint = first ? `\n（例：${first.date}｜${fmtBaseMoney(first.amount)}｜${first.category || '-'}｜${first.account || '-'}，命中 ${first.hit} 项）` : '';
       return confirm(`⚠️ 疑似重复记账！\n已存在与该条目与当前记录高度相似的记录（金额为核心，并结合日期/分类/账户加权判断）${hint}\n\n继续保存吗？`);
     }
     return true;
@@ -209,7 +211,7 @@ async function maybeDup(type, d) {
 async function syncIncomeSemanticLink(selectedId) {
   const sem=(document.getElementById('iSemanticType')||{}).value||'income'; const wrap=document.getElementById('iLinkedExpenseWrap'); const sel=document.getElementById('iLinkedExpense');
   if(!wrap||!sel)return; wrap.hidden=sem==='income'; if(sem==='income'){sel.value='';return;}
-  try{ const rows=await api('/expense'); const recent=rows.slice(0,300); sel.innerHTML='<option value="">-- 选择原支出 --</option>'+recent.map(r=>`<option value="${r.id}">${escapeHtml(r.date||'')} · ${escapeHtml(r.category||r.payee||'支出')} · ¥${fmtMoney(r.amount)}</option>`).join(''); if(selectedId)sel.value=String(selectedId); }catch(e){sel.innerHTML='<option value="">原支出读取失败</option>';}
+  try{ const rows=await api('/expense'); const recent=rows.slice(0,300); sel.innerHTML='<option value="">-- 选择原支出 --</option>'+recent.map(r=>`<option value="${r.id}">${escapeHtml(r.date||'')} · ${escapeHtml(r.category||r.payee||'支出')} · ${fmtBaseMoney(r.amount)}</option>`).join(''); if(selectedId)sel.value=String(selectedId); }catch(e){sel.innerHTML='<option value="">原支出读取失败</option>';}
 }
 
 async function saveIncome() {
@@ -246,6 +248,7 @@ async function saveIncome() {
       await api('/income', 'POST', d);
       showToast('收入已添加');
     }
+    try { const g=global.AppCore&&global.AppCore.WorkSessionGuardian; if(g&&g.afterSave) g.afterSave('incomeModal'); } catch(_) {}
     closeModal('incomeModal');
     try { if (window.SmAppEvents) window.SmAppEvents.emit('ledger:saved', { kind:'income', operation: editingIncomeId ? 'update' : 'create' }); } catch (_e) {}
     renderIncome();
@@ -303,14 +306,14 @@ async function renderSuppliers() {
     const discount = Number(r.discount) || 0;
     const cleared = r.clear_date ? `<span class="tag tag-green" title="账目清零日 ${r.clear_date}">✓ 已清零</span>` : '';
     const bal = unpaid > 0
-      ? `<span class="amount negative">未付 ¥${fmtMoney(unpaid)}</span>`
-      : (discount < 0 ? `<span class="amount positive">超付 ¥${fmtMoney(-discount)}</span>` : `<span class="amount positive">已结清</span>`);
+      ? `<span class="amount negative">未付 ${fmtBaseMoney(unpaid)}</span>`
+      : (discount < 0 ? `<span class="amount positive">超付 ${fmtBaseMoney(-discount)}</span>` : `<span class="amount positive">已结清</span>`);
     return `
     <tr>
       <td><span class="tag tag-blue">${escapeHtml(r.name)}</span> ${cleared}</td>
-      <td class="amount">${Number(r.discount) ? (Number(r.discount) > 0 ? '¥' + fmtMoney(r.discount) : '超付 ¥' + fmtMoney(-r.discount)) : ''}</td>
-      <td class="amount">¥${fmtMoney(r.total_amount)}</td>
-      <td class="amount positive">${Number(r.paid_amount) ? '¥' + fmtMoney(r.paid_amount) : ''}</td>
+      <td class="amount">${Number(r.discount) ? (Number(r.discount) > 0 ? fmtBaseMoney(r.discount) : '超付 ' + fmtBaseMoney(-r.discount)) : ''}</td>
+      <td class="amount">${fmtBaseMoney(r.total_amount)}</td>
+      <td class="amount positive">${Number(r.paid_amount) ? fmtBaseMoney(r.paid_amount) : ''}</td>
       <td class="amount">${bal}</td>
       <td class="amount">${discountBadgeHtml(r)}</td>
       <td>
@@ -421,7 +424,7 @@ async function renderPurchase() {
     }
     const unpaidAll = Object.values(bySup).reduce((s, v) => s + v, 0);
     countEl.textContent = (q ? `匹配 ${rows.length} 条 · ` : '') +
-      `总计金额 ¥${fmtMoney(t)} · 已付 ¥${fmtMoney(p)} · 未付 ¥${fmtMoney(Math.min(unpaidAll, Math.max(0, t - p)))}`;
+      `总计金额 ${fmtBaseMoney(t)} · 已付 ${fmtBaseMoney(p)} · 未付 ${fmtBaseMoney(Math.min(unpaidAll, Math.max(0, t - p)))}`;
   }
   // V3.0 §十：DOM 分页（进货按行分页）
   if (purchasePageLen === 0 || purchasePageRows !== rows.length) {
@@ -440,10 +443,10 @@ async function renderPurchase() {
     <tr>
       <td>${fmtDate(r.doc_date)}</td>
       <td><a class="query-link" onclick="openQuery('supplier','${escJs(r.supplier)}')">${escapeHtml(r.supplier)}</a></td>
-      <td class="amount">${total ? '¥' + fmtMoney(total) : ''}</td>
+      <td class="amount">${total ? fmtBaseMoney(total) : ''}</td>
       <td>${escapeHtml(r.status)}</td>
-      <td class="amount positive">${paid ? '¥' + fmtMoney(paid) : ''}</td>
-      <td class="amount ${unpaid > 0 ? 'negative' : ''}">${st.cleared ? clearedBadge : (unpaid > 0 ? '¥' + fmtMoney(unpaid) : '')}</td>
+      <td class="amount positive">${paid ? fmtBaseMoney(paid) : ''}</td>
+      <td class="amount ${unpaid > 0 ? 'negative' : ''}">${st.cleared ? clearedBadge : (unpaid > 0 ? fmtBaseMoney(unpaid) : '')}</td>
       <td>${escapeHtml(r.remark)}${r.created_by ? ` <span class="pair-created-by" title="记账人">👤${escapeHtml(r.created_by)}</span>` : ''}</td>
       <td>
         <button class="action-btn" onclick="addPurchasePayment(${r.id})" title="登记本次付款">💵</button>
@@ -468,6 +471,7 @@ function openPurchaseModal(prefillDate) {
   fillSelect('pSupplier', options.suppliers, true);
   fillSelect('pStatus', purchaseStatusOptions(), true);
   const pCur = document.getElementById('pCurrency'); if (pCur) pCur.value = BASE_CURRENCY();
+  try { const g=global.AppCore&&global.AppCore.WorkSessionGuardian; if(g&&g.start) g.start('purchaseModal','new'); } catch(_) {}
   openModal('purchaseModal');
 }
 
@@ -489,6 +493,7 @@ function editPurchase(id) {
     // 编辑时币种必须切回基准币，避免按原始 currency 再折算一次。
     const curSel = document.getElementById('pCurrency');
     if (curSel) curSel.value = BASE_CURRENCY();
+    try { const g=global.AppCore&&global.AppCore.WorkSessionGuardian; if(g&&g.start) g.start('purchaseModal','edit:'+id); } catch(_) {}
     openModal('purchaseModal');
   });
 }
@@ -531,6 +536,7 @@ async function savePurchase() {
       await api('/purchase', 'POST', d);
       showToast('进货记录已添加');
     }
+    try { const g=global.AppCore&&global.AppCore.WorkSessionGuardian; if(g&&g.afterSave) g.afterSave('purchaseModal'); } catch(_) {}
     closeModal('purchaseModal');
     options = await api('/options');
     renderPurchase();
@@ -542,7 +548,7 @@ async function addPurchasePayment(id) {
   const rows = await api('/purchase'); const r = rows.find(x => x.id === id); if (!r) return showToast('进货记录不存在','error');
   const remain = Math.max(0, (Number(r.total_amount)||0) - (Number(r.paid_amount)||0));
   if (remain <= 0.005) return showPurchasePaymentHistory(id);
-  const amountText = prompt(`本次付款金额（剩余 ¥${fmtMoney(remain)}）：`, String(remain));
+  const amountText = prompt(`本次付款金额（剩余 ${fmtBaseMoney(remain)}）：`, String(remain));
   if (amountText == null) return; const amount = Number(amountText);
   if (!Number.isFinite(amount) || amount <= 0 || amount > remain + 0.005) return showToast('付款金额无效或超过剩余未付款','error');
   const date = prompt('付款日期（YYYY-MM-DD）：', todayLocal()); if (!date) return;
@@ -552,7 +558,7 @@ async function addPurchasePayment(id) {
   try {
     // remain/amount 均来自已持久化的基准币金额，因此这里必须按基准币提交。
     const out = await api('/purchase/' + id + '/payments','POST',{pay_date:date,amount,account,reference,remark,currency:BASE_CURRENCY()});
-    showToast(out.remaining > 0 ? `已登记付款，剩余 ¥${fmtMoney(out.remaining)}` : '✅ 该笔货款已结清');
+    showToast(out.remaining > 0 ? `已登记付款，剩余 ${fmtBaseMoney(out.remaining)}` : '✅ 该笔货款已结清');
     renderPurchase(); refreshDashboards(); showPurchasePaymentHistory(id);
   } catch(e){ showToast(e.message || '付款保存失败','error'); }
 }
@@ -561,11 +567,11 @@ async function showPurchasePaymentHistory(id){
   const purchases=await api('/purchase'); const p=purchases.find(x=>x.id===id); if(!p)return showToast('进货记录不存在','error'); const rows=await api('/purchase/'+id+'/payments');
   let modal=document.getElementById('paymentHistoryModal'); if(!modal){modal=document.createElement('div');modal.id='paymentHistoryModal';modal.className='modal-overlay';document.body.appendChild(modal);}
   const remain=Math.max(0,(Number(p.total_amount)||0)-(Number(p.paid_amount)||0));
-  modal.innerHTML=`<div class="modal"><div class="modal-header"><h3>💵 分次付款历史</h3><button class="modal-close" onclick="closePaymentHistory()">×</button></div><div class="modal-body"><div style="margin-bottom:10px"><b>${escapeHtml(p.supplier||'供应商')}</b> · 总额 ¥${fmtMoney(p.total_amount)} · 已付 ¥${fmtMoney(p.paid_amount)} · <b>未付 ¥${fmtMoney(remain)}</b></div><div style="display:grid;gap:8px">${rows.length?rows.map(x=>`<div class="recur-item"><span>${fmtDate(x.pay_date)} · <b>¥${fmtMoney(x.amount)}</b>${x.account?' · '+escapeHtml(x.account):''}${x.reference?' · '+escapeHtml(x.reference):''}${x.remark?' · '+escapeHtml(x.remark):''}</span><button class="action-btn delete" onclick="deletePurchasePayment(${id},${x.id})" title="撤销这次付款">🗑️</button></div>`).join(''):'<div class="opt-empty">暂无分次付款流水</div>'}</div></div><div class="modal-footer"><button class="btn-secondary" onclick="closePaymentHistory()">关闭</button>${remain>0.005?`<button class="btn-primary" onclick="closePaymentHistory();addPurchasePayment(${id})">＋ 登记付款</button>`:''}</div></div>`;
+  modal.innerHTML=`<div class="modal"><div class="modal-header"><h3>💵 分次付款历史</h3><button class="modal-close" onclick="closePaymentHistory()">×</button></div><div class="modal-body"><div style="margin-bottom:10px"><b>${escapeHtml(p.supplier||'供应商')}</b> · 总额 ${fmtBaseMoney(p.total_amount)} · 已付 ${fmtBaseMoney(p.paid_amount)} · <b>未付 ${fmtBaseMoney(remain)}</b></div><div style="display:grid;gap:8px">${rows.length?rows.map(x=>`<div class="recur-item"><span>${fmtDate(x.pay_date)} · <b>${fmtBaseMoney(x.amount)}</b>${x.account?' · '+escapeHtml(x.account):''}${x.reference?' · '+escapeHtml(x.reference):''}${x.remark?' · '+escapeHtml(x.remark):''}</span><button class="action-btn delete" onclick="deletePurchasePayment(${id},${x.id})" title="撤销这次付款">🗑️</button></div>`).join(''):'<div class="opt-empty">暂无分次付款流水</div>'}</div></div><div class="modal-footer"><button class="btn-secondary" onclick="closePaymentHistory()">关闭</button>${remain>0.005?`<button class="btn-primary" onclick="closePaymentHistory();addPurchasePayment(${id})">＋ 登记付款</button>`:''}</div></div>`;
   modal.classList.add('active');
 }
 function closePaymentHistory(){const m=document.getElementById('paymentHistoryModal');if(m)m.classList.remove('active');}
-async function deletePurchasePayment(pid,payId){if(!confirm('撤销这次付款记录？\n撤销后已付款/未付款金额会自动重新计算。'))return;try{const out=await api('/purchase/'+pid+'/payments/'+payId,'DELETE');showToast(`付款已撤销，剩余 ¥${fmtMoney(out.remaining)}`);renderPurchase();refreshDashboards();showPurchasePaymentHistory(pid);}catch(e){showToast(e.message||'撤销付款失败','error');}}
+async function deletePurchasePayment(pid,payId){if(!confirm('撤销这次付款记录？\n撤销后已付款/未付款金额会自动重新计算。'))return;try{const out=await api('/purchase/'+pid+'/payments/'+payId,'DELETE');showToast(`付款已撤销，剩余 ${fmtBaseMoney(out.remaining)}`);renderPurchase();refreshDashboards();showPurchasePaymentHistory(pid);}catch(e){showToast(e.message||'撤销付款失败','error');}}
 
 async function deletePurchase(id) {
   if (!confirm('确定删除这条进货记录？\n删除后会进入回收站，可以恢复。')) return;
@@ -585,7 +591,7 @@ async function renderExpense() {
   const countEl = document.getElementById('expenseSearchCount');
   if (countEl) {
     const sum = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    countEl.textContent = (q ? `匹配 ${rows.length} 条 · ` : '') + `总计金额 ¥${fmtMoney(sum)}`;
+    countEl.textContent = (q ? `匹配 ${rows.length} 条 · ` : '') + `总计金额 ${fmtBaseMoney(sum)}`;
   }
   // 按日期分组，同一天的多笔支出合并为一行
   const groups = {};
@@ -610,7 +616,7 @@ async function renderExpense() {
       <span class="income-pair">
         ${catIconHtml(r.category || '', 'expense')}
         <span class="tag tag-orange"><a class="query-link" onclick="openQuery('expense_category','${escJs(r.category || '')}')">${escapeHtml(r.category || '未填')}</a></span>
-        <b class="amount negative">¥${fmtMoney(r.amount)}</b>
+        <b class="amount negative">${fmtBaseMoney(r.amount)}</b>
         ${r.created_by ? `<span class="pair-created-by" title="记账人">👤${escapeHtml(r.created_by)}</span>` : ''}
         <span class="pair-actions">
           ${r.voucher ? `<button class="action-btn" onclick="showVoucher('${escJs(r.voucher)}')" title="查看凭证">🖼️</button>` : ''}
@@ -628,7 +634,7 @@ async function renderExpense() {
       </td>
       <td class="account-details">${catDetails}</td>
       <td>${accounts ? `<a class="query-link" onclick="openQuery('account','${escJs(accounts)}')">${escapeHtml(accounts)}</a>` : ''}</td>
-      <td class="amount negative">¥${fmtMoney(total)}</td>
+      <td class="amount negative">${fmtBaseMoney(total)}</td>
     </tr>`;
   }).join('');
   tbody.innerHTML = visible.length
@@ -649,6 +655,7 @@ function openExpenseModal(prefillDate) {
   // 功能补充 P5：填充快捷模板下拉
   fillQuickTemplates('expense');
   const eCur = document.getElementById('eCurrency'); if (eCur) eCur.value = BASE_CURRENCY();
+  try { const g=global.AppCore&&global.AppCore.WorkSessionGuardian; if(g&&g.start) g.start('expenseModal','new'); } catch(_) {}
   openModal('expenseModal');
 }
 
@@ -669,6 +676,7 @@ function editExpense(id) {
     // 数据库存储的 amount 已经是基准币金额；编辑时固定为基准币避免二次换算。
     const curSel = document.getElementById('eCurrency');
     if (curSel) curSel.value = BASE_CURRENCY();
+    try { const g=global.AppCore&&global.AppCore.WorkSessionGuardian; if(g&&g.start) g.start('expenseModal','edit:'+id); } catch(_) {}
     openModal('expenseModal');
   });
 }
@@ -702,6 +710,7 @@ async function saveExpense() {
       await api('/expense', 'POST', d);
       showToast('支出已添加');
     }
+    try { const g=global.AppCore&&global.AppCore.WorkSessionGuardian; if(g&&g.afterSave) g.afterSave('expenseModal'); } catch(_) {}
     closeModal('expenseModal');
     try { if (window.SmAppEvents) window.SmAppEvents.emit('ledger:saved', { kind:'expense', operation: editingExpenseId ? 'update' : 'create' }); } catch (_e) {}
     renderExpense();

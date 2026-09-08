@@ -2,7 +2,7 @@ const fs=require('fs'),assert=require('assert'),path=require('path');
 const root=__dirname,idx=fs.readFileSync(path.join(root,'index.html'),'utf8'),pet=fs.readFileSync(path.join(root,'js/personalization/pet-engine.js'),'utf8'),css=fs.readFileSync(path.join(root,'css/style.css'),'utf8');
 const names=['rat','ox','tiger','rabbit','dragon','snake','horse','goat','monkey','rooster','dog','pig'];
 let n=0; function ok(x,m){assert(x,m);console.log('PASS',m);n++}
-ok(/VERSION:[23]/.test(pet),'Pet Engine V2+');
+ok(/VERSION:[234]/.test(pet),'Pet Engine V2+');
 const director=fs.readFileSync(path.join(root,'js/personalization/pet-director.js'),'utf8');
 ok(/ledger:saved/.test(director)&&/reminder:due/.test(director)&&/recognition:start/.test(director),'业务事件由 Pet Director 订阅');
 ok(/visibilitychange/.test(pet),'后台暂停/恢复');

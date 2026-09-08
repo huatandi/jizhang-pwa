@@ -248,6 +248,10 @@ function openModal(id) {
   __lockBodyScroll();
 }
 function closeModal(id) {
+  try {
+    const g = window.AppCore && window.AppCore.WorkSessionGuardian;
+    if (g && g.beforeClose && !g.beforeClose(id)) return false;
+  } catch (_) {}
   document.getElementById(id).classList.remove('active');
   // 关闭快速记账弹窗时停止语音识别，避免后台继续收音
   if (id === 'quickModal' && window.getVoiceSessionActive && window.getVoiceSessionActive()) stopVoiceSession();
@@ -389,23 +393,23 @@ async function renderDashboard() {
     const s = await loadSummary();
 
     // KPI
-    document.getElementById('kpiIncome').textContent = '¥' + fmtMoney(s.totalIncome);
-    document.getElementById('kpiExpense').textContent = '¥' + fmtMoney(s.totalExpense);
-    document.getElementById('kpiBalance').textContent = '¥' + fmtMoney(s.balance);
+    document.getElementById('kpiIncome').textContent = fmtBaseMoney(s.totalIncome);
+    document.getElementById('kpiExpense').textContent = fmtBaseMoney(s.totalExpense);
+    document.getElementById('kpiBalance').textContent = fmtBaseMoney(s.balance);
     const balBadge = document.getElementById('kpiBalanceBadge');
     balBadge.textContent = s.balance >= 0 ? '盈余' : '亏损';
     balBadge.className = 'kpi-badge ' + (s.balance >= 0 ? 'good' : 'warn');
-    document.getElementById('kpiUnpaid').textContent = '¥' + fmtMoney(s.unpaid);
+    document.getElementById('kpiUnpaid').textContent = fmtBaseMoney(s.unpaid);
     // 已付款 KPI（进货已付货款）
     const kpiPaid = document.getElementById('kpiPaid');
-    if (kpiPaid) kpiPaid.textContent = '¥' + fmtMoney(s.totalPaid || 0);
+    if (kpiPaid) kpiPaid.textContent = fmtBaseMoney(s.totalPaid || 0);
     // 功能补充 P4：资产/负债/净资产
     const kpiAssets = document.getElementById('kpiAssets');
     const kpiLiab = document.getElementById('kpiLiabilities');
     const kpiNet = document.getElementById('kpiNetWorth');
-    if (kpiAssets) kpiAssets.textContent = '¥' + fmtMoney(s.totalAssets || 0);
-    if (kpiLiab) kpiLiab.textContent = '¥' + fmtMoney(s.totalLiabilities || 0);
-    if (kpiNet) { kpiNet.textContent = '¥' + fmtMoney(s.netWorth || 0); kpiNet.className = 'kpi-value ' + ((s.netWorth || 0) >= 0 ? 'positive' : 'negative'); }
+    if (kpiAssets) kpiAssets.textContent = fmtBaseMoney(s.totalAssets || 0);
+    if (kpiLiab) kpiLiab.textContent = fmtBaseMoney(s.totalLiabilities || 0);
+    if (kpiNet) { kpiNet.textContent = fmtBaseMoney(s.netWorth || 0); kpiNet.className = 'kpi-value ' + ((s.netWorth || 0) >= 0 ? 'positive' : 'negative'); }
     renderActionCenter();
 
     const rangeTxt = (currentRange.start || '全部') + ' ~ ' + (currentRange.end || '全部');
@@ -471,7 +475,7 @@ async function renderDashboard() {
     const accChart = initChart('chartAccounts');
     accChart.setOption({
       ...chartBase(),
-      tooltip: { ...chartBase().tooltip, trigger: 'item', formatter: p => `${p.name}: ¥${fmtMoney(p.value)}` },
+      tooltip: { ...chartBase().tooltip, trigger: 'item', formatter: p => `${p.name}: ${fmtBaseMoney(p.value)}` },
       xAxis: { type: 'category', data: accNames, axisLabel: { color: '#ffffff', rotate: accNames.length > 6 ? 30 : 0 } },
       yAxis: { type: 'value', axisLabel: { formatter: (v) => (v/10000)+'万', color: '#ffffff' } },
       series: [{
@@ -487,7 +491,7 @@ async function renderDashboard() {
     const srcChart = initChart('chartIncomeSource');
     srcChart.setOption({
       ...chartBase(),
-      tooltip: { trigger: 'item', formatter: '{b}: ¥{c} ({d}%)' },
+      tooltip: { trigger: 'item', formatter: p => `${p.name}: ${fmtBaseMoney(p.value)} (${p.percent}%)` },
       legend: { bottom: 0, textStyle: { color: '#ffffff' }, type: 'scroll' },
       series: [{
         type: 'pie', radius: ['42%', '68%'], center: ['50%', '45%'],
@@ -505,7 +509,7 @@ async function renderDashboard() {
     const catChart = initChart('chartExpenseCategory');
     catChart.setOption({
       ...chartBase(),
-      tooltip: { trigger: 'item', formatter: '{b}: ¥{c} ({d}%)' },
+      tooltip: { trigger: 'item', formatter: p => `${p.name}: ${fmtBaseMoney(p.value)} (${p.percent}%)` },
       legend: { bottom: 0, textStyle: { color: '#ffffff' }, type: 'scroll' },
       series: [{
         type: 'pie', roseType: 'radius', radius: ['18%', '70%'], center: ['50%', '45%'],
@@ -555,7 +559,7 @@ async function renderDashboard() {
           ${catIconHtml(r.name || '', r.type === '收入' ? 'income' : 'expense')}
           <span class="tag tag-${r.tag}">${r.type}</span>
           <span class="tag tag-blue">${escapeHtml(r.account || '未填')}</span>
-          <b class="amount ${r.amount >= 0 ? 'positive' : 'negative'}">¥${fmtMoney(r.amount)}</b>
+          <b class="amount ${r.amount >= 0 ? 'positive' : 'negative'}">${fmtBaseMoney(r.amount)}</b>
           ${r.remark ? `<span class="pair-remark">${escapeHtml(r.remark)}</span>` : ''}
         </span>`).join('');
       const total = items.reduce((s, r) => s + (r.amount || 0), 0);
@@ -566,7 +570,7 @@ async function renderDashboard() {
       <tr>
         <td class="date-cell"><span class="tag tag-blue" ondblclick="${dblDay}" title="双击编辑日期/内容">${fmtDate(date)}</span></td>
         <td class="account-details">${details}</td>
-        <td class="amount ${total >= 0 ? 'positive' : 'negative'}" ondblclick="${dblDay}" title="双击编辑">¥${fmtMoney(total)}</td>
+        <td class="amount ${total >= 0 ? 'positive' : 'negative'}" ondblclick="${dblDay}" title="双击编辑">${fmtBaseMoney(total)}</td>
       </tr>`;
     }).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text-2);padding:30px">暂无记录</td></tr>';
 
@@ -644,6 +648,17 @@ function fillAccountSelect(id, empty = false) {
 
 // 功能补充 P4：多币种
 const BASE_CURRENCY = () => (options.base_currency || 'MXN');
+// 金额显示只改变表现层，不改变数据库中“持久化金额=基础货币”的既有不变量。
+// 使用 ISO 货币代码而不是 ¥/$ 等歧义符号，避免 MXN/USD/CNY 被显示成错误币种。
+function fmtCurrencyMoney(value, currency) {
+  const code = String(currency || BASE_CURRENCY() || 'MXN').toUpperCase();
+  return code + ' ' + fmtMoney(value);
+}
+function fmtBaseMoney(value) { return fmtCurrencyMoney(value, BASE_CURRENCY()); }
+function fmtBaseMoneySigned(value) {
+  const n = Number(value) || 0;
+  return (n < 0 ? '-' : '') + fmtBaseMoney(Math.abs(n));
+}
 const CURRENCIES = () => (options.currencies && options.currencies.length ? options.currencies : ['MXN', 'CNY', 'USD']);
 const RATES = () => (options.exchange_rates && typeof options.exchange_rates === 'object' ? options.exchange_rates : { MXN: 1 });
 
@@ -907,9 +922,9 @@ async function renderMonthly() {
   tbody.innerHTML = s.monthly.map(m => `
     <tr>
       <td><span class="tag tag-blue">${m.month}</span></td>
-      <td class="amount positive">¥${fmtMoney(m.income)}</td>
-      <td class="amount negative">¥${fmtMoney(m.expense)}</td>
-      <td class="amount ${m.net >= 0 ? 'positive' : 'negative'}">¥${fmtMoney(m.net)}</td>
+      <td class="amount positive">${fmtBaseMoney(m.income)}</td>
+      <td class="amount negative">${fmtBaseMoney(m.expense)}</td>
+      <td class="amount ${m.net >= 0 ? 'positive' : 'negative'}">${fmtBaseMoney(m.net)}</td>
     </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text-2)">暂无数据</td></tr>';
 
   // 功能补充 P5：同比环比 KPI + 对比图
@@ -1104,7 +1119,7 @@ function clearGlobalSearch() {
 function renderQueryResult(r) {
   // KPI 卡
   document.getElementById('queryKpis').innerHTML = r.summary.kpis.map(k => {
-    let val = typeof k.value === 'number' && k.label.includes('笔') ? k.value : '¥' + fmtMoney(k.value);
+    let val = typeof k.value === 'number' && k.label.includes('笔') ? k.value : fmtBaseMoney(k.value);
     return `<div class="kpi-card">
       <div class="kpi-info">
         <span class="kpi-label">${k.label}</span>
@@ -1134,8 +1149,8 @@ function renderQueryResult(r) {
       entry.paid = Number(x.paid_amount) || 0;
       entry.amount = entry.total;
       const parts = [];
-      if (entry.total) parts.push(`进货款 ¥${fmtMoney(entry.total)}`);
-      if (entry.paid) parts.push(`已付 ¥${fmtMoney(entry.paid)}`);
+      if (entry.total) parts.push(`进货款 ${fmtBaseMoney(entry.total)}`);
+      if (entry.paid) parts.push(`已付 ${fmtBaseMoney(entry.paid)}`);
       entry.extra = parts.join(' · ');
       entry.link = ['supplier', x.supplier || ''];
     } else if (queryType === 'expense_category') {
@@ -1185,7 +1200,7 @@ function renderQueryResult(r) {
       ${link}
       ${it.account ? `<span class="tag tag-blue">${escapeHtml(it.account)}</span>` : ''}
       ${it.extra ? `<span class="pair-remark">${it.extra}</span>` : ''}
-      ${it.amount ? `<b class="amount ${it.amount >= 0 ? 'positive' : 'negative'}">${it.amount >= 0 ? '¥' : '-¥'}${fmtMoney(Math.abs(it.amount))}</b>` : ''}
+      ${it.amount ? `<b class="amount ${it.amount >= 0 ? 'positive' : 'negative'}">${fmtBaseMoneySigned(it.amount)}</b>` : ''}
       <span class="pair-actions">${ops}</span>
     </span>`;
   };
@@ -1212,7 +1227,7 @@ function renderQueryResult(r) {
         <button class="action-btn add-btn" onclick="${queryType === 'supplier' ? `openPurchaseModal('${escJs(date)}')` : queryType === 'expense_category' ? `openExpenseModal('${escJs(date)}')` : queryType === 'income_category' ? `openIncomeModal('${escJs(date)}')` : `openQuickModal()`}" title="在此日期下添加记录">＋</button>
       </td>
       <td class="account-details">${list.map(chip).join('')}</td>
-      <td class="amount ${dayTotal >= 0 ? 'positive' : 'negative'}" ondblclick="${dblDay}" title="双击编辑">${dayTotal ? (dayTotal >= 0 ? '¥' : '-¥') + fmtMoney(Math.abs(dayTotal)) : ''}</td>
+      <td class="amount ${dayTotal >= 0 ? 'positive' : 'negative'}" ondblclick="${dblDay}" title="双击编辑">${dayTotal ? fmtBaseMoneySigned(dayTotal) : ''}</td>
     </tr>`;
   }).join('');
 }
@@ -1361,6 +1376,12 @@ async function exportData() {
 }
 
 /* ================== 数据备份（审计 M1 补充） ================== */
+function currentSchemaVersion(DB) {
+  try {
+    const r = DB && DB.exec && DB.exec('PRAGMA user_version');
+    return (r && r[0] && r[0].values && r[0].values[0]) ? Number(r[0].values[0][0]) || 0 : 0;
+  } catch (e) { return 0; }
+}
 async function downloadBackup() {
   const btn = document.querySelector('#page-settings button[onclick="downloadBackup()"]') || document.querySelector('button[onclick="downloadBackup()"]');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 备份中…'; }
@@ -1373,22 +1394,32 @@ async function downloadBackup() {
       try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (e) { /* ignore */ }
       throw new Error(msg);
     }
-    // 触发下载
-    const blob = await res.blob();
-    const cd = res.headers.get('Content-Disposition') || '';
-    const m = cd.match(/filename="?([^";]+)"?/);
-    const filename = m ? m[1] : ('记账备份_' + todayLocal() + '.zip');
+    const raw = new Uint8Array(await res.arrayBuffer());
+    const DB = window.OfflineDB;
+    if (DB && DB.validateDB) {
+      const v = DB.validateDB(raw);
+      if (!v.ok) throw new Error('导出前数据库校验失败: ' + (v.error || '未知错误'));
+    }
+    const BE = window.AppCore && window.AppCore.BackupEnvelope;
+    if (!BE || !BE.create) throw new Error('安全备份模块未加载');
+    const envelope = await BE.create(raw, {
+      app: '飞常明细',
+      created_at: new Date().toISOString(),
+      schema_version: currentSchemaVersion(DB),
+      base_currency: BASE_CURRENCY()
+    });
+    const blob = new Blob([JSON.stringify(envelope)], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename;
+    a.download = '飞常明细_安全备份_' + todayLocal() + '.jzb.json';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     const hint = document.getElementById('backupHint');
-    if (hint) hint.textContent = '✅ 备份已生成并下载：' + filename + '（请妥善保存该备份文件）';
-    showToast('✅ 备份已下载');
+    if (hint) hint.textContent = '✅ 已生成 Backup V2：SQLite 完整性校验 + SHA-256 校验和。请妥善保存。';
+    showToast('✅ 安全备份已下载');
   } catch (e) {
-    showToast(e.message, 'error');
+    showToast((e && e.message) || String(e), 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⬇️ 立即备份并下载'; }
   }
@@ -1471,15 +1502,15 @@ function renderBudgetCard() {
   const spent = m ? m.expense : 0;
   const pct = Math.min(100, Math.round(spent / monthly * 100));
   card.hidden = false;
-  document.getElementById('budgetSpent').textContent = '¥' + fmtMoney(spent);
-  document.getElementById('budgetTotal').textContent = '¥' + fmtMoney(monthly);
+  document.getElementById('budgetSpent').textContent = fmtBaseMoney(spent);
+  document.getElementById('budgetTotal').textContent = fmtBaseMoney(monthly);
   const fill = document.getElementById('budgetFill');
   fill.style.width = pct + '%';
   fill.className = 'budget-fill ' + (pct >= 100 ? 'over' : pct >= 80 ? 'warn' : 'ok');
   const rem = monthly - spent;
   document.getElementById('budgetRem').innerHTML = pct >= 100
-    ? `本月已超支 <b style="color:var(--red)">¥${fmtMoney(-rem)}</b>，注意控制支出`
-    : `还可支出 <b style="color:var(--green)">¥${fmtMoney(rem)}</b> · 已使用 ${pct}%`;
+    ? `本月已超支 <b style="color:var(--red)">${fmtBaseMoney(-rem)}</b>，注意控制支出`
+    : `还可支出 <b style="color:var(--green)">${fmtBaseMoney(rem)}</b> · 已使用 ${pct}%`;
   // 分类预算进度
   const catBox = document.getElementById('catBudgetProgress');
   if (!catBox) return;
@@ -1497,7 +1528,7 @@ function renderBudgetCard() {
       <span class="cat-icon" style="background:${m.color}22;color:${m.color}">${m.icon}</span>
       <span class="cat-budget-name">${escapeHtml(name)}</span>
       <span class="cat-budget-track"><span class="cat-budget-fill ${state}" style="width:${p}%;background:${m.color}"></span></span>
-      <span class="cat-budget-nums">¥${fmtMoney(used)} / ¥${fmtMoney(limit)}</span>
+      <span class="cat-budget-nums">${fmtBaseMoney(used)} / ${fmtBaseMoney(limit)}</span>
       <span class="cat-budget-pct ${state}">${p}%</span>
     </div>`;
   }).join('');
@@ -1526,7 +1557,7 @@ function renderRankCard() {
       <span class="cat-icon" style="background:${m.color}22;color:${m.color}">${m.icon}</span>
       <span class="rank-name"><a class="query-link" onclick="openQuery('expense_category','${escJs(name)}')">${escapeHtml(name)}</a></span>
       <span class="rank-track"><span class="rank-fill" style="width:${pct}%;background:${m.color}"></span></span>
-      <b class="rank-val">¥${fmtMoney(val)}</b>
+      <b class="rank-val">${fmtBaseMoney(val)}</b>
     </div>`;
   }).join('');
 }
@@ -1980,7 +2011,7 @@ async function renderInternalTransfers() {
   const accounts=(options && options.accounts)||[];
   for(const id of ['trFrom','trTo']) { const el=document.getElementById(id); if(el){ const old=el.value; el.innerHTML='<option value="">-- 选择账户 --</option>'+accounts.map(a=>`<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join(''); if(accounts.includes(old)) el.value=old; } }
   const d=document.getElementById('trDate'); if(d && !d.value) d.value=todayLocal();
-  try { const rows=await api('/transfers'); box.innerHTML=rows.length?rows.slice(0,30).map(r=>`<div class="recur-item"><span>🔁 ${fmtDate(r.date)} · ${escapeHtml(r.from_account)} → ${escapeHtml(r.to_account)} · <b>¥${fmtMoney(r.amount)}</b>${r.remark?' · '+escapeHtml(r.remark):''}</span><button class="opt-del" onclick="deleteInternalTransfer(${r.id})">×</button></div>`).join(''):'<div class="opt-empty">暂无内部转账记录</div>'; } catch(e){ box.innerHTML='<div class="opt-empty">转账记录读取失败</div>'; }
+  try { const rows=await api('/transfers'); box.innerHTML=rows.length?rows.slice(0,30).map(r=>`<div class="recur-item"><span>🔁 ${fmtDate(r.date)} · ${escapeHtml(r.from_account)} → ${escapeHtml(r.to_account)} · <b>${fmtBaseMoney(r.amount)}</b>${r.remark?' · '+escapeHtml(r.remark):''}</span><button class="opt-del" onclick="deleteInternalTransfer(${r.id})">×</button></div>`).join(''):'<div class="opt-empty">暂无内部转账记录</div>'; } catch(e){ box.innerHTML='<div class="opt-empty">转账记录读取失败</div>'; }
 }
 async function addInternalTransfer(){ const d={date:document.getElementById('trDate').value,from_account:document.getElementById('trFrom').value,to_account:document.getElementById('trTo').value,amount:document.getElementById('trAmount').value,remark:document.getElementById('trRemark').value,currency:BASE_CURRENCY()}; if(!d.date||!d.from_account||!d.to_account||d.from_account===d.to_account||!(Number(d.amount)>0)) return showToast('请选择不同的转出/转入账户并填写金额','error'); try{await api('/transfers','POST',d); document.getElementById('trAmount').value='';document.getElementById('trRemark').value='';showToast('内部转账已记录，不计收入/支出');await renderInternalTransfers();refreshDashboards();}catch(e){showToast(e.message||'转账失败','error')}}
 async function deleteInternalTransfer(id){ if(!confirm('删除这条内部转账记录？\n删除后会进入回收站，可以恢复。'))return; const r=await api('/transfers/'+id,'DELETE'); if(r&&r.trashId&&typeof showLedgerUndo==='function') showLedgerUndo(r.trashId,'内部转账'); renderInternalTransfers(); refreshDashboards(); }
@@ -2005,7 +2036,7 @@ function renderRecurList() {
     <div class="recur-item">
       <span class="cat-icon" style="background:${m.color}22;color:${m.color}">${m.icon}</span>
       <span class="recur-name"><b>${escapeHtml(r.category || '未填')}</b> <span class="recur-type ${r.type}">${typeTxt}</span>${r.enabled===false?' <span class="tag">⏸ 已暂停</span>':''}</span>
-      <span class="recur-amount">¥${fmtMoney(r.amount)}</span>
+      <span class="recur-amount">${fmtBaseMoney(r.amount)}</span>
       <span class="recur-meta">${escapeHtml(r.account || '')} · ${cycleTxt} · 提前${Number(r.lead_days)||0}天提醒${r.remark ? ' · ' + escapeHtml(r.remark) : ''}</span>
       <span class="recur-actions">
         <button class="action-btn" onclick="toggleRecurring(${i})" title="${r.enabled===false?'启用':'暂停'}">${r.enabled===false?'▶️':'⏸️'}</button>
@@ -3146,7 +3177,7 @@ async function initAfterLogin() {
       const ocrPlan = window.AIKit.ocrPlan(cap);
       const wbHint = document.getElementById('wbLocalOcrBtn');
       // V5 §75 文案修正：本地链路为 Paddle → Tesseract；服务器提取是独立功能，不宣称自动回退
-      if (wbHint) wbHint.title = '本地识别：' + ocrPlan.reason + '（Paddle → Tesseract，本地；服务器提取为独立功能）';
+      if (wbHint) wbHint.title = '设备端识别：' + ocrPlan.reason + '（Paddle → Tesseract，本地；服务器提取为独立功能）';
     }).catch(() => {});
   }
   // 语音提醒：加载列表 + 启动到期检测
@@ -3231,6 +3262,7 @@ const BackupV2 = {
     const prevSafeMode = (() => { try { return localStorage.getItem('db_safe_mode'); } catch (e) { return null; } })();
     try {
       if (!DB || !DB.exportDB || !DB.importDB) throw new Error('离线数据库模块不可用');
+      if (file.size > 128 * 1024 * 1024) throw new Error('备份文件超过 128MB 安全上限，请先确认文件来源');
       const buf = await file.arrayBuffer();
       const bytes = new Uint8Array(buf);
       let meta = null, payload = bytes;
@@ -3238,14 +3270,11 @@ const BackupV2 = {
       const head = new TextDecoder().decode(bytes.slice(0, Math.min(bytes.length, 2000))).trim();
       if (head.startsWith('{')) {
         const full = JSON.parse(new TextDecoder().decode(bytes));
-        if (!full || !full.metadata || !full.data) throw new Error('备份 JSON 结构无效');
-        const canonical = JSON.stringify(full.data);
-        const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
-        const hex = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
-        if (full.checksum && hex !== full.checksum) throw new Error('备份文件校验和不匹配（可能损坏）');
-        meta = full.metadata;
-        const bin = atob(full.data); payload = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) payload[i] = bin.charCodeAt(i);
+        const BE = window.AppCore && window.AppCore.BackupEnvelope;
+        if (!BE || !BE.decode) throw new Error('安全备份模块未加载');
+        const decoded = await BE.decode(full);
+        meta = decoded.metadata;
+        payload = decoded.bytes;
       }
       const validation = DB.validateDB ? DB.validateDB(payload) : { ok: true };
       if (!validation.ok) throw new Error(validation.error || '备份数据库完整性检查失败');
@@ -3256,14 +3285,14 @@ const BackupV2 = {
       if (DM && DM.migrate) { const r = DM.migrate(DB); if (!r.ok) throw new Error('恢复后数据库迁移失败: ' + r.error); }
       const DH = window.AppCore && window.AppCore.DbHealth;
       if (DH) { const ic = DH.integrityCheck(DB), hc = DH.check(DB); if (!ic.ok || hc.status === 'error') throw new Error('恢复后数据库健康检查失败'); }
-      if (DB.flush) DB.flush();
+      if (DB.flush) await DB.flush(true);
       if (DB.clearRecoverySnapshot) await DB.clearRecoverySnapshot();
       showToast('✅ 备份已安全恢复' + (meta ? '（' + (meta.version || meta.app || '') + '）' : ''));
       setTimeout(() => location.reload(), 1200);
     } catch (e) {
       if (imported && currentSnapshot && DB && DB.importDB) {
         try {
-          DB.importDB(currentSnapshot); if (DB.flush) DB.flush();
+          DB.importDB(currentSnapshot); if (DB.flush) await DB.flush(true);
           try {
             if (prevMigrationFailure == null) localStorage.removeItem('db_migration_failure'); else localStorage.setItem('db_migration_failure', prevMigrationFailure);
             if (prevSafeMode == null) localStorage.removeItem('db_safe_mode'); else localStorage.setItem('db_safe_mode', prevSafeMode);
@@ -3274,7 +3303,7 @@ const BackupV2 = {
           let recovered = false;
           try {
             const diskSnapshot = DB.loadRecoverySnapshot ? await DB.loadRecoverySnapshot() : null;
-            if (diskSnapshot && diskSnapshot.length) { DB.importDB(diskSnapshot); if (DB.flush) DB.flush(); recovered = true; }
+            if (diskSnapshot && diskSnapshot.length) { DB.importDB(diskSnapshot); if (DB.flush) await DB.flush(true); recovered = true; }
           } catch (diskErr) { console.error('[backup disk recovery]', diskErr); }
           showToast(recovered ? '恢复失败，已从安全快照恢复原数据' : '⚠️ 恢复失败且自动回滚失败，请停止记账并使用最近下载备份', 'error');
           console.error('[backup rollback]', rollbackError);
@@ -3300,7 +3329,7 @@ const LedgerTrash = {
           ? `${x.from_account || '-'} → ${x.to_account || '-'}`
           : (x.project || x.category || x.supplier || x.payee || '');
         const amount = x.amount != null ? x.amount : x.total_amount;
-        return `<tr><td>${escapeHtml(type)}</td><td>${escapeHtml(date)}</td><td>${escapeHtml(party)}</td><td class="amount">¥${fmtMoney(amount || 0)}</td><td>${escapeHtml(r.deleted_by || '本机')}</td><td>${escapeHtml(r.deleted_at || '')}</td><td><button class="btn-small" onclick="LedgerTrash.restore(${r.id})">↩️ 恢复</button> <button class="btn-small" onclick="LedgerTrash.purge(${r.id})">永久删除</button></td></tr>`;
+        return `<tr><td>${escapeHtml(type)}</td><td>${escapeHtml(date)}</td><td>${escapeHtml(party)}</td><td class="amount">${fmtBaseMoney(amount || 0)}</td><td>${escapeHtml(r.deleted_by || '本机')}</td><td>${escapeHtml(r.deleted_at || '')}</td><td><button class="btn-small" onclick="LedgerTrash.restore(${r.id})">↩️ 恢复</button> <button class="btn-small" onclick="LedgerTrash.purge(${r.id})">永久删除</button></td></tr>`;
       }).join('');
     } catch (e) { showToast('回收站加载失败: ' + (e.message || e), 'error'); }
   },

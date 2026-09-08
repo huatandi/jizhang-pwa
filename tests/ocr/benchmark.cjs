@@ -129,6 +129,23 @@ function evaluateFixture(fixture, result) {
   };
 }
 
+
+/** Release truth gate: real-result coverage must be complete, amount exact must be 100%, critical financial errors must be zero. */
+function gateResults(fixtures, resultsByFixtureId) {
+  const evals = [];
+  const pending = [];
+  for (const fx of fixtures || []) {
+    const r = resultsByFixtureId[fx.id];
+    if (!r) { pending.push(fx.id); continue; }
+    evals.push(evaluateFixture(fx, r));
+  }
+  const amountEval = evals.filter(e => e.amountExact != null);
+  const amountMisses = amountEval.filter(e => !e.amountExact).map(e => e.fixtureId);
+  const criticalErrors = evals.filter(e => e.amountCritical).map(e => e.fixtureId);
+  const ok = pending.length === 0 && amountMisses.length === 0 && criticalErrors.length === 0 && evals.length > 0;
+  return { ok, evaluated: evals.length, pending, amountMisses, criticalErrors };
+}
+
 /** 汇总报告字符串 */
 function renderReport(fixtures, resultsByFixtureId) {
   const evals = [];
@@ -231,12 +248,17 @@ function main(argv) {
   }
   const results = argv.includes('--demo') ? demoResults() : loadResults();
   console.log(renderReport(fixtures, results));
+  if (argv.includes('--gate')) {
+    const g = gateResults(fixtures, results);
+    console.log(`OCR RELEASE GATE: ${g.ok ? 'PASS' : 'FAIL'} | evaluated=${g.evaluated} pending=${g.pending.length} amountMisses=${g.amountMisses.length} criticalErrors=${g.criticalErrors.length}`);
+    if (!g.ok) process.exitCode = 1;
+  }
 }
 
 if (require.main === module) main(process.argv.slice(2));
 
 module.exports = {
   normalizeAmount, amountExact, isCriticalAmountError, dateExact, textExact,
-  evaluateFixture, renderReport, FIELD_COMPARATORS,
+  evaluateFixture, gateResults, renderReport, FIELD_COMPARATORS,
   loadManifest, loadResults, main,
 };

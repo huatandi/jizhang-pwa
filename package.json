@@ -7,7 +7,8 @@
   "scripts": {
     "build": "node build/build-version.js",
     "verify": "node build/verify-build.js",
-    "test": "node tests/run-all.cjs"
+    "test": "node tests/run-all.cjs",
+    "test:network": "node _test_fx.cjs"
   },
   "engines": {
     "node": ">=18"

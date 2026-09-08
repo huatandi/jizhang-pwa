@@ -54,7 +54,7 @@ const cases = [
 ];
 
 // ===== 5 层统计 =====
-let asrOk = 0, textOk = 0, parseOk = 0, fieldOk = 0, finalOk = 0;
+let asrOk = 0, textOk = 0, parseOk = 0, fieldOk = 0, finalOk = 0, finalEligible = 0;
 const fieldHits = { amount: { ok: 0, total: 0 }, date: { ok: 0, total: 0 }, kind: { ok: 0, total: 0 }, category: { ok: 0, total: 0 }, account: { ok: 0, total: 0 } };
 let pass = 0, fail = 0;
 const failed = [];
@@ -95,8 +95,13 @@ for (const c of cases) {
   if (allOk) { fieldOk++; pass++; }
   else { fail++; failed.push({ name: c.name, checks, parsed }); }
 
-  // ⑤ 记账层：金额 + 分类 齐全
-  if (parsed.amount != null && parsed.category != null) finalOk++;
+  // ⑤ 最终记账门禁只统计明确的记账意图。日期/提醒隔离用例不是记账交易，不能混入分母。
+  const accountingIntent = c.expect.kind !== undefined || c.expect.category !== undefined || c.expect.account !== undefined;
+  if (accountingIntent) {
+    finalEligible++;
+    const finalChecks = checks.filter(ch => ['amount','kind','category','account'].includes(ch.f));
+    if (parsed.amount != null && finalChecks.length > 0 && finalChecks.every(ch => ch.ok)) finalOk++;
+  }
 }
 
 const total = cases.length;
@@ -106,7 +111,7 @@ console.log(`① ASR 成功率        : ${asrOk}/${total}`);
 console.log(`② 文本正确率        : ${total}/${total}（模拟输入即正确）`);
 console.log(`③ 解析成功率        : ${parseOk}/${total}`);
 console.log(`④ 字段正确率        : ${fieldOk}/${total}`);
-console.log(`⑤ 最终记账正确率    : ${finalOk}/${total}`);
+console.log(`⑤ 最终记账正确率    : ${finalOk}/${finalEligible}（仅明确记账意图；提醒/日期隔离用例不计入分母）`);
 console.log('── 逐字段命中 ──');
 for (const [f, v] of Object.entries(fieldHits)) console.log(`   ${f}: ${v.ok}/${v.total}`);
 console.log('── 结果 ──');

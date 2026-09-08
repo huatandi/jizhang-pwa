@@ -79,6 +79,18 @@
       if (Cache) Cache.putWeather(data);
       _lastData = data;
       _lastEvents = newEvents;
+      // 4.5) 向表现层广播抽象天气上下文；不携带位置、原始预报或用户数据。
+      try {
+        if (global.SmAppEvents) {
+          const cur = data && data.current || {};
+          const kind = newEvents.some(e => e.type === 'rain') ? 'rain'
+            : newEvents.some(e => e.type === 'wind') ? 'wind'
+            : Number(cur.apparentTemperature) >= 34 ? 'hot'
+            : Number(cur.apparentTemperature) <= 10 ? 'cold'
+            : Number(cur.weatherCode) <= 3 ? 'clear' : 'neutral';
+          global.SmAppEvents.emit('weather:context', { kind });
+        }
+      } catch (_) {}
       // 5) 提醒评估
       const rem = global.WeatherKit.WeatherReminderEngine;
       if (rem) {

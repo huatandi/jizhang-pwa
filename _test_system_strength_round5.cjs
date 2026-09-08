@@ -1,0 +1,8 @@
+const fs=require('fs');let n=0;function ok(x,m){if(!x)throw new Error(m);n++}
+const idx=fs.readFileSync('index.html','utf8'), sw=fs.readFileSync('sw.js','utf8'), boot=fs.readFileSync('js/boot.js','utf8');
+const off=fs.readFileSync('js/core/ocr-offline-readiness.js','utf8'), rec=fs.readFileSync('js/core/startup-recovery.js','utf8'), diag=fs.readFileSync('js/core/system-diagnostics.js','utf8');
+ok(idx.includes('ocr-offline-readiness.js'),'offline audit loaded');ok(idx.includes('startup-recovery.js'),'recovery loaded');ok(sw.includes("./js/core/ocr-offline-readiness.js"),'offline audit cached');ok(sw.includes("./js/core/startup-recovery.js"),'recovery cached');
+ok(off.includes('remoteImports'),'remote import audit');ok(off.includes('fullyOffline'),'truth state');ok(off.includes('localConfigured'),'model local state');ok(off.includes('Paddle 模型尚未形成显式本地模型闭环'),'no false offline claim');
+ok(rec.includes('automaticRestore:false'),'never auto restore');ok(rec.includes('OPEN_DIAGNOSTICS'),'failed DB routes diagnostics');ok(rec.includes('CONTINUE_SAFE'),'healthy DB can continue');ok(boot.includes('StartupRecovery'),'boot integrated');
+ok(diag.includes('ocrOffline'),'diagnostics OCR state');ok(diag.includes('startupRecovery'),'diagnostics recovery state');ok(/VERSION:[23]/.test(diag),'diagnostics version');ok(fs.readFileSync('js/app.js','utf8').includes('设备端识别：'),'truthful device wording');
+console.log('System Strength Round5:',n+'/16 PASS');

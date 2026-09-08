@@ -2,7 +2,7 @@
 const fs=require('fs'),assert=require('assert'),path=require('path'),R=__dirname;
 const read=p=>fs.readFileSync(path.join(R,p),'utf8');let n=0;const ok=(x,m)=>{assert(x,m);console.log('PASS',m);n++};
 const bus=read('js/personalization/app-event-bus.js'),dir=read('js/personalization/pet-director.js'),ledger=read('js/ledger-crud.js'),rem=read('js/voice/reminders.js'),ocr=read('js/ocr/ocr-manager.js'),asr=read('js/asr/asr-manager.js'),sw=read('sw.js');
-ok(/VERSION:2/.test(bus)&&/bindConnectivity/.test(bus),'Event Bus V2 监听在线/离线');
+ok(/VERSION:[23]/.test(bus)&&/bindConnectivity/.test(bus),'Event Bus V2+ 监听在线/离线');
 ok(/delete safe\.amount/.test(bus)&&/delete safe\.account/.test(bus)&&/delete safe\.photo/.test(bus),'事件总线继续过滤敏感字段');
 ok((ledger.match(/emit\('ledger:saved'/g)||[]).length>=2,'收入/支出成功保存生产 ledger:saved');
 ok(/emit\('reminder:due'/.test(rem),'到期提醒生产 reminder:due');

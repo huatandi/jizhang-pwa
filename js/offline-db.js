@@ -25,16 +25,22 @@
       req.onerror = () => reject(req.error);
     });
   }
-  async function idbSave(key, data) {
+  async function idbSave(key, data, strict = false) {
     try {
       const idb = await idbOpen();
-      return new Promise((resolve, reject) => {
+      await new Promise((resolve, reject) => {
         const tx = idb.transaction(STORE, 'readwrite');
         tx.objectStore(STORE).put(data, key);
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error || new Error('IndexedDB 写入失败'));
+        tx.onabort = () => reject(tx.error || new Error('IndexedDB 写入被中止'));
       });
-    } catch (e) { /* IndexedDB 不可用时静默 */ }
+      return true;
+    } catch (e) {
+      if (strict) throw e;
+      console.warn('[db] IndexedDB 保存失败:', e);
+      return false;
+    }
   }
   async function idbLoad(key) {
     try {
@@ -232,18 +238,22 @@ CREATE INDEX IF NOT EXISTS idx_ledger_trash_mode_deleted ON ledger_trash(mode, d
   }
 
   // 立即落盘（页面隐藏/关闭前 flush，避免防抖窗口内数据丢失）
-  function flush() {
-    if (!db) return;
+  async function flush(strict = false) {
+    if (!db) return false;
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     try {
       const data = db.export();
-      idbSave(DB_KEY, data);
-    } catch (e) { console.warn('[db] flush 保存失败:', e); }
+      return await idbSave(DB_KEY, data, strict);
+    } catch (e) {
+      if (strict) throw e;
+      console.warn('[db] flush 保存失败:', e);
+      return false;
+    }
   }
   // PWA 切后台/关闭前立即写 IndexedDB（审计修复：防抖 200ms 窗口内丢失最后操作）
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
-    window.addEventListener('pagehide', flush);
+    window.addEventListener('pagehide', () => { void flush(false); });
   }
 
   // ---------- node:sqlite 兼容的 prepare 接口 ----------
@@ -344,7 +354,7 @@ CREATE INDEX IF NOT EXISTS idx_ledger_trash_mode_deleted ON ledger_trash(mode, d
 
   async function saveRecoverySnapshot(data) {
     if (!data) return false;
-    await idbSave('pre_restore_recovery', new Uint8Array(data));
+    await idbSave('pre_restore_recovery', new Uint8Array(data), true);
     return true;
   }
   async function loadRecoverySnapshot() { return await idbLoad('pre_restore_recovery'); }

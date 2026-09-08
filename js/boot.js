@@ -6,6 +6,7 @@
  * PWA 修复：加启动画面（防黑屏）+ 超时容错（加载超时则继续，避免卡死）。
  */
 (function () {
+  try { if (window.AppCore && window.AppCore.SystemDiagnostics) window.AppCore.SystemDiagnostics.beginBoot(); } catch (_) {}
   // 启动画面：防黑屏（用户能看到"正在加载"）
   function showSplash() {
     try {
@@ -46,12 +47,18 @@
         window.OfflineDB.openDB(),
         new Promise((_, rej) => setTimeout(() => rej(new Error('数据库加载超时')), 10000)),
       ]);
+      // 1b. 若上一次启动疑似中断，只做非破坏性健康评估；绝不自动恢复/覆盖账本。
+      try { const R=window.AppCore&&window.AppCore.StartupRecovery; if(R&&R.assess) await R.assess(); } catch(e){ console.warn('[boot] 异常启动评估失败:',e); }
       // 2. 安装伪后端（劫持 fetch）
       await window.OfflineBackend.installOfflineBackend();
       offlineReady = true;
       // 3. 注册 Service Worker（离线缓存）
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[pwa] SW 注册失败:', e));
+        const updater = window.AppCore && window.AppCore.SafeUpdateManager;
+        const registerPromise = updater && updater.register
+          ? updater.register('sw.js')
+          : navigator.serviceWorker.register('sw.js');
+        Promise.resolve(registerPromise).catch((e) => console.warn('[pwa] SW 注册失败:', e));
       }
     } catch (e) {
       console.error('[boot] 离线初始化失败（进入联网模式）:', e);
@@ -59,12 +66,13 @@
     }
     // 4. 加载主应用
     const s = document.createElement('script');
-    s.src = 'js/app.js?v=562261c2';
-    s.onload = () => hideSplash();
+    s.src = 'js/app.js?v=59cce080';
+    s.onload = () => { hideSplash(); try { if (window.AppCore && window.AppCore.SystemDiagnostics) window.AppCore.SystemDiagnostics.markReady(); } catch (_) {} try { const r=window.AppCore&&window.AppCore.StartupRecovery&&window.AppCore.StartupRecovery.read?window.AppCore.StartupRecovery.read():null; if(r&&r.action==='RESUME_UNFINISHED_WORK'&&typeof window.showToast==='function') window.showToast('检测到未保存的记账内容，可在「系统自检」中恢复继续填写。'); } catch(_) {} };
     s.onerror = () => { hideSplash(); console.error('[boot] app.js 加载失败'); };
     document.body.appendChild(s);
     // 兜底：10 秒后隐藏启动画面（防止加载卡住黑屏）
     setTimeout(hideSplash, 10000);
   }
+  try { window.addEventListener('pagehide', () => { try { if (window.AppCore && window.AppCore.SystemDiagnostics) window.AppCore.SystemDiagnostics.markClosed(); } catch (_) {} }, {capture:true}); } catch (_) {}
   boot();
 })();

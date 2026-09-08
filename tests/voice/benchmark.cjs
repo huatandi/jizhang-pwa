@@ -127,6 +127,23 @@ function evaluateFixture(fixture, result) {
   };
 }
 
+
+/** Release truth gate: complete real coverage, zero false-commit, and 100% exact for amount + intent where evaluated. */
+function gateResults(fixtures, resultsByFixtureId) {
+  const evals = [];
+  const pending = [];
+  for (const fx of fixtures || []) {
+    const r = resultsByFixtureId[fx.id];
+    if (!r) { pending.push(fx.id); continue; }
+    evals.push(evaluateFixture(fx, r));
+  }
+  const amountMisses = evals.filter(e => e.amountExact === false).map(e => e.fixtureId);
+  const intentMisses = evals.filter(e => e.intentExact === false).map(e => e.fixtureId);
+  const falseCommits = evals.filter(e => e.falseCommit).map(e => e.fixtureId);
+  const ok = pending.length === 0 && amountMisses.length === 0 && intentMisses.length === 0 && falseCommits.length === 0 && evals.length > 0;
+  return { ok, evaluated: evals.length, pending, amountMisses, intentMisses, falseCommits };
+}
+
 /** 汇总报告字符串 */
 function renderReport(fixtures, resultsByFixtureId) {
   const evals = [];
@@ -273,12 +290,17 @@ function main(argv) {
   }
   const results = argv.includes('--demo') ? demoResults() : loadResults();
   console.log(renderReport(fixtures, results));
+  if (argv.includes('--gate')) {
+    const g = gateResults(fixtures, results);
+    console.log(`VOICE RELEASE GATE: ${g.ok ? 'PASS' : 'FAIL'} | evaluated=${g.evaluated} pending=${g.pending.length} amountMisses=${g.amountMisses.length} intentMisses=${g.intentMisses.length} falseCommits=${g.falseCommits.length}`);
+    if (!g.ok) process.exitCode = 1;
+  }
 }
 
 if (require.main === module) main(process.argv.slice(2));
 
 module.exports = {
   normalizeAmount, amountExact, dateExact, textExact, entityExact,
-  evaluateFixture, renderReport,
+  evaluateFixture, gateResults, renderReport,
   loadManifest, loadResults, main,
 };

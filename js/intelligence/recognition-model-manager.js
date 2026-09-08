@@ -1,6 +1,6 @@
 'use strict';
 /**
- * RecognitionModelManager V1
+ * RecognitionModelManager V2
  * Product-facing local model delivery orchestrator.
  * - No silent large downloads.
  * - Same-origin manifest only.
@@ -24,6 +24,7 @@
       const r=global.RECOGNITION_RELEASE_MODELS||{};
       if(slot==='sherpa_zh' && r.sherpaZh && r.sherpaZh.manifest) return String(r.sherpaZh.manifest);
       if(slot==='neural_vad' && r.neuralVad && r.neuralVad.manifest) return String(r.neuralVad.manifest);
+      if(slot==='paddle_ocr' && r.paddleOcr && r.paddleOcr.manifest) return String(r.paddleOcr.manifest);
     }catch(e){}
     return '';
   }
@@ -54,7 +55,8 @@
     try{if(navigator.storage&&navigator.storage.persisted)persistent=await navigator.storage.persisted();}catch(e){}
     let tenVad=null;
     try{if(global.TenVadRuntimeInstaller)tenVad=await global.TenVadRuntimeInstaller.status(false);}catch(e){}
-    return {advice,sherpa:meta,tenVad,persistent,manifest:getManifest('sherpa_zh')};
+    let paddleOcr=null;try{const os=global.OcrKit&&global.OcrKit.ocrModelStore;paddleOcr=os&&os.state?os.state():null;}catch(e){}
+    return {advice,sherpa:meta,tenVad,paddleOcr,persistent,manifest:getManifest('sherpa_zh'),ocrManifest:getManifest('paddle_ocr')};
   }
 
   async function inspectSherpa(url){
@@ -117,6 +119,17 @@
     }catch(e){return {installed:false,ready:false,error:String(e&&e.message||e)};}
   }
 
+
+  async function inspectOcr(url){
+    const store=global.OcrKit&&global.OcrKit.ocrModelStore;if(!store)throw new Error('OCR_MODEL_STORE_UNAVAILABLE');
+    const m=await store.loadManifest(url);const pf=await store.preflight(m);return {manifest:m,preflight:pf};
+  }
+  async function installOcr(url,onProgress){
+    const store=global.OcrKit&&global.OcrKit.ocrModelStore;if(!store)throw new Error('OCR_MODEL_STORE_UNAVAILABLE');if(activeInstall)throw new Error('MODEL_INSTALL_ALREADY_RUNNING');
+    const ac=new AbortController();activeInstall={slot:'paddle_ocr',controller:ac};try{const m=await store.loadManifest(url,{signal:ac.signal});const r=await store.install(m,onProgress,{signal:ac.signal,manifestUrl:url});setManifest('paddle_ocr',url);return r;}finally{activeInstall=null;}
+  }
+  async function removeOcr(){const store=global.OcrKit&&global.OcrKit.ocrModelStore;if(!store)return false;const st=store.state();if(st.activeId)await store.remove(st.activeId);return true;}
+  async function ocrHealth(){const store=global.OcrKit&&global.OcrKit.ocrModelStore;if(!store)return {ok:false,reason:'OCR_MODEL_STORE_UNAVAILABLE'};const url=getManifest('paddle_ocr');if(!url)return {ok:false,reason:'OCR_MODEL_MANIFEST_NOT_CONFIGURED'};try{return await store.health(url)}catch(e){return {ok:false,reason:String(e&&e.message||e)}}}
   async function runtimeReadiness(){
     let sherpaProvider=false, neuralVad=false;
     try{
@@ -128,6 +141,6 @@
     return {sherpaProvider,neuralVad};
   }
 
-  global.RecognitionModelManager={VERSION:1,CFG_KEY,cfg,setManifest,getManifest,deviceAdvice,status,inspectSherpa,
-    installSherpa,cancelInstall,removeSherpa,installTenVad,removeTenVad,tenVadHealth,runtimeReadiness};
+  global.RecognitionModelManager={VERSION:2,CFG_KEY,cfg,setManifest,getManifest,deviceAdvice,status,inspectSherpa,
+    installSherpa,cancelInstall,removeSherpa,installTenVad,removeTenVad,tenVadHealth,inspectOcr,installOcr,removeOcr,ocrHealth,runtimeReadiness};
 })(typeof window!=='undefined'?window:globalThis);

@@ -43,9 +43,15 @@
   <script src="js/core/feature-flags.js?v=8640bf60"></script>
   <script src="js/core/capability.js?v=574248a9"></script>
   <script src="js/core/diagnostics.js?v=cfa84bc1"></script>
+  <script src="js/core/work-session-guardian.js"></script>
+  <script src="js/core/system-diagnostics.js?v=161568b7"></script>
+  <script src="js/core/ocr-offline-readiness.js?v=983852a6"></script>
+  <script src="js/core/startup-recovery.js?v=b5bb5146"></script>
+  <script src="js/core/safe-update-manager.js?v=07072761"></script>
+  <script src="js/core/backup-envelope.js?v=da5c8d1e"></script>
   <script src="js/core/runtime-asset-manager.js?v=c5a7794d"></script>
   <script src="js/core/model-source-router.js?v=478632cc"></script>
-  <script src="js/config/recognition-models.js?v=9139e75d"></script>
+  <script src="js/config/recognition-models.js?v=5d5b75ae"></script>
   <script src="js/core/app-services.js?v=ef71b3a5"></script>
   <!-- DB 基础设施（V3.0 Phase0D）：迁移框架 + 健康检查（先于 offline-db 加载） -->
   <script src="js/db/migrations.js?v=2fb2d721"></script>
@@ -286,7 +292,7 @@
         <div class="budget-card" id="budgetCard" hidden>
           <div class="budget-head">
             <span class="budget-title">🎯 本月支出预算</span>
-            <span class="budget-nums"><b id="budgetSpent">¥0.00</b> / <span id="budgetTotal">¥0.00</span></span>
+            <span class="budget-nums"><b id="budgetSpent">—</b> / <span id="budgetTotal">—</span></span>
           </div>
           <div class="budget-track"><div class="budget-fill" id="budgetFill"></div></div>
           <div class="budget-rem" id="budgetRem"></div>
@@ -766,7 +772,7 @@
       <section class="page" id="page-settings">
         <header class="page-header">
           <h2>⚙️ 设置</h2>
-          <button class="btn-theme-toggle" id="themeToggle" type="button" title="切换主题（秋色 / 暗色）">
+          <button class="btn-theme-toggle" id="themeToggle" type="button" title="切换主题（深色 / 浅色 / 秋色 / 春夏）">
             <span class="tt-dot"></span>
             <span class="tt-label">🍂 秋色</span>
           </button>
@@ -818,20 +824,20 @@
           <div class="fn-group">
             <div class="fn-group-title">🍂 快捷功能</div>
             <div class="fn-grid">
-              <div class="fn-card" onclick="gotoPage('dashboard')"><span class="fn-icon" style="background:linear-gradient(135deg,#f59e0b,#f97316)">📊</span><span class="fn-name">数据总览</span></div>
-              <div class="fn-card" onclick="gotoPage('income')"><span class="fn-icon" style="background:linear-gradient(135deg,#22c55e,#16a34a)">💰</span><span class="fn-name">收入记账</span></div>
-              <div class="fn-card" onclick="gotoPage('expense')"><span class="fn-icon" style="background:linear-gradient(135deg,#ef4444,#dc2626)">💸</span><span class="fn-name">支出记账</span></div>
-              <div class="fn-card" onclick="gotoPage('purchase')"><span class="fn-icon" style="background:linear-gradient(135deg,#3b82f6,#2563eb)">📦</span><span class="fn-name">进货台账</span></div>
-              <div class="fn-card" onclick="gotoPage('monthly')"><span class="fn-icon" style="background:linear-gradient(135deg,#a855f7,#7c3aed)">📅</span><span class="fn-name">月度统计</span></div>
-              <div class="fn-card" onclick="gotoPage('query')"><span class="fn-icon" style="background:linear-gradient(135deg,#14b8a6,#0d9488)">🔍</span><span class="fn-name">明细查询</span></div>
-              <div class="fn-card" onclick="gotoPage('scan')"><span class="fn-icon" style="background:linear-gradient(135deg,#06b6d4,#0891b2)">📷</span><span class="fn-name">扫描识别</span></div>
-              <div class="fn-card" onclick="gotoPage('quick')"><span class="fn-icon" style="background:linear-gradient(135deg,#ec4899,#db2777)">⚡</span><span class="fn-name">快速记账</span></div>
-              <div class="fn-card" onclick="gotoPage('reminder')"><span class="fn-icon" style="background:linear-gradient(135deg,#f97316,#ea580c)">⏰</span><span class="fn-name">语音提醒</span></div>
-              <div class="fn-card" onclick="gotoPage('settings')"><span class="fn-icon" style="background:linear-gradient(135deg,#64748b,#475569)">⚙️</span><span class="fn-name">设置</span></div>
+              <div class="fn-card fn-dashboard" data-page="dashboard" onclick="gotoPage('dashboard')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">数据总览</span></div>
+              <div class="fn-card fn-income" data-page="income" onclick="gotoPage('income')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">收入记账</span></div>
+              <div class="fn-card fn-expense" data-page="expense" onclick="gotoPage('expense')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">支出记账</span></div>
+              <div class="fn-card fn-purchase" data-page="purchase" onclick="gotoPage('purchase')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">进货台账</span></div>
+              <div class="fn-card fn-monthly" data-page="monthly" onclick="gotoPage('monthly')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">月度统计</span></div>
+              <div class="fn-card fn-query" data-page="query" onclick="gotoPage('query')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">明细查询</span></div>
+              <div class="fn-card fn-scan" data-page="scan" onclick="gotoPage('scan')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">扫描识别</span></div>
+              <div class="fn-card fn-quick" data-page="quick" onclick="gotoPage('quick')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">快速记账</span></div>
+              <div class="fn-card fn-reminder" data-page="reminder" onclick="gotoPage('reminder')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">语音提醒</span></div>
+              <div class="fn-card fn-settings" data-page="settings" onclick="gotoPage('settings')"><span class="fn-icon" aria-hidden="true"></span><span class="fn-name">设置</span></div>
             </div>
           </div>
 
-          <div class="settings-section" id="personalizationSettings"><div class="settings-title">🎨 个性化 <span class="settings-sub">主题、图标和萌宠完全独立，可自由搭配</span></div><div class="personalization-grid"><div><b>主题</b><div class="choice-row"><button class="choice-chip" data-theme-choice="dark">🌙 深色</button><button class="choice-chip" data-theme-choice="light">☀️ 浅色</button><button class="choice-chip" data-theme-choice="autumn">🍂 秋色</button><button class="choice-chip" data-theme-choice="spring-summer">🌿 春夏</button></div></div><div><b>图标风格</b><div class="choice-row"><button class="choice-chip" data-icon-pack-choice="standard">标准</button><button class="choice-chip" data-icon-pack-choice="cartoon">卡通</button><button class="choice-chip" data-icon-pack-choice="chinese">中国风</button><button class="choice-chip" data-icon-pack-choice="tech">科技</button><button class="choice-chip" data-icon-pack-choice="punk">朋克</button><button class="choice-chip" data-icon-pack-choice="future">未来</button></div></div><div class="pet-studio-card"><div class="pet-studio-copy"><b>🐾 萌宠中心 · 视觉升级预览</b><span>正式方向：统一 3D 萌系十二生肖；当前运行宠物仍保留轻量模式，高清动作资源将走独立 Pet Pack。</span></div><img src="assets/pets/zodiac-studio-preview.png" alt="十二生肖萌宠中心视觉预览"></div><div><b>十二生肖萌宠</b> <label><input id="petEnabled" type="checkbox" checked> 开启</label> <select id="petActivity"><option value="quiet">安静</option><option value="normal">正常</option><option value="active">活泼</option></select><div class="choice-row"><button class="choice-chip pet-choice" data-pet-choice="rat"><img src="assets/pets/zodiac/rat.png" alt="鼠"><small>鼠</small></button><button class="choice-chip pet-choice" data-pet-choice="ox"><img src="assets/pets/zodiac/ox.png" alt="牛"><small>牛</small></button><button class="choice-chip pet-choice" data-pet-choice="tiger"><img src="assets/pets/zodiac/tiger.png" alt="虎"><small>虎</small></button><button class="choice-chip pet-choice" data-pet-choice="rabbit"><img src="assets/pets/zodiac/rabbit.png" alt="兔"><small>兔</small></button><button class="choice-chip pet-choice" data-pet-choice="dragon"><img src="assets/pets/zodiac/dragon.png" alt="龙"><small>龙</small></button><button class="choice-chip pet-choice" data-pet-choice="snake"><img src="assets/pets/zodiac/snake.png" alt="蛇"><small>蛇</small></button><button class="choice-chip pet-choice" data-pet-choice="horse"><img src="assets/pets/zodiac/horse.png" alt="马"><small>马</small></button><button class="choice-chip pet-choice" data-pet-choice="goat"><img src="assets/pets/zodiac/goat.png" alt="羊"><small>羊</small></button><button class="choice-chip pet-choice" data-pet-choice="monkey"><img src="assets/pets/zodiac/monkey.png" alt="猴"><small>猴</small></button><button class="choice-chip pet-choice" data-pet-choice="rooster"><img src="assets/pets/zodiac/rooster.png" alt="鸡"><small>鸡</small></button><button class="choice-chip pet-choice" data-pet-choice="dog"><img src="assets/pets/zodiac/dog.png" alt="狗"><small>狗</small></button><button class="choice-chip pet-choice" data-pet-choice="pig"><img src="assets/pets/zodiac/pig.png" alt="猪"><small>猪</small></button></div><div class="settings-note">宠物只是表现层：睡觉、跑跳、记账成功和提醒动画均不参与账务/OCR/语音核心逻辑；关闭后核心功能不受影响。</div><div class="pet-quiet-actions"><button class="btn-small" onclick="SmPetDirector&&SmPetDirector.quiet(3600000)">安静1小时</button><button class="btn-small" onclick="SmPetDirector&&SmPetDirector.quiet(28800000)">安静8小时</button><button class="btn-small" onclick="SmPetDirector&&SmPetDirector.clearQuiet()">恢复互动</button></div></div></div></div>
+          <div class="settings-section" id="personalizationSettings"><div class="settings-title">🎨 个性化 <span class="settings-sub">主题、图标和萌宠完全独立，可自由搭配</span></div><div class="personalization-grid"><div><b>主题</b><div class="choice-row"><button class="choice-chip" data-theme-choice="dark">🌙 深色</button><button class="choice-chip" data-theme-choice="light">☀️ 浅色</button><button class="choice-chip" data-theme-choice="autumn">🍂 秋色</button><button class="choice-chip" data-theme-choice="spring-summer">🌿 春夏</button></div></div><div><b>图标风格</b><div class="choice-row"><button class="choice-chip icon-pack-chip standard" data-icon-pack-choice="standard">◈ <span>标准</span></button><button class="choice-chip icon-pack-chip cartoon" data-icon-pack-choice="cartoon">✿ <span>卡通</span></button><button class="choice-chip icon-pack-chip chinese" data-icon-pack-choice="chinese">◆ <span>中国风</span></button><button class="choice-chip icon-pack-chip tech" data-icon-pack-choice="tech">⬡ <span>科技</span></button></div></div><div><b>十二生肖萌宠</b> <label><input id="petEnabled" type="checkbox" checked> 开启</label> <select id="petActivity"><option value="quiet">安静</option><option value="normal">正常</option><option value="active">活泼</option></select><div class="choice-row"><button class="choice-chip pet-choice" data-pet-choice="rat"><img src="assets/pets/zodiac/rat.png" alt="鼠"><small>鼠</small></button><button class="choice-chip pet-choice" data-pet-choice="ox"><img src="assets/pets/zodiac/ox.png" alt="牛"><small>牛</small></button><button class="choice-chip pet-choice" data-pet-choice="tiger"><img src="assets/pets/zodiac/tiger.png" alt="虎"><small>虎</small></button><button class="choice-chip pet-choice" data-pet-choice="rabbit"><img src="assets/pets/zodiac/rabbit.png" alt="兔"><small>兔</small></button><button class="choice-chip pet-choice" data-pet-choice="dragon"><img src="assets/pets/zodiac/dragon.png" alt="龙"><small>龙</small></button><button class="choice-chip pet-choice" data-pet-choice="snake"><img src="assets/pets/zodiac/snake.png" alt="蛇"><small>蛇</small></button><button class="choice-chip pet-choice" data-pet-choice="horse"><img src="assets/pets/zodiac/horse.png" alt="马"><small>马</small></button><button class="choice-chip pet-choice" data-pet-choice="goat"><img src="assets/pets/zodiac/goat.png" alt="羊"><small>羊</small></button><button class="choice-chip pet-choice" data-pet-choice="monkey"><img src="assets/pets/zodiac/monkey.png" alt="猴"><small>猴</small></button><button class="choice-chip pet-choice" data-pet-choice="rooster"><img src="assets/pets/zodiac/rooster.png" alt="鸡"><small>鸡</small></button><button class="choice-chip pet-choice" data-pet-choice="dog"><img src="assets/pets/zodiac/dog.png" alt="狗"><small>狗</small></button><button class="choice-chip pet-choice" data-pet-choice="pig"><img src="assets/pets/zodiac/pig.png" alt="猪"><small>猪</small></button></div><div class="pet-life-settings"><div class="pet-life-title">🌤️ 萌宠生活作息</div><div class="pet-life-grid"><label>生活类型<select id="petRoutine"><option value="worker">上班族</option><option value="student">学生</option><option value="home">居家</option><option value="free">自由生活</option></select></label><label>自然换活动<select id="petLifeInterval"><option value="30">约30分钟</option><option value="60">约1小时</option><option value="120">约2小时</option><option value="240">约4小时</option></select></label><label><input id="petAvoidInputs" type="checkbox" checked> 点击输入框时自动避让</label><label><input id="petWeatherLink" type="checkbox" checked> 天气影响生活动作</label><label><input id="petDiaryEnabled" type="checkbox" checked> 记录萌宠养成日记</label><button class="btn-small" id="petDiaryOpen" type="button">📔 查看萌宠日记</button></div><div class="settings-note">萌宠依据真实时间过自己的生活；工作/OCR/语音会临时打断，结束后恢复原活动。天气只修饰动作，不读取账目内容，也不控制业务。</div></div><div class="settings-note">宠物只是表现层：生活、跑跳、提醒与工作动作均不参与账务/OCR/语音核心逻辑；关闭后核心功能不受影响。</div><div class="pet-quiet-actions"><button class="btn-small" onclick="SmPetDirector&&SmPetDirector.quiet(3600000)">安静1小时</button><button class="btn-small" onclick="SmPetDirector&&SmPetDirector.quiet(28800000)">安静8小时</button><button class="btn-small" onclick="SmPetDirector&&SmPetDirector.clearQuiet()">恢复互动</button></div></div></div></div>
 
           <!-- 数据范围（日期期间设置） -->
           <div class="settings-section">
@@ -950,7 +956,7 @@
             <div class="recur-hint">需要安装或检查最新的本地语音 / OCR 能力，就在这里。不会偷偷下载；只有你点击安装/预加载后才开始。</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
               <button class="btn-primary" onclick="openIntelligenceCenter()">📦 打开语音 / OCR 模型管理</button>
-              <button class="btn-secondary" onclick="openIntelligenceCenter()">🩺 检测识别能力</button>
+              <button class="btn-secondary" onclick="openIntelligenceCenter()">🩺 系统自检 / 识别能力</button>
             </div>
           </div>
 
@@ -1095,7 +1101,7 @@
               <button class="btn-small" onclick="LedgerTrash.open()">🗑️ 回收站</button>
               <input type="file" id="restoreBackupFile" accept=".json,.db,application/json,application/octet-stream" style="display:none" onchange="BackupV2.restore(this)">
             </div>
-            <div class="recur-hint" id="backupHint">建议定期备份。恢复前会先校验文件完整性并临时保存当前数据，校验失败不会覆盖。</div>
+            <div class="recur-hint" id="backupHint">建议定期备份。Backup V2 会执行 SQLite 完整性校验并写入 SHA-256 校验和；恢复前会建立安全恢复点，失败自动回滚。</div>
           </div>
 
           <!-- 数据库健康（V3.0 §七） -->
@@ -1508,8 +1514,8 @@
   <script src="js/recognition/qr-engine.js?v=950436c2"></script>
   <script src="js/recognition/index.js?v=0cfd4637"></script>
 
-  <script src="js/offline-db.js?v=ca158039"></script>
-  <script src="js/offline-backend.js?v=e2fd2497"></script>
+  <script src="js/offline-db.js?v=118baa59"></script>
+  <script src="js/offline-backend.js?v=2a57b17a"></script>
   <script src="js/voice/personal-voice-memory.js?v=80723396"></script>
   <!-- Intelligence Layer：Field Evidence / Conflict Resolver（V4 Phase 1） -->
   <script src="js/intelligence/evidence-engine.js?v=96d63660"></script>
@@ -1540,7 +1546,8 @@
   <script src="js/ocr/image-quality.js?v=39419609"></script>
   <script src="js/ocr/preprocess.js?v=f909ad03"></script>
   <script src="js/ocr/tesseract-engine.js?v=dbfca5cd"></script>
-  <script src="js/ocr/paddle-engine.js?v=ba60a752"></script>
+  <script src="js/ocr/ocr-model-store.js"></script>
+  <script src="js/ocr/paddle-engine.js?v=1e167929"></script>
   <script src="js/ocr/model-benchmark-store.js?v=7812ccea"></script>
   <script src="js/ocr/region-rescue-planner.js?v=a1a88540"></script>
   <script src="js/ocr/ocr-manager.js?v=256a4109"></script>
@@ -1553,6 +1560,7 @@
   <script src="js/ocr/region-retry.js?v=2ff461e1"></script>
   <!-- V5 P2：OCR 候选池（多引擎/混淆变体/数学证据裁决） -->
   <script src="js/ocr/ocr-candidate-pool.js?v=e5c98050"></script>
+  <script src="js/ocr/critical-field-gate.js?v=6ee88d51"></script>
   <script src="js/mexico/money.js?v=b6882d52"></script>
   <script src="js/mexico/field-normalizer.js?v=9afc4dee"></script>
   <script src="js/mexico/currency-evidence.js?v=49a87a0a"></script>
@@ -1601,8 +1609,8 @@
   <script src="js/voice/reminders.js?v=fieldcmd-01"></script>
   <script src="js/voice/correction-engine.js?v=75bd5319"></script>
   <script src="js/voice/quick-voice.js?v=de027f5a"></script>
-  <script src="js/ledger-crud.js?v=3dd63962"></script>
-  <script src="js/ai/ai-workbench.js?v=6cd95578"></script>
+  <script src="js/ledger-crud.js?v=3a8e9cce"></script>
+  <script src="js/ai/ai-workbench.js?v=ef7a7c4d"></script>
   <!-- ===== 手机端下拉刷新（仅触摸设备激活；需在 app.js 前加载，initAfterLogin 调用） ===== -->
   <script src="js/pull-refresh.js?v=ba1b2e2f"></script>
   <!-- ===== Weather Intelligence：天气预报（Open-Meteo Provider，可独立降级） ===== -->
@@ -1618,7 +1626,7 @@
   <script src="js/weather/weather-diff-engine.js?v=114725a3"></script>
   <script src="js/weather/weather-reminder-engine.js?v=8ddbe4fc"></script>
   <script src="js/weather/weather-voice-intent.js?v=b83b85d5"></script>
-  <script src="js/weather/weather-service.js?v=635076f1"></script>
+  <script src="js/weather/weather-service.js?v=0fd67c46"></script>
   <script src="js/weather/weather-card.js?v=weather-tabs-01"></script>
 
   <!-- ===== 参考汇率工具（Exchange Rate Engine V1.0）=====
@@ -1640,11 +1648,13 @@
   <script src="js/asr/neural-vad-bridge.js?v=9fb39453"></script>
   <script src="js/intelligence/recognition-benchmark-lab.js?v=e5f8cafe"></script>
   <script src="js/intelligence/recognition-finalizer.js?v=6e11ec36"></script>
-  <script src="js/intelligence/recognition-model-manager.js?v=29eb9889"></script>
-  <script src="js/intelligence/intelligence-center.js?v=3e837be2"></script>
+  <script src="js/intelligence/recognition-model-manager.js?v=bc2cabdb"></script>
+  <script src="js/intelligence/intelligence-center.js?v=213d5f1e"></script>
+  <script src="js/ui/icon-system.js"></script>
   <script src="js/personalization/icon-packs.js"></script>
   <script src="js/personalization/app-event-bus.js"></script>
   <script src="js/personalization/pet-engine.js"></script>
+  <script src="js/personalization/pet-life-os.js"></script>
   <script src="js/personalization/pet-director.js"></script>
   <script src="js/idphoto/output-profiles.js"></script>
   <script src="js/idphoto/camera-coach.js"></script>
@@ -1652,7 +1662,7 @@
   <script src="js/idphoto/capture-quality-gate.js?v=d4d37215"></script>
   <script src="js/idphoto/image-processor.js?v=20c6bf57"></script>
   <script src="js/idphoto/idphoto-studio.js?v=074715ee"></script>
-  <script src="js/boot.js?v=d9f08f56"></script>
+  <script src="js/boot.js?v=da9eaf1e"></script>
 
   <!-- V190-V193 智能识别中心 -->
   <div class="modal-overlay" id="intelligenceCenterModal">

@@ -248,6 +248,8 @@ function fillWbFields(f) {
   // 透传金额来源/置信度（§二十六 低置信拦截用）
   if (f.amountConfidence != null) wbAiValues.__amountConfidence = f.amountConfidence;
   if (f.amountSource != null) wbAiValues.__amountSource = f.amountSource;
+  if (f.__amountGate != null) wbAiValues.__amountGate = f.__amountGate;
+  if (f.__amountCriticalConflict != null) wbAiValues.__amountCriticalConflict = !!f.__amountCriticalConflict;
   const set = (id, val) => {
     if (val == null || val === '') return;
     const el = document.getElementById(id);
@@ -1878,6 +1880,23 @@ async function wbLocalOcrV2(img) {
       }
     } catch (e) { /* ignore */ }
   }
+  // Round4 Critical Field Gate：ROI/候选/数学纠错完成后，再做一次独立财务一致性门禁。
+  // 不凭数学凭空创造 TOTAL；只验证当前金额与 TOTAL/SUBTOTAL+IVA/EFECTIVO-CAMBIO 是否一致。
+  if (window.OcrKit && window.OcrKit.CriticalFieldGate) {
+    try {
+      const gate = window.OcrKit.CriticalFieldGate.evaluate({
+        amount: fields.amount, amountConfidence: fields.amountConfidence || 0, fullText, semantic,
+      });
+      fields.__amountGate = gate;
+      if (gate && gate.minConfidence != null) fields.amountConfidence = Math.max(fields.amountConfidence || 0, gate.minConfidence);
+      if (gate && gate.maxConfidence != null) fields.amountConfidence = Math.min(fields.amountConfidence || 1, gate.maxConfidence);
+      if (gate && gate.criticalConflict) {
+        fields.__amountCriticalConflict = true;
+        fields.__amountReason = '关键金额证据冲突：' + gate.reason;
+      }
+    } catch (e) { console.warn('[ocr] 关键字段一致性门禁跳过（不影响主流程）:', e); }
+  }
+
   // V7：模板元数据 + 负样本抑制。复用前面已经完成的指纹匹配，避免重复计算。
   if (fpV7) {
     try {
@@ -2427,9 +2446,18 @@ async function wbSave() {
   const aiConf = wbAiValues && wbAiValues.__amountConfidence;
   if (fields.amount && amtEl && !wbLockedFields.has('wbAmount') && aiConf != null && aiConf < 0.60) {
     // 用户确认机制（V5 §39）：让用户明示"认同识别结果"，确认后用锁定金额继续保存
-    const doConfirm = window.confirm
-      ? window.confirm(`金额识别置信度较低（系统猜测最大值）。\n识别金额：${fields.amount}\n\n是否确认使用该金额？\n（确认后本张票按此金额保存，并可重新识别覆盖）`)
-      : true; // 无 confirm 环境（如部分 WebView）→ 默认为确认，避免死锁
+    const gateConflict = !!(wbAiValues && wbAiValues.__amountCriticalConflict);
+    const promptText = gateConflict
+      ? `金额识别结果与票据中的财务证据存在冲突。
+当前金额：${fields.amount}
+
+请核对小票后，确认是否仍使用这个金额。`
+      : `金额识别置信度较低。
+当前金额：${fields.amount}
+
+请核对票据后，确认是否使用这个金额。`;
+    // 没有 confirm 能力时绝不默认“确认”，避免部分 WebView 静默放行低置信关键金额。
+    const doConfirm = typeof window.confirm === 'function' ? window.confirm(promptText) : false;
     if (!doConfirm) {
       showToast('已取消保存，可点「🔄 重新识别」或修改金额后再保存', 'error');
       amtEl.classList.add('wb-low-conf');
