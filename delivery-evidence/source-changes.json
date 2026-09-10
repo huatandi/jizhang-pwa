@@ -1,0 +1,60 @@
+{
+  "original_files_deleted": [],
+  "modified": [
+    {
+      "file": "README.txt",
+      "before_sha256": "366067d30d8b1421a2a844814ccb0ae88ad5e1710362848e78b2b837af5cc915",
+      "after_sha256": "f82b60bafa83a3bc332cf52bd9f0d4820572f5bb95e2bb6a0185276af993d89f"
+    },
+    {
+      "file": "js/offline-ocr.js",
+      "before_sha256": "929587960c62a3b6b3c2ad14b2c47cd67906b3081769cf859cf56583a10e7afb",
+      "after_sha256": "c4cc7ffc17312a6da78d8dfd8d03df5b4a177b4cad41b46f41c3b285a2af918c"
+    },
+    {
+      "file": "js/ocr/ocr-job-manager.js",
+      "before_sha256": "d4c337293d63d72dccade3357c57547e386c34e214f6caf62a88051f3ad74b86",
+      "after_sha256": "5625804872e9d4727034324a82e6a77ace1679ab946402d8a602cfd8a33a35c3"
+    },
+    {
+      "file": "js/ai/ai-workbench.js",
+      "before_sha256": "1e1cc6ba3e632be3ca773a1063578f7c3b9bf46faa75e7673b7c99b234ba113d",
+      "after_sha256": "dd72f0848f05d3d88bdad9ec8388175eda2ae4ee1caee92b51664e0c5bddc35a"
+    },
+    {
+      "file": "js/validation/transaction.js",
+      "before_sha256": "c929b2c4d838d061496a7c50090dcac4ab763e75f3a57b0cd543579c9b0371e4",
+      "after_sha256": "51446e244e2065bb58522dc06aa36f521e693c4c8ac0546fda32be5a70df9d9c"
+    },
+    {
+      "file": "js/voice/voice-parser.js",
+      "before_sha256": "39e8dd0b555461bbe096612767d89d879954356b9df6882d5c99821172150c1f",
+      "after_sha256": "f92fdc36ecbadcd3d5181bd18f9b98f7ebe97cb5fb324c60502de9196a116f20"
+    },
+    {
+      "file": "js/voice/reminder-dialogue-engine.js",
+      "before_sha256": "b233aedb4797281cfde0959f000e6701e2beec96dceacfbae81e8c19a4e907a2",
+      "after_sha256": "09c7d0b97d981c657dbb0c0535f86c5393ec5eb9dff5b2a5f6e5675252326a11"
+    },
+    {
+      "file": "README.md",
+      "before_sha256": "c520ad7b083e86bedefae778400c7bebf02b94d94bf5226fe5b53a8990646b20",
+      "after_sha256": "fcb3786423382b929e56e958970013be4a8034aa26de52bd4bcc5de255f704c2"
+    },
+    {
+      "file": "sw.js",
+      "before_sha256": "dfa9b3973af58f3df512bb7e7abb4bf4be045ac5b36cdc88001e5ca92e1fe785",
+      "after_sha256": "40342139a1b8173cc2d3b100d4cce93c831f5a8ad0fc89a55f4b743748c05ee6"
+    },
+    {
+      "file": "index.html",
+      "before_sha256": "26bf03526873c44a1612899479effc25babff1d30764f8ef2d23acb5095c7f92",
+      "after_sha256": "4e320fb98f765c16db431469de255c1fffb9e500a786503034bc3f66feb4b20c"
+    },
+    {
+      "file": "build/build-manifest.json",
+      "before_sha256": "b324f2332887976aa0ed95ea3a29356ba96c9ae152538732d1cc78ed0c56f29e",
+      "after_sha256": "1984853e46a51326a935f0732a925635b07fe7f9c9132fbff3b6710adb110206"
+    }
+  ]
+}

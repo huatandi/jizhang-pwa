@@ -10,7 +10,6 @@
  * 语言包：models/ocr/*.traineddata.gz（需复制到可访问路径）
  */
 (function (global) {
-  let worker = null;
   let working = false;
 
   // 语言包路径（tesseract.js 从该路径加载 traineddata.gz）；本地缺文件时回退官方 CDN
@@ -116,31 +115,25 @@
     const t = String(text || '');
     if (!t) return out;
 
-    // ---- 日期：DD/MM/YYYY 或 YYYY-MM-DD（墨西哥格式优先） ----
+    // Reject impossible calendar dates instead of putting them into a date input.
+    const validDate = (y, mo, d) => {
+      const dt = new Date(0); dt.setUTCFullYear(y, mo - 1, d); dt.setUTCHours(0, 0, 0, 0);
+      return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
+    };
     let m = t.match(/\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})\b/);
-    if (m) {
-      let d = Number(m[1]), mo = Number(m[2]), y = Number(m[3]);
-      // 墨西哥 DD/MM/YYYY
-      if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) out.date = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    }
-    if (!out.date) {
-      m = t.match(/\b(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})\b/);
-      if (m) out.date = `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
-    }
+    let parts = m ? [+m[3], +m[2], +m[1]] : null;
+    if (!parts) { m = t.match(/\b(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})\b/); if (m) parts = [+m[1], +m[2], +m[3]]; }
+    if (parts && validDate(...parts)) out.date = parts.map((n, i) => String(n).padStart(i ? 2 : 4, '0')).join('-');
 
-    // ---- 金额：优先 TOTAL/Total/合计 标签（\b 防止 SUBTOTAL/IMPORTE TOTAL 误匹配） ----
-    m = t.match(/(?:\bTOTAL\b|total a pagar|合计|总计|金额)\s*[=:]?\s*[$¥€]?\s*([\d,]+\.\d{2})/i);
-    if (m) out.amount = parseFloat(m[1].replace(/,/g, ''));
-    if (!out.amount) {
-      m = t.match(/(?:IMPORTE|Monto|monto|MONTO|AMOUNT)\s*[=:]?\s*[$]?\s*([\d,]+\.\d{2})/);
-      if (m) out.amount = parseFloat(m[1].replace(/,/g, ''));
-    }
-    if (!out.amount) {
-      // 兜底：文本中最大金额（审计修复：①用 reduce 避免超长票据 spread 栈溢出 ②剔除日期碎片如 12.03.2024 / 2024-05-06）
-      const cleaned = t.replace(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/g, ' ').replace(/\b\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}\b/g, ' ');
-      const all = cleaned.match(/\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2}/g);
-      if (all) out.amount = all.reduce((mx, x) => { const n = parseFloat(x.replace(/,/g, '')); return n > mx ? n : mx; }, 0);
-    }
+    // The fallback obeys the same no-guess rule as the primary pipeline.
+    // Anchor receipt labels to a line: SUBTOTAL, IVA and TOTAL ARTICULOS are not payable totals.
+    const totals = [];
+    const totalRe = /(?:^|[\r\n])\s*(?:TOTAL(?:\s+A\s+PAGAR)?|IMPORTE\s+TOTAL|MONTO\s+TOTAL|AMOUNT\s+DUE|GRAND\s+TOTAL|合计|总计|金额)\s*[:：=]?\s*(?:MX\$|MXN|[$¥€])?\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)(?=\s|$)/gi;
+    while ((m = totalRe.exec(t))) { const n = Number(m[1].replace(/,/g, '')); if (Number.isFinite(n)) totals.push(n); }
+    const unique = [...new Set(totals)];
+    out.amount = unique.length === 1 ? unique[0] : null;
+    out.amountConfidence = out.amount == null ? 0 : 0.8;
+    out.amountReason = unique.length > 1 ? 'CONFLICTING_TOTALS' : out.amount == null ? 'TOTAL_LABEL_MISSING' : 'EXPLICIT_TOTAL';
 
     // ---- 商户/公司 ----
     // BANCO BENEFICIARIO / BANCO ORDENANTE 属于银行字段，不能当商户/公司抢走。
@@ -156,12 +149,6 @@
         else if (!out.merchant) out.merchant = m[1].trim();
       }
     }
-    // 商户兜底：小票顶部大写字（OXXO / WALMART 等）
-    if (!out.merchant) {
-      const firstLines = t.split('\n').map(l => l.trim()).filter(l => /^[A-Z][A-ZÁÉÍÓÚÑ0-9&. ]{2,30}$/.test(l));
-      if (firstLines.length) out.merchant = firstLines[0];
-    }
-
     // ---- 银行（付款/收款） ----
     const bankTags = [
       { re: /(?:付款行|付款方银行|BANCO ORDENANTE|INSTITUCION ORDENANTE)\s*[:：]?\s*([A-ZÁÉÍÓÚÑ0-9&. ]{3,30})/i, key: 'bank_payer' },
@@ -215,7 +202,11 @@
 
   // 释放 worker
   async function shutdown() {
-    if (worker) { try { await worker.terminate(); } catch (e) {} worker = null; }
+    // Do not terminate a worker underneath an active recognition.
+    if (working) throw new Error('正在识别中，暂不能释放 OCR 引擎');
+    const cached = [...workers.values()];
+    workers.clear();
+    await Promise.allSettled(cached.map(w => Promise.resolve().then(() => w.terminate())));
   }
 
   global.OfflineOCR = { recognize, parseFields, shutdown };

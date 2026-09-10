@@ -10,6 +10,11 @@
 (function (global) {
   let seq = 0;
   const jobs = new Map();
+  const HISTORY_LIMIT = 32;
+  function prune() {
+    const ended = [...jobs.values()].filter(j => j.status !== 'running');
+    for (const j of ended.slice(0, Math.max(0, ended.length - HISTORY_LIMIT))) jobs.delete(j.id);
+  }
 
   /**
    * 创建任务
@@ -29,7 +34,9 @@
       abortReason: null,
       error: null,
       signal: controller ? controller.signal : null,
+      get aborted() { return job.status === 'aborted'; },
       update(phase) {
+        if (job.status !== 'running') return false;
         job.phase = phase || job.phase;
         if (o.onPhase) { try { o.onPhase(job.phase); } catch (e) { /* ignore */ } }
       },
@@ -37,14 +44,15 @@
         if (job.status !== 'running') return false;
         job.status = 'aborted';
         job.abortReason = reason || 'user';
+        prune();
         if (controller) { try { controller.abort(); } catch (e) { /* ignore */ } }
         return true;
       },
       finish() {
-        if (job.status === 'running') job.status = 'done';
+        if (job.status === 'running') { job.status = 'done'; prune(); }
       },
       fail(err) {
-        if (job.status === 'running') { job.status = 'error'; job.error = err || null; }
+        if (job.status === 'running') { job.status = 'error'; job.error = err || null; prune(); }
       },
     };
     jobs.set(id, job);

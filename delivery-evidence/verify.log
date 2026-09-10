@@ -1,0 +1,15 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> jizhang-pwa@0.0.1 verify
+> node build/verify-build.js
+
+✓ manifest 存在（buildId=3afafbe7）
+✓ manifest 资源哈希全部一致
+✓ index.html 版本检查通过（136 处）
+✓ boot.js 版本检查通过（js/app.js ?v=1d47ffa4）
+✓ sw.js CACHE_NAME = jizhang-pwa-3afafbe7 ✓
+✓ APP_SHELL 预缓存检查通过（189 项）
+✓ index.html 资源存在性检查通过
+✓ 无旧语义版本残留
+
+[verify] ✅ 全部通过

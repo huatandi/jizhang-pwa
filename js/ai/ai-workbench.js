@@ -1313,6 +1313,7 @@ async function wbLocalOcr() {
         showToast('正在本地智能识别（新引擎）…');
         res = await wbLocalOcrV2(img);
       } catch (e) {
+        if (e && e.name === 'AbortError') return;
         console.warn('[ocr] 新引擎识别失败，回退旧引擎:', e);
         res = null;
       }
@@ -1606,6 +1607,7 @@ async function wbLocalOcrV2(img) {
   // V5 §73：可中止任务（超时/取消后旧任务禁止回写 UI）
   const jobMgr = window.OcrKit && window.OcrKit.jobManager;
   const job = jobMgr ? jobMgr.create({ label: 'wb-local-ocr' }) : null;
+  try {
   // 1. 预处理 + 识别（V2：OcrManager 已写回 documentType + lines）
   // 超时保护：引擎首次加载（Paddle WASM/模型）可能很慢，但不可无限等待 → 180s 上限；
   // V5 §73：超时即中止任务链（AbortSignal），杜绝旧任务继续跑并回写 UI。
@@ -1618,10 +1620,10 @@ async function wbLocalOcrV2(img) {
     );
   } catch (e) {
     if (job) job.abort('timeout-or-error');
-    if (e && e.name === 'AbortError') { console.warn('[ocr] 识别已中止'); return null; }
+    if (e && e.name === 'AbortError') { console.warn('[ocr] 识别已中止'); throw e; }
     throw e;
   }
-  if (job && job.aborted) return null; // 已中止：禁止回写
+  if (job && job.aborted) { const e = new Error('OCR 已取消'); e.name = 'AbortError'; throw e; } // 已中止：禁止回写
   const words = result.words || [];
   const fullText = (result.fullText || result.text || '').replace(/\s+/g, ' ').trim();
   // 2. 地区插件：墨西哥票据结构化解析（CFDI / SPEI / OXXO），仅墨西哥用户激活
@@ -1950,6 +1952,7 @@ async function wbLocalOcrV2(img) {
   } else {
     wbOcrMeta = null;
   }
+  if (job && job.aborted) { const e = new Error('OCR 已取消'); e.name = 'AbortError'; throw e; }
   wbLastOcrResult = result;
   wbLastOcrAudit = v7audit;
   if (job) job.finish(); // 任务正常结束（§73）
@@ -1966,6 +1969,10 @@ async function wbLocalOcrV2(img) {
     engine: result.engine || null,
     audit: v7audit || null,
   };
+  } catch (e) {
+    if (job) job.fail(e);
+    throw e;
+  }
 }
 
 // ===== 智能识别（OCR + 语音 一起做） =====
@@ -1985,7 +1992,7 @@ async function wbSmartRecognize() {
       try {
         showToast('① 正在本地识别票据…');
         res = await wbLocalOcrV2(img);
-      } catch (e) { console.warn('[mm] 新引擎 OCR 失败:', e); }
+      } catch (e) { if (e && e.name === 'AbortError') return; console.warn('[mm] 新引擎 OCR 失败:', e); }
     }
     if (!res || !res.text) {
       if (!window.OfflineOCR) return showToast('离线识别模块未加载（vendor/tesseract）', 'error');

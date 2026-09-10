@@ -123,7 +123,7 @@
   };
 
   /* ================== 金额解析 ================== */
-  const CN_D = { '零':0,'○':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9 };
+  const CN_D = { '零':0,'〇':0,'○':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9 };
   const CN_SMALL = { '十':10,'百':100,'千':1000 };
   // 中文整数 → 数字（万/千/百/十/零 + 阿拉伯数字混排；<亿）
   VK._cnInt = function (s) {
@@ -157,12 +157,13 @@
     const t = VK.normalizeCnAmountSpeech(text).trim().replace(/[，,\s]/g, '').replace(/(?:多(?:一点|一些)?|左右|上下|大约|约莫|约)$/,'');
     if (!t) return null;
     let s = t.replace(/^(?:人民币|￥|¥|CNY|元|块)?/i, '');
+    s = s.replace(/(?:块钱|元|圆|块|钱)$/, '');
     let sign = 1;
     if (/^[-负]/.test(s)) { sign = -1; s = s.replace(/^[-负]/, ''); }
     // 尾部缩放："3.5万"/"1.2亿" → ×1万/×1亿
     let scale = 1;
     // 仅小数缩写需要先剥离大单位（3.5万/1.2亿）；整数中文数位交给 _cnInt 层级解析。
-    const sm = s.match(/^([0-9]+(?:[点.][0-9]+))([万亿])$/);
+    const sm = s.match(/^(.*?[0-9零〇○一二两三四五六七八九十百千]+[点.][0-9零〇○一二两三四五六七八九]+)([万亿])$/);
     if (sm) { scale = (sm[2] === '亿') ? 1e8 : 1e4; s = sm[1]; }
     const dval = (x) => (CN_D[x] != null ? CN_D[x] : (/^\d$/.test(x) ? Number(x) : 0));
     let intStr = s, fracStr = '', splitMode = null;
@@ -178,7 +179,9 @@
     let fracVal = 0;
     if (fracStr) {
       if (splitMode === 'point') {
-        fracVal = parseFloat('0.' + fracStr); if (isNaN(fracVal)) fracVal = 0;
+        const digits = (fracStr.match(/^[0-9零〇○一二两三四五六七八九]+/) || [''])[0];
+        if (!digits) return null;
+        fracVal = Number('0.' + [...digits].map(ch => CN_D[ch] == null ? ch : CN_D[ch]).join(''));
       } else {
         const dv = (x) => (CN_D[x] != null ? CN_D[x] : (/^\d$/.test(x) ? Number(x) : 0));
         let jiao = 0, fen = 0, handled = false;
@@ -201,6 +204,8 @@
   VK.parseAmount = function (text) {
     let t = VK.normalizeCnAmountSpeech(text).trim();
     if (!t) return null;
+    // Only strip validated thousands groups; do not join unrelated numbers.
+    t = t.replace(/\b\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?\b/g, n => n.replace(/[,，]/g, ''));
     const wr = VK.recoverDroppedWan ? VK.recoverDroppedWan(t) : {text:t};
     t = wr.text || t;
     // 中文金额（万/零/块/毛/角/分/亿）

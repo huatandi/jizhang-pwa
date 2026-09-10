@@ -1,0 +1,1529 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> jizhang-pwa@0.0.1 test
+> node tests/run-all.cjs
+
+
+[1] AppServices 注册表
+  ✔ register+get
+  ✔ has 存在
+  ✔ has 不存在
+  ✔ keys 含 test
+
+[2] autoRegister 兼容既有全局
+  ✔ 注册 voice
+  ✔ 注册 fx
+  ✔ 注册 errorCodes
+  ✔ 注册 dbMigration
+
+[3] Core Contracts 校验
+  ✔ OCR 契约完整通过
+  ✔ OCR 契约缺字段检测
+  ✔ Voice 契约通过
+  ✔ Weather 契约通过
+  ✔ 未知契约 known=false
+  ✔ CONTRACTS 含三域
+
+=== AppServices 测试完成:14 通过 / 0 失败 ===
+PASS _test_app_services.cjs
+
+[1] ErrorCodes
+  ✔ CODES 含 OCR_INIT_FAILED
+  ✔ message 中文
+  ✔ message 英文
+  ✔ message 西语
+  ✔ error() 带 code
+  ✔ 未知码回退 UNKNOWN
+
+[2] FeatureFlags
+  ✔ 默认 ocrV7Intelligence=true
+  ✔ 默认 ocrWebGpu=false
+  ✔ 默认 cloudSync=false（隐私）
+  ✔ LOCAL_SETTING 覆盖后 true
+  ✔ RUNTIME_OVERRIDE 覆盖 false
+  ✔ reset 后回默认 false
+  ✔ kill 后强制 false
+
+[3] Capability
+  ✔ wasm=true（Node 支持）
+  ✔ sab=true（Node 有 SharedArrayBuffer）
+  ✔ memoryGb=8（模拟）
+  ✔ touch=true（模拟）
+  ✔ webspeech 为 boolean
+  ✔ getSync 返回 profile
+
+[4] Diagnostics
+  ✔ 记录 3 条
+  ✔ summary 按模块分组
+  ✔ timer 增加 1 条
+  ✔ timed 成功记录
+  ✔ exportJSON 可解析
+  ✔ 环形上限
+  ✔ clear 后为空
+
+=== AppCore 基础设施测试完成:26 通过 / 0 失败 ===
+PASS _test_core.cjs
+
+[1] 新库（无 payee 列）→ 迁移 v1+v2 补齐
+[db-migrate] ✓ add-expense-payee (v1)
+[db-migrate] ✓ add-ledger-indexes (v2)
+[db-migrate] ✓ add-ledger-members (v3)
+[db-migrate] ✓ add-ledger-trash (v4)
+[db-migrate] ✓ add-transaction-semantics (v5)
+[db-migrate] ✓ add-v186-ledger-relations (v6)
+  ✔ 迁移 ok
+  ✔ applied=[1,2,3,4,5,6]
+  ✔ user_version=6
+  ✔ expense 含 payee
+  ✔ ledger_members 已建
+  ✔ income 含 created_by
+  ✔ audit_log 含 actor
+  ✔ 创建了索引
+
+[2] 幂等：已迁移（user_version=6 且有回收站）→ 不重复执行
+  ✔ 无 pending 迁移
+  ✔ ok
+
+[3] 失败安全模式：up 抛错 → ROLLBACK + 记录
+  ✔ 迁移失败
+  ✔ 失败日志已记录
+  ✔ isSafeMode=true
+  ✔ clearFailureLog 后非安全模式
+
+[4] DbHealthCheck 轻量检查
+  ✔ 状态 ok
+  ✔ 无缺表
+  ✔ 无缺列
+  ✔ userVersion=1
+
+[5] DbHealthCheck 异常检测（缺表/缺列）
+  ✔ 状态 error
+  ✔ 缺 reminders 表
+  ✔ 缺 payee 列
+
+[6] integrity_check
+  ✔ integrity ok
+
+[7] v2 索引迁移
+[db-migrate] ✓ add-ledger-indexes (v2)
+[db-migrate] ✓ add-ledger-members (v3)
+[db-migrate] ✓ add-ledger-trash (v4)
+[db-migrate] ✓ add-transaction-semantics (v5)
+[db-migrate] ✓ add-v186-ledger-relations (v6)
+  ✔ 迁移 ok（v2 索引）
+  ✔ applied=[2,3,4,5,6]
+  ✔ user_version=6
+  ✔ 创建了账务索引（含回收站）
+  ✔ 含 idx_income_date_mode
+  ✔ ledger_members 已建
+  ✔ 幂等：二次迁移无 pending
+
+[8] DB 级分页（offline-backend limit/offset）
+  ✔ GET 列表支持 limit/offset
+  ✔ limit 上限 1000
+
+=== DB Migration Framework 测试完成:31 通过 / 0 失败 ===
+PASS _test_db_migration.cjs
+✓ El Florido amount 656.38
+✓ El Florido merchant EL FLORIDO
+✓ Fuel total 1452.3
+✓ Fuel merchant ESTACION DEL NORTE
+✓ China Store total 2712.5
+✓ China Store merchant SEE JEE CHINA STORE
+✓ CFE due beats accounting total 56
+✓ CFE merchant CFE
+✓ Campus total 2250
+✓ Campus merchant CAMPUS MF
+✓ Petromax merchant PETROMAX
+✓ Petromax date 2026-06-17
+✓ Attribution sees correct candidate candidate_ranking_error
+Document Intelligence V7: 13/13 passed
+PASS _test_document_intelligence_v7.cjs
+
+[1] 表头（Export Schema Contract）
+  ✔ 含 schema_version
+  ✔ 含 base_amount（基准币种金额）
+  ✔ 含 currency + base_currency
+  ✔ 含 counterparty/reference/notes
+  ✔ income/expense/purchase 表头一致
+
+[2] 数据行：币种折算
+  ✔ 2 行数据
+  ✔ USD 折算 base_amount=1818.18（100/0.055）
+  ✔ USD→base 折算 ≈1818.18
+  ✔ MXN base_amount=50（rate 1）
+  ✔ 币种保留原始 USD/MXN
+
+[3] CSV 字符串：BOM + 转义
+  ✔ 以 BOM 开头（\uFEFF）
+  ✔ 首行是表头
+  ✔ 含逗号字段被引号包裹
+  ✔ 行数 = 表头 + 2
+  ✔ 数据行1 record_id=1
+  ✔ 数据行1 record_type=income
+
+[4] 空记录
+  ✔ 空数据仅表头
+
+=== Export CSV 测试完成:17 通过 / 0 失败 ===
+PASS _test_export_csv.cjs
+PASS Event Bus V2+ 监听在线/离线
+PASS 事件总线继续过滤敏感字段
+PASS 收入/支出成功保存生产 ledger:saved
+PASS 到期提醒生产 reminder:due
+PASS OCR 生产开始/结束事件
+PASS Voice 生产开始/结束事件
+PASS 安静陪伴不再加载业务提示导演
+PASS rat 离线预缓存
+PASS ox 离线预缓存
+PASS tiger 离线预缓存
+PASS rabbit 离线预缓存
+PASS dragon 离线预缓存
+PASS snake 离线预缓存
+PASS horse 离线预缓存
+PASS goat 离线预缓存
+PASS monkey 离线预缓存
+PASS rooster 离线预缓存
+PASS dog 离线预缓存
+PASS pig 离线预缓存
+PASS 事件总线保留且宠物提示导演退出 App Shell
+Final Closure Round2: 20/20 PASS
+PASS _test_final_closure_round2.cjs
+PASS Pet Engine 保留十二生肖选择/拖动基础
+PASS 生活动作/自由游走/业务提示运行时全部退出页面
+PASS 退役萌宠运行时退出离线 App Shell
+PASS 宠物 DOM 不再创建气泡/生活标签/动作舞台
+PASS 业务反应接口兼容但静默
+PASS 自动游走关闭，默认原地陪伴
+PASS CSS 强制关闭历史动作动画
+PASS 设置页明确安静陪伴语义
+PASS rat 生肖资源保留
+PASS ox 生肖资源保留
+PASS tiger 生肖资源保留
+PASS rabbit 生肖资源保留
+PASS dragon 生肖资源保留
+PASS snake 生肖资源保留
+PASS horse 生肖资源保留
+PASS goat 生肖资源保留
+PASS monkey 生肖资源保留
+PASS rooster 生肖资源保留
+PASS dog 生肖资源保留
+PASS pig 生肖资源保留
+V222 Quiet Companion: 20/20 PASS
+PASS _test_final_engineering_pet_assistant.cjs
+SKIP _test_fx.cjs (网络类；请用 npm run test:network 单独执行)
+
+=== 墨西哥用户（baseCurrency=MXN, 浏览器 es-MX） ===
+region: "MX"
+lang: "es-MX"
+ocr: "spa+eng"
+paddle: "es"
+asr: "es"
+webspeech: "es-MX"
+isMexico: true
+
+=== 中国用户（baseCurrency=CNY, 浏览器 zh-CN） ===
+region: "CN"
+lang: "zh-CN"
+ocr: "chi_sim"
+paddle: "ch"
+asr: "zh"
+isMexico: false
+
+=== 美国用户（baseCurrency=USD, 浏览器 en-US） ===
+region: "US"
+lang: "en-US"
+ocr: "eng"
+paddle: "en"
+asr: "en"
+
+=== 日本用户（无本币, 浏览器 ja-JP） ===
+region: "JP"
+lang: "ja-JP"
+ocr: "jpn"
+paddle: "japan"
+asr: "ja"
+
+=== 中性兜底（无本币, 浏览器语言为空） ===
+region: "US"
+lang: "en-US"
+ocr: "eng"
+paddle: "en"
+asr: "en"
+isMexico: false
+
+=== 巴西用户（baseCurrency=BRL, 浏览器 pt-BR） ===
+region: "BR"
+lang: "pt-BR"
+ocr: "por"
+asr: "pt"
+
+=== 阿根廷用户（baseCurrency=ARS, 浏览器 es-AR） ===
+region: "AR"
+lang: "es-AR"
+ocr: "spa"
+asr: "es"
+isMexico: false
+
+=== 地区插件（isMexicoDocType） ===
+CFDI: true
+RECEIPT: false
+BANK_TRANSFER: false
+
+=== EUR 共享货币消歧（baseCurrency=EUR, 浏览器 fr-FR） ===
+region: "FR"
+lang: "fr-FR"
+ocr: "fra"
+asr: "fr"
+
+=== EUR 无消歧（baseCurrency=EUR, 浏览器语言为空） ===
+region: "US"
+lang: "en-US"
+ocr: "eng"
+asr: "en"
+
+=== USD 共享货币消歧（baseCurrency=USD, 浏览器 en-US） ===
+region: "US"
+lang: "en-US"
+
+=== EUR 消歧·西班牙（baseCurrency=EUR, 浏览器 es-ES） ===
+region: "ES"
+lang: "es-ES"
+ocr: "spa"
+
+✅ 全部用例执行完成
+PASS _test_global.cjs
+JS Syntax Gate: 158/158 PASS
+PASS _test_js_syntax_gate.cjs
+
+[1] 金额归一化/精确匹配
+  ✔ normalizeAmount($1,234.56) = 1234.56
+  ✔ normalizeAmount(1.234,56 欧式) = 1234.56
+  ✔ normalizeAmount(空) = null
+  ✔ normalizeAmount(非数字) = null
+  ✔ amountExact 相同 true
+  ✔ amountExact 带币种 true
+  ✔ amountExact 不同 false
+  ✔ amountExact 空 false
+
+[2] Critical Financial Error
+  ✔ 60→560 严重
+  ✔ 656.38→656 不严重(非精确)
+  ✔ 相同不严重
+  ✔ 10→30 严重(差20≥10)
+  ✔ 100→108 不严重(差8<10)
+  ✔ 1000→1100 严重(差100≥10%)
+
+[3] 日期/文本精确匹配
+  ✔ dateExact ISO 相同
+  ✔ dateExact 去分隔符
+  ✔ dateExact 不同 false
+  ✔ textExact 忽略大小写
+  ✔ textExact 忽略首尾空白
+  ✔ textExact 不同 false
+
+[4] evaluateFixture
+  ✔ 全部精确 exactCount=3
+  ✔ merchant 跳过(期望 null)
+  ✔ amountExact=true
+  ✔ amountCritical=false
+  ✔ 金额错+日期错 exactCount=1
+  ✔ amountCritical=true(60→560)
+  ✔ allCriticalExact=false
+
+[5] renderReport
+  ✔ 报告含逐字段汇总
+  ✔ 报告含严重错误统计 1 次
+  ✔ 报告含明细 CRIT 标记
+  ✔ 无结果时提示 pending
+
+========== 结果: 31 通过, 0 失败 ==========
+PASS _test_ocr_benchmark.cjs
+
+[1] CandidatePool 基础
+  ✔ 两个候选
+  ✔ 560.00 为 best（置信更高）
+  ✔ 同值去重后仍 2 个
+  ✔ 同值取优（0.95）
+  ✔ 等分候选 → conflict
+  ✔ 分差明显不冲突
+  ✔ 空池 resolve 安全
+
+[2] scoreCandidate
+  ✔ label 证据 > max 证据
+  ✔ 数学证据加成
+  ✔ 混淆惩罚降低
+  ✔ 缺省置信 0.5 兜底
+
+[3] 金额智能：现金闭环命中当前值
+  ✔ 不改变金额（闭环命中当前值）
+  ✔ 置信提升到 0.97
+  ✔ 来源 cash-closure
+  ✔ checks 含 cash
+
+[4] 金额智能：$→5 纠错（560 → 60）
+  ✔ 采用混淆变体
+  ✔ 金额改为 60（归一化去 $）
+  ✔ 保留原值溯源（ai.original）
+  ✔ 置信 0.97
+  ✔ 来源 cash-closure-confusion
+  ✔ 原因可解释（含 5→$）
+
+[5] 金额智能：无证据不改动
+  ✔ 不变更金额
+  ✔ 置信不变
+  ✔ 90−10=80≠560 且无变体命中 → 不改
+
+[6] 金额智能：财务闭环
+  ✔ 财务闭环命中 → 置信提升
+
+[7] 模块缺失静默降级
+  ✔ 引擎缺失 → 不抛错不改动
+
+========== 结果: 26 通过, 0 失败 ==========
+PASS _test_ocr_candidate_pool.cjs
+
+[1] $→5 混淆：560.00 → $60.00
+  ✔ 560.00 的 amount 变体含 $60.00
+  ✔ 变体带替换溯源（5→$）
+  ✔ 变体 score < 1（混淆有代价）
+  ✔ 不包含全局替换（560.00 原样不在变体列表）
+
+[2] 字段类型约束（§35）
+  ✔ amount 含 $60.00
+  ✔ date 不含 $60.00
+  ✔ tax_id 不含 $60.00
+  ✔ date 含 /→- 变体
+  ✔ text 含 0XX0
+
+[3] 替换上限/数量控制
+  ✔ 单替换候选 ≤ 每位置候选数
+  ✔ maxVariants 上限生效
+  ✔ 长串不爆炸（≤64）
+  ✔ 空文本返回空
+  ✔ 无混淆字符返回空
+
+[4] 批量变体（候选池用）
+  ✔ 批量生成含 $60.00（来自 560.00）
+  ✔ 综合分 = OCR置信 × 混淆分
+  ✔ 按综合分降序
+
+========== 结果: 17 通过, 0 失败 ==========
+PASS _test_ocr_confusion.cjs
+
+[1] 现金闭环（§28）
+  ✔ 700−43.62=656.38 成立
+  ✔ expected=656.38
+  ✔ diff=0
+  ✔ 70−10≠560 不成立
+  ✔ expected=60
+  ✔ 容差 0.01：656.39 成立
+  ✔ 差 0.02 不成立
+  ✔ 缺元素不成立且不抛错
+
+[2] 财务闭环（§29）
+  ✔ 100+16=116 成立
+  ✔ 100+16−10=106 成立
+  ✔ 差 0.01 成立（默认容差）
+  ✔ JPY 容差 1：差 10 不成立
+  ✔ JPY 相同成立
+
+[3] 商品闭环（§30，辅助证据）
+  ✔ Σ6+50=56 成立
+  ✔ 行级 2×3=6 校验 matched=2
+  ✔ Σ≠subtotal 不成立
+  ✔ 无明细 → 不成立不抛错
+  ✔ 部分行缺字段仍可汇总
+
+[4] 货币舍入策略（CurrencyRoundingPolicy）
+  ✔ MXN 0.01
+  ✔ JPY 1
+  ✔ 未知货币默认 0.01
+  ✔ 大小写不敏感
+  ✔ loose ≥ strict×5
+
+[5] 文档规则注册（fuel 示例）
+  ✔ fuel：40×23.5=940 规则成立
+  ✔ fuel：差 0.5 不成立
+  ✔ 未注册类型无规则
+
+[6] verify 汇总
+  ✔ 现金+财务双闭环成立
+  ✔ 无闭环输入 → ok=false 不抛错
+
+[7] parseAmount
+  ✔ 美式
+  ✔ 欧式
+  ✔ 纯数字
+  ✔ 空 → null
+  ✔ 噪声 → null
+
+========== 结果: 33 通过, 0 失败 ==========
+PASS _test_ocr_constraint.cjs
+
+[1] 常见分隔日期
+  DD/MM/YYYY → 2026-08-12
+  YYYY-MM-DD → 2026-08-12
+  DD-MM-YYYY → 2026-09-15
+
+[2] 西语月份
+  12 de agosto de 2026 → 2026-08-12
+  15 de septiembre 2026 → 2026-09-15
+
+[3] OCR 粘连日期（V7.2）
+  20AGO2026(粘连) → 2026-08-20
+  20AGOSTO2026 → 2026-08-20
+
+[4] 字段加权(FECHA 加成 / 多行取 FECHA)
+  FECHA 行优于其他 → 2026-09-15
+  多行取 FECHA → 2026-09-15
+
+[5] fullText 形态 + baseFields 兜底 + 无日期
+  fullText 分行取 FECHA → 2026-09-15
+  无行但 baseFields.date → 2026-08-24
+  无日期候选 → value null
+
+=== OCR V7 日期 golden: 12 通过 / 0 失败 ===
+PASS _test_ocr_date_v7.cjs
+
+[1] criticalFieldConfidence（§70）
+  ✔ 金额+日期词平均置信
+  ✔ strong = true
+  ✔ missing = false
+  ✔ 无金额词 → missing
+  ✔ 无金额词 → strong false
+  ✔ 无金额词 → confidence 0
+  ✔ 空结果安全
+
+[2] planExecution
+  ✔ 清晰+关键高置信 → FAST（早退）
+  ✔ avgConf 高但关键缺失 → RESCUE
+  ✔ avgConf 极低 → RESCUE
+  ✔ 关键置信过低 → RESCUE
+  ✔ 中等 → SMART
+  ✔ 缺省安全（全 0 → RESCUE）
+
+[3] ServerOcrEngine
+  ✔ 类存在且继承 OcrEngineBase
+  ✔ name = server
+  ✔ engine = server
+  ✔ 全文透出
+  ✔ 文档类型透出
+  ✔ serverConfidence 透出
+  ✔ serverCoreFields 字段存在
+  ✔ 词级行构造
+  ✔ 无 fetch → SERVER_UNAVAILABLE
+
+========== 结果: 22 通过, 0 失败 ==========
+PASS _test_ocr_execution_planner.cjs
+
+[1] 清晰高对比文本图
+  ✔ 对比度高（≥0.5）
+  ✔ 模糊低（<0.4）
+  ✔ 淡字低（<0.3）
+  ✔ 反光低
+  ✔ 有文本密度（暗像素>0）
+  ✔ 亮度中等偏高
+
+[2] 均匀灰图
+  ✔ 对比度≈0
+  ✔ 模糊高（无细节）
+  ✔ 淡字高（≥0.55 触发 fade）
+  ✔ 淡字 → fade（自动对比度+伽马，不二值化）
+
+[3] 反光与亮度
+  ✔ 亮斑 → glareScore > 0
+  ✔ 反光 → 建议 glowReduce
+  ✔ 暗图 brightness 低
+  ✔ 低亮度 → low_light
+
+[4] 方向检测（0 vs 90）
+  ✔ 水平文字行 → 0
+  ✔ 竖排文字列 → 90
+
+[5] pickPipeline 规则
+  ✔ srcType=thermal 优先
+  ✔ srcType=low_light 优先
+  ✔ 清晰票 → none（尽量不处理）
+  ✔ 低端机清晰 → high_contrast
+  ✔ 低对比 → high_contrast
+  ✔ 模糊 → normal（锐化）
+  ✔ 反光 ≥0.45 → glowReduce
+
+[6] 只读性（不修改入参）
+  ✔ analyze/detectOrientation 后像素不变
+
+========== 结果: 24 通过, 0 失败 ==========
+PASS _test_ocr_image_quality.cjs
+
+[1] create
+  ✔ jobId 存在且唯一
+  ✔ 初始 status = running
+  ✔ 初始 phase = queued
+  ✔ signal 存在且未中止
+  ✔ update 更新 phase
+  ✔ startedAt 已记录
+
+[2] abort
+  ✔ abort 返回 true
+  ✔ status = aborted
+  ✔ abortReason 记录
+  ✔ signal.aborted = true
+  ✔ 二次 abort 返回 false
+  ✔ done 后 abort 无效
+
+[3] finish / fail
+  ✔ finish → done
+  ✔ fail → error
+  ✔ error 后 finish 不覆盖
+
+[4] abortAll
+  ✔ 全部中止
+  ✔ reason 默认 page-leave
+  ✔ list 可诊断
+  ✔ count > 0
+
+[5] signal 阶段检查（throwIfAborted）
+  ✔ 未中止不抛错
+  ✔ 中止后抛 AbortError
+  ✔ 带阶段信息
+  ✔ 无 signal 不抛
+
+========== 结果: 23 通过, 0 失败 ==========
+PASS _test_ocr_job_manager.cjs
+✓ correction learns TOTAL anchor + relative ROI
+✓ amount correction never becomes dead-value replacement
+OCR Learning V7: 2/2 passed
+PASS _test_ocr_learning_v7.cjs
+
+[1] longReceiptSlices（200×5000，maxSlice=1800，overlap=12%）
+  ✔ 切片数 = 4
+  ✔ startY 递进 [0,1584,3168,4752]
+  ✔ 首片 overlapPx=0，其余 216
+  ✔ 每片宽 = 200
+  ✔ 每片高 ≤ 1800
+  ✔ 末片到票尾（4752+248=5000）
+  ✔ 名称唯一
+
+[2] 短图 no-op
+  ✔ 单片（full）
+
+[3] remapSliceWords（重映射 + 重叠带丢弃）
+  ✔ 重叠带词丢弃（保留上方切片）
+  ✔ 保留词 y 重映射 +1584
+  ✔ x 不变
+
+[4] mergeSliceResults（跨片行聚类）
+  ✔ engine = paddle
+  ✔ processingTimeMs 累计
+  ✔ 宽高 = 全图
+  ✔ _longReceipt.slices = 2
+  ✔ 跨片行聚类后两行都在
+  ✔ 行数 = 2
+  ✔ 空 parts 不抛错
+
+========== 结果: 18 通过, 0 失败 ==========
+PASS _test_ocr_long_receipt.cjs
+
+[1] OcrMemoryStore（内存回退）
+  ✔ put/get
+  ✔ all 两条
+  ✔ remove 后 1 条
+  ✔ clear 后 0 条
+  ✔ wipe 清空全部
+  ✔ DB 常量
+
+[2] DocumentFingerprint
+  ✔ 税号指纹（归一化）
+  ✔ 商户提示（oxxo）
+  ✔ 关键词非空
+  ✔ 布局签名
+  ✔ 同票相似度 1.0
+  ✔ 异票相似度低（<0.6）
+
+[3] TemplateEngine
+  ✔ 模板创建为 candidate
+  ✔ 模板有 id
+  ✔ 同票命中候选模板（candidate 状态 → 等级 candidate）
+  ✔ 3 次成功 → stable
+  ✔ 画像：偏好引擎 paddle
+  ✔ 画像：偏好预处理 normal
+  ✔ 置信度 > 0.5
+  ✔ 连续 3 失败 → suspended
+  ✔ suspended 模板不参与匹配（§90）
+  ✔ suspended 恢复 → stable
+  ✔ 商户记忆与模板分离（§57）
+  ✔ 归档 → retired（§64）
+
+[4] CorrectionLearner
+  ✔ 单次 → learning 规则
+  ✔ 多字符差异 + 数学上下文 → math 模式（学原因）
+  ✔ 两次 → active（minSupport=2）
+  ✔ 3 次 → 晋升 merchant 作用域
+  ✔ 晋升标记
+  ✔ 规则置信可解释
+  ✔ 单字符差异 → char-confusion（T→D）
+  ✔ 无商户上下文 → 停留在 instance（防跳级）
+  ✔ 负样本状态 negative
+  ✔ isSuppressed 命中
+  ✔ isSuppressed 未命中
+  ✔ 弱正样本记录
+  ✔ 用户改过 → 不记弱正样本
+  ✔ 事件流水可审计
+  ✔ clearAll 清空
+
+========== 结果: 39 通过, 0 失败 ==========
+PASS _test_ocr_memory_learning.cjs
+
+[1] 行级合并：跨引擎重叠词取置信高者
+  ✔ strategy = line
+  ✔ engine 取主引擎名
+  ✔ TOTAL 在结果中
+  ✔ 金额保留高置信 $560.00（不被 $60.00 替换）
+  ✔ $60.00 未混入
+  ✔ SUBTOTAL 在结果中（行级择优后仍在）
+  ✔ TOTAL 词取高置信 95
+  ✔ 金额词取 85
+
+[2] 无 bbox 回退整份替换
+  ✔ strategy = whole
+  ✔ 回退取平均置信高者（C 整体 99 > A）
+
+[3] 单方为空直接返回另一方
+  ✔ a 为空返回 b
+  ✔ b 为空返回 a
+  ✔ b 无词返回 a
+
+[4] mergeWordsByLine：重叠判定
+  ✔ 合并后词数 = 3（TOTAL/金额/SUBTOTAL 各一）
+  ✔ 文本 = "TOTAL $560.00 SUBTOTAL"
+
+========== 结果: 15 通过, 0 失败 ==========
+PASS _test_ocr_merge.cjs
+
+[1] SUBTOTAL ≠ TOTAL（危险：SUBTOTAL 含 TOTAL 字符串）
+  ✔ amount=656.38（数学双证据）
+  ✔ 候选池含 656.38
+  ✔ 候选池含 SUBTOTAL 647.51 但非首选
+  ✔ math 验证 subtotal+tax=656.38
+  ✔ math 验证 cash-change=656.38
+
+[2] CASE B：TOTAL OCR 错(2) → 数学推导 1452.30
+  ✔ amount=1452.30（subtotal+iva 推导）
+  ✔ 候选含 1452.30
+
+[3] CASE D：无 TOTAL/数学 → No-Guess 留空
+  ✔ 不选 900（最大金额猜测已禁）
+  ✔ amount 为 null 或低置信候选
+
+[4] 商户 No-Guess：无标签不取首个大写词
+  ✔ merchant 不为 FECHA/TOTAL/IVA
+  ✔ merchant 为 null 或低置信
+
+[5] 商户有标签：EL FLORIDO（票头）
+  ✔ merchant=EL FLORIDO（票头布局）
+
+[6] 日期粘连：20AGO2026
+  ✔ date=2026-08-20（粘连月名）
+
+[7] extractCommonFields 无 max 兜底（源码断言）
+  ✔ 无 Math.max 金额兜底
+  ✔ 无"首个大写词=商户"
+  ✔ 金额 No-Guess 收集候选
+  ✔ 商户 No-Guess 收集候选
+
+=== OCR No-Guess 测试完成:17 通过 / 0 失败 ===
+PASS _test_ocr_no_guess.cjs
+
+[1] enhance 非破坏性（不修改入参）
+  ✔ enhance('normal') 返回新对象
+  ✔ enhance('normal') 入参像素不变
+  ✔ enhance('high_contrast') 返回新对象
+  ✔ enhance('high_contrast') 入参像素不变
+  ✔ enhance('thermal') 返回新对象
+  ✔ enhance('thermal') 入参像素不变
+  ✔ enhance('low_light') 返回新对象
+  ✔ enhance('low_light') 入参像素不变
+  ✔ enhance('none') 返回同一对象
+  ✔ enhance('none') 像素不变
+
+[2] multipass：original 是克隆，源图不被污染
+  ✔ 含 original/contrast/grayscale/sharpen/binarize
+  ✔ original 与源图不同对象
+  ✔ 各版本 canvas 互不相同
+  ✔ original 像素与源图一致
+  ✔ multipass 后源图像素完全不变
+  ✔ includeBinarize=false 无 binarize
+
+[3] 连续增强互不污染
+  ✔ 三次增强各自返回新对象
+  ✔ 源图始终不变
+  ✔ 三次结果像素不同（处理确有差异）
+
+========== 结果: 19 通过, 0 失败 ==========
+PASS _test_ocr_preprocess.cjs
+
+[1] MX 语义提取
+  ✔ TOTAL_AMOUNT = 656.38
+  ✔ CASH_TENDERED = 700.00
+  ✔ CHANGE = 43.62
+  ✔ SUBTOTAL 提取
+  ✔ DATE 提取
+  ✔ TAX_ID（RFC 模式）
+
+[2] CN 语义提取
+  ✔ TOTAL_AMOUNT（合计）
+  ✔ CASH_TENDERED（实付）
+  ✔ CHANGE（找零）
+  ✔ DATE（开票日期）
+  ✔ TAX（税额）
+  ✔ TAX_ID（税号标签）
+
+[3] 通用兜底（未注册地区）
+  ✔ 通用标签可用（TOTAL）
+  ✔ 通用标签可用（CHANGE）
+  ✔ 未注册地区不抛错
+
+[4] 文档分类（V5 §23）
+  ✔ CFDI → tax_invoice
+  ✔ SPEI → bank_transfer
+  ✔ CN 发票 → tax_invoice
+  ✔ 无信号 → generic_receipt
+
+[5] semanticToBusiness
+  ✔ amount = 656.38
+  ✔ cashTendered = 700.00
+  ✔ change = 43.62
+  ✔ taxId 映射
+  ✔ 缺失字段为 null
+
+[6] 注册表
+  ✔ 已注册 MX/CN/GENERIC
+  ✔ getProfile 大小写不敏感
+  ✔ getProfile 未知 → GENERIC
+
+========== 结果: 27 通过, 0 失败 ==========
+PASS _test_ocr_regions.cjs
+
+[1] money.parseMoney 金额格式兼容
+  ✔ parseMoney("$1,234.56") = 1234.56
+  ✔ parseMoney("1,234.56") = 1234.56
+  ✔ parseMoney("1234.56") = 1234.56
+  ✔ parseMoney("1.234,56") = 1234.56
+  ✔ parseMoney("$1.234,56") = 1234.56
+  ✔ parseMoney("1,234") = 1234
+  ✔ parseMoney("1234") = 1234
+  ✔ parseMoney("1.234.567") = 1234567
+  ✔ parseMoney("$ 1,234.56") = 1234.56
+  ✔ parseMoney("1,234.56 MXN") = 1234.56
+  ✔ parseMoney("TOTAL: 1.234,56") = 1234.56
+  ✔ parseMoney("-1,234.56") = -1234.56
+  ✔ parseMoney("0.00") = 0
+  ✔ parseMoney("") = null
+  ✔ parseMoney("abc") = null
+  ✔ parseMoney("1,2,3") = null
+  ✔ parseMoney("1,234,567") = 1234567
+  ✔ parseMoney("1.234.567,89") = 1234567.89
+
+[2] money.isMoneyLike
+  ✔ isMoneyLike($1,234.56)
+  ✔ isMoneyLike(1.234,56)
+  ✔ isMoneyLike(TOTAL)
+  ✔ isMoneyLike(abc123)
+
+[3] ocr-types.clusterLines 行聚类
+  ✔ lines 数量 = 2
+  ✔ 行1 文本 = "TOTAL $1,234.56"
+  ✔ 行1 置信度 ≈ 97.5
+  ✔ 行1 box 有 4 点
+  ✔ 行2 文本 = "SUBTOTAL $999.00"
+
+[4] ocr-manager.detectDocType 通用文档检测
+  ✔ 发票 → invoice
+  ✔ 小票 → receipt
+  ✔ 转账 → bank_transfer
+  ✔ 空文本 → null
+  ✔ 普通文本 → null
+
+[5] field-normalizer.normalizeLabel 标签变体
+  ✔ normalizeLabel(TOTAL) = total
+  ✔ normalizeLabel(TOTAL:) = total
+  ✔ normalizeLabel(TOTAL MXN) = total
+  ✔ normalizeLabel(IMPORTE TOTAL) = total
+  ✔ normalizeLabel(GRAN TOTAL) = total
+  ✔ normalizeLabel(Total a pagar) = total
+  ✔ normalizeLabel(PAGO TOTAL) = total
+  ✔ normalizeLabel(Subtotal) = subtotal
+  ✔ normalizeLabel(IVA) = iva
+
+[6] normalizeResult 统一输出结构
+  ✔ engine = paddle
+  ✔ text 存在 = fullText
+  ✔ lines 已聚合
+  ✔ processingTimeMs = 842
+  ✔ documentType 默认为 null
+  ✔ line.text 含欧洲格式
+
+========== 结果: 47 通过, 0 失败 ==========
+PASS _test_ocr_v2.cjs
+
+[1] 默认关闭
+  paddleWebGpuExperimental 默认 false
+  isEnabled 默认 false
+
+[2] setFlag / resetFlags
+  setFlag(true) 生效
+  resetFlags 恢复默认 false
+
+[3] 不影响既有 flags
+  selfTestEnabled 仍默认 true
+  whisperV2Pipeline 仍默认 true
+
+=== OCR WebGPU flag 测试完成: 6 通过 / 0 失败 ===
+PASS _test_ocr_webgpu_flag.cjs
+
+[1] 渲染：每个条目带 ×
+  渲染 × 数量 = 条目数(7)
+
+[2] onclick 经 JS 解析后（\uHHHH -> 实字符）还原正确
+  还原为 一号门店
+
+[3] 后端 DELETE filter（对每个中文条目都正确）
+  删除后不含 一号门店
+  其余 6 条目保留
+
+[4] 特殊字符（空格/括号/引号/emoji）安全
+  特殊字符值解析正确
+
+=== 选项删除链路验证: 5 通过 / 0 失败 ===
+PASS _test_opt_delete.cjs
+PASS Pet Engine 保留十二生肖选择/拖动基础
+PASS 生活动作/自由游走/业务提示运行时全部退出页面
+PASS 退役萌宠运行时退出离线 App Shell
+PASS 宠物 DOM 不再创建气泡/生活标签/动作舞台
+PASS 业务反应接口兼容但静默
+PASS 自动游走关闭，默认原地陪伴
+PASS CSS 强制关闭历史动作动画
+PASS 设置页明确安静陪伴语义
+PASS rat 生肖资源保留
+PASS ox 生肖资源保留
+PASS tiger 生肖资源保留
+PASS rabbit 生肖资源保留
+PASS dragon 生肖资源保留
+PASS snake 生肖资源保留
+PASS horse 生肖资源保留
+PASS goat 生肖资源保留
+PASS monkey 生肖资源保留
+PASS rooster 生肖资源保留
+PASS dog 生肖资源保留
+PASS pig 生肖资源保留
+V222 Quiet Companion: 20/20 PASS
+PASS _test_pet_life_os_round1.cjs
+
+[1] 清空 地点
+  ✔ 清空 地点里的内容 文字 数据 → 命中
+  ✔ rLocation 已清空
+
+[2] 清空 事项
+  ✔ 清空 事项 框内数据或内容 → 命中
+  ✔ rContent 已清空
+
+[3] 别名/西语
+  ✔ 删除 备注 → 命中
+  ✔ rNote 已清空
+  ✔ borrar ubicación → 命中
+  ✔ rLocation 已清空(西语)
+
+[4] 时间字段
+  ✔ 清空 时间 → 命中
+  ✔ rAt 已清空
+
+[5] 防误清：无字段/无清空动词
+  ✔ 不含清空动词 → false
+  ✔ 只有清空无字段 → false
+  ✔ 空 → false
+
+=== 语音清空字段测试完成:13 通过 / 0 失败 ===
+PASS _test_reminder_clear.cjs
+
+[1] 合法输入归一化
+  ✔ 空格格式 → T 格式
+  ✔ 已带 T 格式不变
+  ✔ 带秒 裁剪为 分
+  ✔ 保存回填 slice 场景
+
+[2] 仅日期（无时间）→ 补 T00:00
+  ✔ 只有日期
+
+[3] 斜杠/点分隔（墨西哥日期）
+  ✔ DD/MM/YYYY
+  ✔ MM/DD/YYYY 自动交换
+  ✔ YYYY/MM/DD
+
+[4] 垃圾/越界 → 清空(防止 □□□)
+  ✔ 空串 → 空
+  ✔ 纯乱码 → 空
+  ✔ 月越界 → 空
+  ✔ 非数字日期 → 空
+  ✔ null → 空
+
+=== 提醒日期归一化测试完成:13 通过 / 0 失败 ===
+PASS _test_reminder_date.cjs
+
+[1] 只要震动 → 只开震动
+  ✔ 命中
+  ✔ speak 关
+  ✔ ring 关
+  ✔ vibrate 开
+
+[2] 关闭语音播报 → 只关语音播报
+  ✔ 命中
+  ✔ speak 关
+  ✔ ring 仍开
+  ✔ vibrate 仍开
+
+[3] 开启响铃 → 开响铃(其余不动)
+  ✔ 命中
+  ✔ ring 开
+  ✔ speak 不动
+
+[4] 无方式关键词 → false(不吞普通语句)
+  ✔ 明天九点开会 → false
+
+[5] 模式关键词即使已设也消费(不落入内容)
+  ✔ 语音播报(已开) → 仍 true(被当命令)
+
+=== 语音提醒方式测试完成:13 通过 / 0 失败 ===
+PASS _test_reminder_mode.cjs
+
+[1] RuntimeAssetManager 状态机
+  ✔ 初始 UNLOADED
+  ✔ 加载后 READY
+  ✔ 实例返回
+  ✔ 重复加载返回缓存实例
+[runtime] fail-engine 加载失败: boom
+  ✔ 失败引擎返回 null
+  ✔ 失败状态 FAILED
+  ✔ clearCache 后 UNLOADED
+  ✔ statusReport 含引擎
+  ✔ abort 后状态 UNLOADED
+
+[2] ModelSourceRouter
+  ✔ 候选含 huggingface
+  ✔ 候选含 jsdelivr
+  ✔ 候选含 local
+  ✔ huggingface URL 正确
+  ✔ 负缓存后排除 huggingface
+  ✔ 仍含 jsdelivr
+  ✔ 成功后恢复 huggingface
+  ✔ resetSession 清空健康状态
+
+=== Runtime Asset Manager 测试完成:17 通过 / 0 失败 ===
+PASS _test_runtime_assets.cjs
+✓ refined icon system is loaded
+✓ refined icon system is offline-cached
+✓ 10 quick-action cards use semantic icon classes
+✓ quick-action icons no longer use inline hardcoded gradients
+✓ SVG icon registry contains core navigation shapes
+✓ icon packs skin SVGs without replacing them with glyph text
+✓ refined dimensional quick-action icon styling exists
+✓ theme toggle tooltip describes all four themes
+✓ VoiceQA final-accounting denominator is intent-scoped
+✓ stale royal-blue inline purchase icon removed
+✓ default test runner explicitly excludes network-only FX test
+✓ network test remains available explicitly
+✓ default npm test no longer prints intentional demo failures as if they were real KPI
+✓ regression gate distinguishes real captured benchmark data from demo data
+System Strength Round1: 14/14 PASS
+PASS _test_system_strength_round1.cjs
+PASS 统一基础货币显示 helper 已建立
+PASS 金额显示使用 ISO code，避免 $/¥ 歧义
+PASS KPI/预算不再硬编码人民币符号
+PASS 收入/支出/进货 UI 不再硬编码人民币符号
+PASS 异常雷达/周期提醒金额跟随基础货币
+PASS 首屏加载前不伪装成 CNY
+PASS BackupEnvelope 已进入带内容哈希的运行时脚本链
+PASS BackupEnvelope 已进入离线 App Shell
+PASS 默认下载自描述 Backup V2
+PASS 恢复/回滚后强制等待持久化完成
+PASS OfflineDB flush 已升级为可等待 durable flush
+PASS 恢复前安全快照写入失败会显式中止
+PASS pagehide 不会把 Event 误传成 strict=true
+PASS 恢复入口有异常大文件保护
+PASS Backup V2 create/decode 字节无损往返
+PASS Backup V2 篡改 payload 会被 SHA-256 拒绝
+RESULT 16/16
+PASS _test_system_strength_round2.cjs
+PASS SystemDiagnostics loaded before app boot
+PASS boot records startup state
+PASS app load marks boot ready
+PASS normal pagehide marks closed
+PASS diagnostics does not call getUserMedia
+PASS permissions are query-only
+PASS storage usage/quota/persistence audited
+PASS service worker registration/control audited
+PASS camera and microphone inventory audited
+PASS database health participates in snapshot
+PASS previous abnormal boot is surfaced
+PASS Intelligence Center renders system health
+PASS self-test explains it will not request permissions
+PASS settings exposes system self-test entry
+PASS first boot is not falsely abnormal
+PASS unfinished boot is detected on next boot
+PASS ready state persisted
+PASS closed state persisted
+System Strength Round3: 18/18 PASS
+PASS _test_system_strength_round3.cjs
+✓ CriticalFieldGate V1 loaded
+✓ matching TOTAL + IVA + cash closure verifies amount
+✓ two independent math closures block corrupted TOTAL 560
+✓ cash/total agreement blocks accidental EFECTIVO amount
+✓ missing amount is not invented from math
+✓ explicit TOTAL label alone can verify the same current amount
+✓ single conflicting TOTAL downgrades to explicit verification
+✓ SW install no longer auto skipWaiting
+✓ SW only activates early after explicit SKIP_WAITING message
+✓ diagnostics and safe update manager are offline app-shell assets
+✓ critical OCR gate is offline app-shell asset
+✓ safe update manager locks around recognition/UI busy work
+✓ safe update manager detects active field editing
+✓ unsafe update is deferred rather than forced
+✓ reload only follows an explicit safe apply request
+✓ boot registers SW through safe update manager
+✓ new safety modules are loaded by index
+✓ workbench applies critical amount gate and preserves conflict metadata
+✓ missing confirm API can no longer silently accept low-confidence amount
+✓ system diagnostics surfaces staged update state
+
+System Strength Round4: 20/20 PASS
+PASS _test_system_strength_round4.cjs
+System Strength Round5: 16/16 PASS
+PASS _test_system_strength_round5.cjs
+System Strength Round6: 19/19 PASS
+PASS _test_system_strength_round6.cjs
+System Strength Round7: 19/19 PASS
+PASS _test_system_strength_round7.cjs
+transaction-core: PASS
+transaction-core-v3: PASS
+PASS _test_transaction_core.cjs
+TransactionCore V187 adjudication: PASS
+PASS _test_transaction_core_v187.cjs
+V187 smart search parser: PASS
+PASS _test_v187_smart_search.cjs
+PASS 中文金额单位纠错
+PASS 非金额上下文不凭空补单位
+PASS 金额上下文严格语法恢复漏万
+PASS 中文热词含万亿
+PASS 西语热词保留词边界
+PASS Sherpa 未安装时不可用
+V188: 6 pass, 0 fail
+PASS _test_v188_recognition_upgrade.cjs
+PASS 双引擎一致自动接受
+PASS 万数量级冲突不让用户选错误候选
+PASS 数量级冲突但明显赢家可接受
+PASS OCR 足够样本稳定领先才建议晋级
+RESULT 4 pass 0 fail
+PASS _test_v189_model_arbitration.cjs
+V193 accelerated intelligence: 5/5 PASS
+PASS _test_v193_accelerated.cjs
+V197 recognition core: 6/6 PASS
+PASS _test_v197_recognition_core.cjs
+V200 model delivery: 13/13 PASS
+PASS _test_v200_model_delivery.cjs
+V205 recognition final: 8/8 PASS
+PASS _test_v205_recognition_final.cjs
+V206 evidence milestone: 8/8 PASS
+PASS _test_v206_evidence_milestone.cjs
+V207 TEN-VAD runtime: 9/9 PASS
+PASS _test_v207_ten_vad_runtime.cjs
+V208 data safety reconcile: 8/8 PASS
+PASS _test_v208_data_safety_reconcile.cjs
+✔ “晚”数字邻域恢复为万
+✔ “网”数字邻域恢复为万
+✔ “旺”数字邻域恢复为万
+✔ V211 金额语法恢复漏“万”
+✔ 已被严格语法恢复的“万”不再制造二选一
+✔ 恢复后可进入唯一高置信金额
+✔ 正常千级金额不误报
+✔ 明确万单位不误报
+✔ 主题定义反馈层语义 token
+✔ 8类首页KPI走主题 token
+✔ 错误提示随主题 token
+✔ 收入卡不再写死秋色背景
+✔ Toast JS 不再强制固定背景色
+✔ Toast 只设置语义状态
+✔ 设置页提供明确模型管理入口
+✔ 识别中心提供OCR显式安装/预加载入口
+✔ Service Worker 使用构建内容哈希缓存命名空间
+V209 recognition/theme integrity: 17/17 PASS
+PASS _test_v209_recognition_theme_integrity.cjs
+V210 ID photo foundation: 16/16 PASS
+PASS _test_v210_idphoto_foundation.cjs
+PASS amount 一万
+PASS amount 一玩
+PASS amount 一晚
+PASS amount 一王
+PASS amount 一弯
+PASS amount 一万三千五百
+PASS amount 一玩三千五百
+PASS amount 两万五千
+PASS amount 两晚五千
+PASS amount 十万零五百
+PASS amount 十五万
+PASS amount 三万五
+PASS amount 2万5
+PASS amount 一三千
+PASS amount 两五千
+PASS context alias
+PASS context dropped-wan
+PASS ordinary text not corrupted
+PASS semantic wan aliases agree
+PASS semantic dropped wan agrees
+PASS true scale conflict still blocks
+PASS idphoto global spec packs
+PASS idphoto photo use references
+PASS idphoto distance quality
+PASS idphoto relight
+PASS idphoto background
+PASS idphoto crop
+PASS idphoto jpeg kb
+PASS idphoto print sheet
+PASS idphoto UI complete
+PASS idphoto css
+V211 voice/idphoto: 31/31 PASS
+PASS _test_v211_voice_idphoto.cjs
+PASS 秋色试穿已统一改为秋色
+PASS 新增春夏主题
+PASS 春夏主题语义色存在
+PASS 秋色快速记账状态容器专门适配
+PASS 图标包与主题独立可选
+PASS 十二生肖全部可选
+PASS 萌宠不再响应提醒/记账业务提示
+PASS 手机实时证件头像框
+PASS 相机教练前进后退提示
+PASS 手机拍照主操作不堆叠
+PASS 照相店输出模式
+PASS 输出格式与自定义打印纸不写死
+PASS 输出 Profile 接入排版
+PASS 局部光影处理传入人脸区域
+PASS 新增模块进入离线 App Shell
+V212 personalization/idphoto: 15/15 PASS
+PASS _test_v212_personalization_idphoto.cjs
+PASS Pet Engine 保留十二生肖选择/拖动基础
+PASS 生活动作/自由游走/业务提示运行时全部退出页面
+PASS 退役萌宠运行时退出离线 App Shell
+PASS 宠物 DOM 不再创建气泡/生活标签/动作舞台
+PASS 业务反应接口兼容但静默
+PASS 自动游走关闭，默认原地陪伴
+PASS CSS 强制关闭历史动作动画
+PASS 设置页明确安静陪伴语义
+PASS rat 生肖资源保留
+PASS ox 生肖资源保留
+PASS tiger 生肖资源保留
+PASS rabbit 生肖资源保留
+PASS dragon 生肖资源保留
+PASS snake 生肖资源保留
+PASS horse 生肖资源保留
+PASS goat 生肖资源保留
+PASS monkey 生肖资源保留
+PASS rooster 生肖资源保留
+PASS dog 生肖资源保留
+PASS pig 生肖资源保留
+V222 Quiet Companion: 20/20 PASS
+PASS _test_v213_pet_pack.cjs
+PASS voice single writer exists
+PASS voice action dedupe ledger exists
+PASS numeric transcript authoritative for 13500
+PASS read-after-write mismatch blocks success
+PASS navigation verified against quickType + active class
+PASS account goes through atomic writer
+PASS SPEI document classified
+PASS SPEI transfer amount = 20000
+PASS SPEI beneficiary extracted
+PASS SPEI destination bank extracted
+PASS SPEI beneficiary RFC extracted
+PASS SPEI tracking key extracted
+PASS SPEI reference extracted
+PASS SPEI account tail extracted
+PASS SPEI purpose extracted
+
+V215 gate: 15 pass, 0 fail
+PASS _test_v215_action_document_gate.cjs
+PASS direct amount parser exists
+PASS 费用/花费/消费 are amount cues
+PASS 今儿 homophone is locally scoped to amount cue
+PASS standalone amount is accepted before draft arbitration
+PASS amount still uses atomic single writer
+PASS recognition action feedback no longer calls popup toast
+PASS quick recognition completion uses inline feedback
+PASS VoiceKit parses 13500 exactly
+PASS VoiceKit parses 一万 exactly
+PASS VoiceKit parses 九千多 as 9000
+
+V216 direct amount gate: 10 pass, 0 fail
+PASS _test_v216_voice_direct_amount.cjs
+PASS 谐音橡筋在封闭账户上下文映射现金
+PASS 张虎+详尽 → 账户现金
+PASS 费用13500 → 精确金额动作
+PASS 金额谐音菲佣一万 → 10000
+PASS 页面切换 → NAVIGATE_PAGE action
+PASS 未解析控制句 fail-closed，不落备注
+PASS setQuickType 不再重放历史 voiceBuffer
+PASS quick-voice 接入 ActionPlan + 幂等执行
+PASS 缺金额时第二轮是目标 ROI，不是整图重复
+PASS 数学证据只生成待验证 expectedValue
+PASS 灾难性首轮最多一次不同 Provider 全图恢复
+PASS 无信息增益时停止后续重复识别
+PASS 发现缺失字段产生高信息增益
+PASS 财务标签 OCR 混淆仅在语义层规范化
+PASS TOTAL 模糊标签 + 现金找零数学闭环选择 656.38
+PASS V218 新模块已进入运行时加载链
+
+V218 gate: 16 PASS / 0 FAIL
+PASS _test_v218_voice_ocr_intelligence.cjs
+PASS Pet Engine 保留十二生肖选择/拖动基础
+PASS 生活动作/自由游走/业务提示运行时全部退出页面
+PASS 退役萌宠运行时退出离线 App Shell
+PASS 宠物 DOM 不再创建气泡/生活标签/动作舞台
+PASS 业务反应接口兼容但静默
+PASS 自动游走关闭，默认原地陪伴
+PASS CSS 强制关闭历史动作动画
+PASS 设置页明确安静陪伴语义
+PASS rat 生肖资源保留
+PASS ox 生肖资源保留
+PASS tiger 生肖资源保留
+PASS rabbit 生肖资源保留
+PASS dragon 生肖资源保留
+PASS snake 生肖资源保留
+PASS horse 生肖资源保留
+PASS goat 生肖资源保留
+PASS monkey 生肖资源保留
+PASS rooster 生肖资源保留
+PASS dog 生肖资源保留
+PASS pig 生肖资源保留
+V222 Quiet Companion: 20/20 PASS
+PASS _test_v219_idphoto_pet_motion.cjs
+V220 voice navigation/no-multi gate: 12/12 PASS
+PASS _test_v220_voice_navigation_no_multi.cjs
+PASS Reminder Dialogue Engine V3+ loaded
+PASS explicit item owns only item value
+PASS next slot label canonicalizes time without leaking into prior item
+PASS location is independently owned
+PASS natural utterance routes time
+PASS natural utterance routes location
+PASS natural utterance routes lead time
+PASS natural utterance routes note
+PASS natural utterance routes event content
+PASS Quick Accounting multi-entry runtime removed
+PASS legacy splitEntries implementation/export removed
+PASS pet bubble host removed
+PASS retired pet animation runtimes not loaded
+PASS retired pet animation runtimes not precached
+PASS _test_v221_reminder_pet_cleanup.cjs
+PASS single utterance content stops before 提醒时间
+PASS single utterance routes time
+PASS single utterance routes location
+PASS single utterance routes reminder method
+PASS field labels never leak into content
+PASS trailing partial 提醒 is held, not written to title
+PASS split ASR boundary 提醒 + 时间 is recovered
+PASS ASR 提醒办事 does not contaminate location
+PASS ASR 提醒办事 is context-repaired to 提醒方式 when followed by 响铃
+PASS quick voice no longer replays full draft during CONTENT
+PASS quick fallback parses current final only
+PASS reminder fails closed if dialogue engine unavailable
+PASS reminder contamination guard runs before DOM write
+RESULT 13 PASS / 0 FAIL
+PASS _test_v223_runtime_reminder_boundary.cjs
+PASS SafeUpdateManager V2 loaded
+PASS waiting update auto-applies when no active work
+PASS controller change reloads only after requested safe apply
+RESULT 3 PASS / 0 FAIL
+PASS _test_v223_safe_update_runtime.cjs
+[ocr] 识别已中止
+V224 OCR runtime cancellation: 2 scenarios / 6 assertions PASS
+PASS _test_v224_ocr_cancel_runtime.cjs
+V224 safety: 62 assertions PASS
+PASS _test_v224_recognition_safety.cjs
+PASS 萌宠视觉升级预览内容和图片引用已删除
+PASS 萌宠预览图片文件已删除
+PASS 图标风格收敛为四套
+PASS standard 图标风格可选
+PASS cartoon 图标风格可选
+PASS chinese 图标风格可选
+PASS tech 图标风格可选
+PASS 简陋朋克/未来入口移除
+PASS 旧图标偏好兼容迁移
+PASS 四套图标选择器具有彩色渲染
+PASS light KPI 有独立浅色语义背景
+PASS spring-summer KPI 有独立浅色语义背景
+PASS 浅色功能键使用柔和青灰主色语义
+PASS SW 不再缓存已删除预览
+Visual Harmony Round3: 14/14 PASS
+PASS _test_visual_harmony_round3.cjs
+PASS final utterance commit lane exists
+PASS amount command uses deterministic direct-amount parser
+PASS amount atomic write confirms field
+PASS amount clears pending and failure state
+PASS native input change events dispatched by single writer
+PASS switch suppresses stale draft reparse
+PASS explicit command consumed before draft
+PASS account command atomic commit exists
+PASS _test_voice_commit_lane.cjs
+✔ 选择现金 → account 现金
+✔ 选择橡筋 → account 现金
+✔ 账户详尽 → account 现金
+✔ 张虎详尽 → account 现金
+✔ 赞胡先进 → account 现金
+✔ 张护陷阱 → account 现金
+✔ 详尽 → account 现金
+✔ 切换到收入页面 → navigate income
+✔ 进入支出页面 → navigate expense
+✔ 控制类误识别禁止落入备注
+✔ 普通备注不被控制门禁吞掉
+✔ 未解析控制句 fail-closed
+✔ 页面切换复用真实点击链
+V217: 13/13 PASS
+PASS _test_voice_context_v217.cjs
+✔ 内容进入草稿
+✔ 删除上一句
+✔ 进入重说上一句
+✔ 替换上一句
+✔ 句中“好了”不误提交
+✔ 独立“好了”提交
+✔ 原始历史仍保留
+✔ 西语 listo 提交
+✔ 英语 done 提交
+RESULT 9 pass 0 fail
+PASS _test_voice_draft_v6.cjs
+
+[1] 单次纠正 → candidate(非强规则)
+  ✔ 新条目 count=1
+  ✔ 单次纠正 status=candidate
+  ✔ memoryStrength(single)=candidate
+  ✔ resolveSync 单次命中 status=candidate
+
+[2] 强度随支持次数升级
+  ✔ count=2 → weak
+  ✔ count=3 → medium
+  ✔ count=6 → strong
+
+[3] failureCount 拉低升级(有失败需更多证据)
+  ✔ 单次(无失败) candidate
+  ✔ 有失败后 remain candidate(count=1)
+  ✔ failureCount 记录为1
+  ✔ 有失败 count=2 → weak
+
+[4] 学习幂等性(重复 learn 累计 count,不重复创建)
+  ✔ 同 key 重复 learn 只累计(1条)
+  ✔ count 累计为2
+
+[5] 覆盖权限:单次纠正不覆盖权威来源(voice-engine 语义)
+  ✔ 单次纠正命中但 status=candidate(无权覆盖)
+
+=== PvM 信任测试完成:14 通过 / 0 失败 ===
+PASS _test_voice_pvm.cjs
+══════════ VoiceQA 语音模块验收（Node 解析器侧） ══════════
+用例总数            : 18
+① ASR 成功率        : 18/18
+② 文本正确率        : 18/18（模拟输入即正确）
+③ 解析成功率        : 18/18
+④ 字段正确率        : 18/18
+⑤ 最终记账正确率    : 14/14（仅明确记账意图；提醒/日期隔离用例不计入分母）
+── 逐字段命中 ──
+   amount: 18/18
+   date: 7/7
+   kind: 14/14
+   category: 14/14
+   account: 1/1
+── 结果 ──
+✅ 全部 18 个用例通过
+通过率: 100%
+PASS _test_voice_qa.cjs
+══════════ 异常恢复链路测试 ══════════
+── 场景1: 拒绝麦克风权限
+  ✓ 麦克风拒绝 → error 回调收到
+  ✓ 错误码映射为 not-allowed
+  ✓ 权限拒绝后不进入自动重启（防死循环）
+── 场景2: Whisper 初始化失败（无在线授权）
+[asr] Whisper 模型预热失败，回退在线或报错: Error: MODEL_LOAD_FAILED
+    at global.AsrKit.WhisperEngine.initialize (/workspace/scratch/5784d91d347a/work/v223/_test_voice_recovery.cjs:69:43)
+    at AsrManager._startInternal (eval at load (/workspace/scratch/5784d91d347a/work/v223/_test_voice_recovery.cjs:20:3), <anonymous>:234:29)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async AsrManager.start (eval at load (/workspace/scratch/5784d91d347a/work/v223/_test_voice_recovery.cjs:20:3), <anonymous>:203:9)
+  ✓ Whisper 失败 → error 回调收到
+  ✓ 错误码映射为 aborted（无网络兜底时明确失败）
+── 场景3: 用户手动停止
+  ✓ 用户停止 → 会话结束（onEnd 或 isListening=false）
+  ✓ 停止后 isListening=false
+── 场景4: 浏览器不支持
+  ✓ AsrKit 缺失 → 报 unsupported
+── 场景5: WebSpeech onend 自动恢复（在线授权）
+  ✓ 在线模式 → state=listening
+  ✓ WebSpeech 收到 end(auto=true) 后引擎可自动重启（无死锁）
+── 场景6: 网络断开
+  ✓ 网络断开 → error=network
+══════════════════════════════
+结果: 11 通过, 0 失败
+PASS _test_voice_recovery.cjs
+
+[1] Feature Flags + Kill Switch
+  ✔ 默认 whisperV2Pipeline=true
+  ✔ 默认 adaptiveVadEnabled=true
+  ✔ setFlag 生效(本地覆盖)
+  ✔ resetFlags 恢复默认
+
+[2] VoiceRuntimeProfile 能力探测
+  ✔ wasm 可探测
+  ✔ sab/isolated 布尔
+  ✔ profile 缓存
+  ✔ asrBackendPlan 给出 engine
+
+[3] DeviceCircuitBreaker
+  ✔ 初始未熔断
+  ✔ 失败2次未熔断
+  ✔ 失败3次→熔断
+  ✔ 记录次数=3
+  ✔ 成功复位
+
+[4] AudioFocus
+  ✔ 初始 IDLE
+  ✔ listen→LISTENING 未抑制
+  ✔ speak→SPEAKING 抑制
+  ✔ endSpeaking 后短暂抑制
+  ✔ 延时后恢复 LISTENING
+  ✔ processing 抑制
+  ✔ idle 解除抑制
+
+[5] ModelHealth
+  ✔ 未安装→NOT_INSTALLED
+  ✔ 标记 INCOMPATIBLE
+  ✔ Self-Test通过→READY
+
+========== 结果: 23 通过, 0 失败 ==========
+PASS _test_voice_runtime.cjs
+══════════ OCR Critical-Field Benchmark ══════════
+（无已捕获结果：请先在浏览器运行识别并写入 tests/ocr/results/<id>.json，或用 --demo 查看格式）
+未捕获结果的 fixture: mx-cfdi-sample-001, mx-retail-sample-002
+══════════════════════════════════════════════════
+PASS tests/ocr/benchmark.cjs
+
+=== 测试汇总: 75 通过, 0 失败, 1 跳过 ===
+
+══════ OCR Golden Dataset Manifest ══════
+manifest fixtures: 2
+   ✔ mx-cfdi-sample-001  CFDI  file=mx-cfdi-sample-001.jpg  expected=6字段
+   ✔ mx-retail-sample-002  OXXO  file=mx-retail-sample-002.jpg  expected=6字段
+
+══════ Voice Golden Dataset Manifest ══════
+voice manifest fixtures: 10
+   ✔ voice-zh-clean-001  zh-CN  clean  expected=6字段
+   ✔ voice-zh-amount-002  zh-CN  clean  expected=6字段
+   ✔ voice-zh-bank-003  zh-CN  clean  expected=6字段
+   ✔ voice-zh-command-004  zh-CN  clean  expected=3字段
+   ✔ voice-zh-correction-005  zh-CN  correction  expected=3字段
+   ✔ voice-zh-changedmind-006  zh-CN  user-changed-mind  expected=4字段
+   ✔ voice-es-clean-007  es-MX  clean  expected=6字段
+   ✔ voice-en-clean-008  en-US  clean  expected=6字段
+   ✔ voice-es-command-009  es-MX  clean  expected=3字段
+   ✔ voice-en-command-010  en-US  clean  expected=3字段

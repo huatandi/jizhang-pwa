@@ -10,10 +10,12 @@
 (function (global) {
   function normalizeCore(raw) {
     const src = raw || {};
-    const amount = src.amount;
+    const input = src.amount;
+    const amount = (typeof input === 'number' || (typeof input === 'string' && input.trim() !== ''))
+      ? Number(input) : NaN;
     const date = src.date;
     return {
-      amount: amount == null ? null : Math.round(amount * 100) / 100,
+      amount: Number.isFinite(amount) && Number.isSafeInteger(Math.round(amount * 100)) ? Math.round(amount * 100) / 100 : null,
       date: date || null,
       merchant: src.merchant ? String(src.merchant).trim().slice(0, 200) : null,
       category: src.category ? String(src.category).trim().slice(0, 50) : null,
@@ -29,10 +31,14 @@
   /** 合并多个来源（OCR 优先，语音补充缺失字段） */
   function mergeDrafts(drafts) {
     const out = {};
-    for (const d of drafts) {
+    for (const d of drafts || []) {
       if (!d) continue;
       const norm = normalizeCore(d);
       for (const k of Object.keys(norm)) {
+        if (k === 'items') {
+          if (norm.items.length && (!out.items || !out.items.length)) out.items = norm.items;
+          continue;
+        }
         if (norm[k] != null && (out[k] == null || (k === 'note' && out[k]))) {
           // 后到者不覆盖已有非空字段；note 用空格拼接
           if (k === 'note' && out[k]) out[k] = out[k] + ' ' + norm[k];

@@ -84,7 +84,9 @@ function canonicalize(a){
 function trimPartialBoundary(text){
   let s=clean(text),held='';
   const m=s.match(PARTIAL_BOUNDARY_RE);
-  if(m && m.index>0){held=m[0];s=clean(s.slice(0,m.index));}
+  // A single trailing character in 同事/准备/工地 is ordinary text.
+  // Hold it only after a separator; multi-character ASR boundaries remain supported.
+  if(m && m.index>0 && (m[0].length>1 || /[\s，,：:]/.test(s[m.index-1]))){held=m[0];s=clean(s.slice(0,m.index));}
   return {value:s,held};
 }
 function inferNatural(text){let rest=clean(repairContextLabels(text)),actions=[];const rp=parser();if(!rest)return actions;
@@ -138,8 +140,10 @@ function plan(text){
     actions=actions.concat(inferNatural(raw).filter(a=>a.slot!=='content'&&!explicitSlots.has(a.slot)));
   } else {
     const t=trimPartialBoundary(raw); if(t.held){state.pendingBoundary=t.held;raw=t.value;}
-    actions=inferNatural(raw);
-    if(!actions.length&&raw&&state.activeSlot)actions=[{slot:state.activeSlot,value:stripLead(raw,state.activeSlot),explicit:false,continuation:true}];
+    if(raw && state.activeSlot){
+      const a=canonicalize({slot:state.activeSlot,value:stripLead(raw,state.activeSlot),explicit:true,continuation:true});
+      actions=[a]; if(a.value)closeSlot(a.slot);
+    } else actions=inferNatural(raw);
     if(actions.length===1)state.lastSlot=actions[0].slot;
   }
   actions=dedupeActions(actions);
